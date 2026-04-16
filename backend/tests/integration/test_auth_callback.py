@@ -103,36 +103,70 @@ class TestCallbackStubDomainRestriction:
 class TestCallbackStubExistingUserUpdatesLogin:
     """Second callback for the same email should update last_login_at, not re-create."""
 
-    def test_second_login_updates_last_login_at(
+    def test_second_login_does_not_duplicate_user(
         self, client: TestClient, db_session: Session
     ) -> None:
-        """Two callbacks for the same email should result in exactly one User row."""
+        """Two callbacks for the same email must produce exactly one User row."""
         email = "returning@emb.global"
 
-        # First login
-        r1 = client.get(
-            f"/auth/google/callback?stub_email={email}",
-            follow_redirects=False,
-        )
+        r1 = client.get(f"/auth/google/callback?stub_email={email}", follow_redirects=False)
         assert r1.status_code == 302
 
-        user_after_first = db_session.query(User).filter_by(email=email).first()
-        assert user_after_first is not None
+        first_login_at = db_session.query(User).filter_by(email=email).first().last_login_at
+        assert first_login_at is not None
 
-        # Second login
-        r2 = client.get(
-            f"/auth/google/callback?stub_email={email}",
-            follow_redirects=False,
-        )
+        r2 = client.get(f"/auth/google/callback?stub_email={email}", follow_redirects=False)
         assert r2.status_code == 302
 
-        db_session.expire(user_after_first)
-        user_after_second = db_session.query(User).filter_by(email=email).first()
-        assert user_after_second is not None
-
-        # Still only one user row
         count = db_session.query(User).filter_by(email=email).count()
         assert count == 1, "Second login must not create a duplicate user"
+
+        db_session.expire_all()
+        updated = db_session.query(User).filter_by(email=email).first()
+        assert updated is not None
+        assert updated.last_login_at is not None
+        assert updated.last_login_at >= first_login_at, "last_login_at must be updated on re-login"
+
+    def test_google_sub_backfill_on_existing_user(
+        self, db_session: Session
+    ) -> None:
+        """Existing user without google_sub gets it set when provided on next login.
+
+        The stub path always passes google_sub=None, so this tests _upsert_user
+        directly with a real google_sub value to cover the backfill branch.
+        """
+        import uuid as _uuid
+        from datetime import UTC, datetime
+
+        from app.api.routes.auth import _upsert_user
+
+        email = "sub_backfill@emb.global"
+
+        # Seed user without google_sub (as if created by stub flow)
+        user = User(
+            id=_uuid.uuid4(),
+            email=email,
+            google_sub=None,
+            name="Stub User",
+            role=Role.PENDING,
+            is_active=True,
+            last_login_at=datetime.now(UTC),
+        )
+        db_session.add(user)
+        db_session.flush()
+        user_id = user.id
+
+        # Second login comes in via Google with a real sub
+        updated = _upsert_user(
+            db_session,
+            email=email,
+            name="Stub User",
+            google_sub="google-sub-12345",
+        )
+        db_session.flush()
+
+        assert updated.id == user_id, "Should update the existing user, not create a new one"
+        assert updated.google_sub == "google-sub-12345", "google_sub must be backfilled"
 
     def test_second_login_audit_log_count(
         self, client: TestClient, db_session: Session

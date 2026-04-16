@@ -12,11 +12,13 @@ Stub mode (auth_provider="stub") bypasses real OAuth for local dev + tests.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Request
@@ -120,7 +122,7 @@ def _upsert_user(
         )
         session.add(user)
         session.flush()  # populate user.id before writing audit log
-        log.info("auth.user_created", email_hash=hash(email))
+        log.info("auth.user_created", email_hash=hashlib.sha256(email.lower().encode()).hexdigest()[:16])
     else:
         user = existing
         if google_sub and not user.google_sub:
@@ -128,7 +130,7 @@ def _upsert_user(
         if name and name != user.name:
             user.name = name
         user.last_login_at = now
-        log.info("auth.user_login", email_hash=hash(email))
+        log.info("auth.user_login", email_hash=hashlib.sha256(email.lower().encode()).hexdigest()[:16])
 
     audit = AuditLog(
         id=uuid.uuid4(),
@@ -162,21 +164,21 @@ def google_login() -> RedirectResponse:
     # --- real Google OAuth path ---
     state = secrets.token_urlsafe(32)
 
-    params = (
-        f"client_id={settings.google_oauth_client_id}"
-        f"&redirect_uri={settings.google_oauth_redirect_uri}"
-        f"&response_type=code"
-        f"&scope=openid%20email%20profile"
-        f"&hd={settings.google_oauth_allowed_domain}"
-        f"&state={state}"
-    )
-    google_url = f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
+    google_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+        "client_id": settings.google_oauth_client_id,
+        "redirect_uri": settings.google_oauth_redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "hd": settings.google_oauth_allowed_domain,
+        "state": state,
+    })
 
     response = RedirectResponse(url=google_url, status_code=302)
     response.set_cookie(
         key="oauth_state",
         value=state,
         httponly=True,
+        secure=settings.session_cookie_secure,  # match session cookie secure flag
         max_age=300,
         samesite="lax",
         path="/",
@@ -194,8 +196,6 @@ async def google_callback(  # noqa: PLR0911
 ) -> RedirectResponse:
     """Handle OAuth callback: verify state, exchange code, upsert user, issue session."""
     settings = get_settings()
-    response = RedirectResponse(url="/", status_code=302)
-
     # --- resolve email / name / sub from provider ---
     if settings.auth_provider == "stub":
         if not stub_email:
@@ -223,6 +223,9 @@ async def google_callback(  # noqa: PLR0911
         except httpx.HTTPStatusError as exc:
             log.error("auth.token_exchange_failed", status=exc.response.status_code)
             return RedirectResponse(url="/auth/error?reason=token_exchange_failed", status_code=302)
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+            log.error("auth.token_exchange_network_error", error=type(exc).__name__)
+            return RedirectResponse(url="/auth/error?reason=token_exchange_failed", status_code=302)
 
         id_token = token_response.get("id_token", "")
         if not id_token:
@@ -232,8 +235,8 @@ async def google_callback(  # noqa: PLR0911
         # 3. Decode id_token payload (no sig verification in M1 — see helper docstring)
         try:
             claims = _decode_id_token_payload(id_token)
-        except (ValueError, Exception) as exc:
-            log.error("auth.id_token_decode_failed", error=str(exc))
+        except (ValueError, json.JSONDecodeError) as exc:
+            log.error("auth.id_token_decode_failed", error=type(exc).__name__)
             return RedirectResponse(url="/auth/error?reason=id_token_decode_failed", status_code=302)
 
         # 4. Verify hosted domain claim
@@ -254,7 +257,14 @@ async def google_callback(  # noqa: PLR0911
 
     # --- upsert user + audit log ---
     user = _upsert_user(session, email=email, name=name, google_sub=google_sub)
+    # Commit before issuing the session cookie. create_session_cookie() calls
+    # itsdangerous.dumps() (infallible) + response.set_cookie() (pure mutation),
+    # so there is no risk of a partial-commit / no-cookie state in practice.
     session.commit()
+
+    # --- determine redirect destination before constructing response ---
+    redirect_url = "/auth/pending" if user.role == Role.PENDING else "/"
+    response = RedirectResponse(url=redirect_url, status_code=302)
 
     # --- issue session cookie ---
     create_session_cookie(
@@ -268,11 +278,6 @@ async def google_callback(  # noqa: PLR0911
 
     # --- clear oauth_state cookie if it was set ---
     response.delete_cookie(key="oauth_state", path="/")
-
-    # --- redirect based on role ---
-    if user.role == Role.PENDING:
-        response.headers["location"] = "/auth/pending"
-    # else: default location "/" already set at construction
 
     return response
 
