@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+# Importing `app.db` registers the D15 immutability listener as a side
+# effect (via app/db/__init__.py). Tests assume the hook is active.
+import app.db  # noqa: F401
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
+from app.db.events import _block_fx_rate_update
 from app.db.models.fx_rate import FxRate
 
 
@@ -34,3 +41,12 @@ def test_fx_rate_unique_triple() -> None:
 def test_fx_rate_source_is_enum() -> None:
     col = FxRate.__table__.c.source
     assert col.type.__class__.__name__ == "Enum"
+
+
+def test_d15_immutability_listener_is_registered() -> None:
+    # Regression guard: the D15 fx_rates immutability hook must be a
+    # registered before_flush listener on Session as soon as app.db is
+    # imported. If someone accidentally unwires app/db/__init__.py or
+    # renames the listener, this test fails fast — integration tests
+    # (Task 6B) would otherwise pass silently with D15 disabled.
+    assert event.contains(Session, "before_flush", _block_fx_rate_update)

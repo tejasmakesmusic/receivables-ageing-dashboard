@@ -1,7 +1,17 @@
 """SQLAlchemy event hooks — app-layer invariants enforced at ORM boundary.
 
-D15: fx_rates are immutable after insert. DB UPDATE is blocked here rather
-than via a trigger so that migrations and Neon branches stay cheap.
+D15: fx_rates are immutable after insert. The ORM `before_flush` hook here
+blocks UPDATEs that go through the unit-of-work path (`session.merge`,
+attribute mutation, etc.).
+
+IMPORTANT — this hook does NOT catch Core-style bulk UPDATE paths:
+- `session.execute(update(FxRate).values(...))`
+- `session.query(FxRate).update({...})`
+
+Those bypass the ORM identity map and never touch `before_flush`. For a
+belt-and-suspenders D15 defence, Task 7 migration should add a Postgres
+`BEFORE UPDATE` trigger on `fx_rates` that raises an exception. The hook
+here is fast feedback for ORM code paths; the trigger is the backstop.
 """
 
 from __future__ import annotations
