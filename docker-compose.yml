@@ -1,0 +1,64 @@
+# Local dev only. Production deploys to Railway (spec D21).
+# Usage:
+#   docker compose up -d postgres          # just the DB
+#   docker compose up                      # DB + backend + frontend
+#
+# The backend and frontend services are optional for local dev —
+# running them natively (uv + npm) is usually faster.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: receivables-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: receivables
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d receivables"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend-dev
+    container_name: receivables-backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/receivables
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - ./pyproject.toml:/app/pyproject.toml
+    command: >
+      uv run uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/backend/src
+
+  frontend:
+    image: node:22-alpine
+    container_name: receivables-frontend
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+volumes:
+  postgres_data:
