@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,24 +24,23 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # plain VARCHAR here and normalize emails to lowercase at insert time in
     # the auth callback — simpler than requiring the citext extension on Neon.
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
-    google_sub: Mapped[str | None] = mapped_column(
-        String(64), unique=True, nullable=True
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    google_sub: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
     role: Mapped[Role] = mapped_column(
         Enum(Role, name="role_enum", native_enum=True),
         nullable=False,
         default=Role.PENDING,
+        server_default="PENDING",
     )
     entity_id_scope: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("entities.id", ondelete="SET NULL"),
         nullable=True,
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    last_login_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
     )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     entity_scope: Mapped[Entity | None] = relationship("Entity", lazy="joined")
 
