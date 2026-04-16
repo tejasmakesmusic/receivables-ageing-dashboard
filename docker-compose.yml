@@ -1,29 +1,15 @@
-# Local dev only. Production deploys to Railway (spec D21).
-# Usage:
-#   docker compose up -d postgres          # just the DB
-#   docker compose up                      # DB + backend + frontend
+# Local dev helper. Postgres runs on Neon (ADR-0002), not in a container.
+# This compose file is now optional — use it only if you want to run the
+# backend and/or frontend inside containers instead of natively with uv/npm.
 #
-# The backend and frontend services are optional for local dev —
-# running them natively (uv + npm) is usually faster.
+# Usage:
+#   # Run backend in a container, hitting Neon via DATABASE_URL from .env:
+#   docker compose up backend
+#
+#   # Or run everything containerised:
+#   docker compose up
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: receivables-postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: receivables
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d receivables"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: .
@@ -32,13 +18,8 @@ services:
     container_name: receivables-backend
     env_file:
       - .env
-    environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/receivables
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
     volumes:
       - ./backend:/app/backend
       - ./pyproject.toml:/app/pyproject.toml
@@ -59,6 +40,3 @@ services:
       - ./frontend:/app
       - /app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
-
-volumes:
-  postgres_data:

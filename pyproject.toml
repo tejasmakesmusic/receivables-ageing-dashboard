@@ -105,7 +105,12 @@ select = [
 ignore = [
   "E501",          # line too long — black handles
   "PLR0913",       # too many args in fn
+  "RUF002",        # en-dashes in docstrings (mirror spec prose)
+  "RUF003",        # en-dashes in comments
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**/*.py" = ["PLR2004"]   # magic numbers are fine in assertions
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

@@ -26,10 +26,21 @@ class Settings(BaseSettings):
     app_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     app_base_url: str = "http://localhost:8000"
 
-    # ---- Database ----
+    # ---- Database (Neon — see ADR-0002) ----
     database_url: str = Field(
-        default="postgresql+psycopg://postgres:postgres@localhost:5432/receivables",
-        description="SQLAlchemy-style DSN. Railway sets DATABASE_URL automatically.",
+        default="",
+        description=(
+            "SQLAlchemy-style DSN for Neon (pooled). Format: "
+            "postgresql+psycopg://user:pass@ep-xxx-pooler.region.aws.neon.tech"
+            "/db?sslmode=require"
+        ),
+    )
+    database_url_direct: str = Field(
+        default="",
+        description=(
+            "Unpooled (direct) Neon DSN. Used by Alembic migrations — pgbouncer "
+            "does not support all session-level statements migrations need."
+        ),
     )
 
     # ---- Session / cookies (§11) ----

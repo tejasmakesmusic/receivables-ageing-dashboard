@@ -7,20 +7,25 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.config import get_settings
-from app.db.base import Base
-
 # Import all model modules so Base.metadata is fully populated.
 # (Empty in M0; populated as models are added.)
 import app.models  # noqa: F401
+from app.config import get_settings
+from app.db.base import Base
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Inject runtime DATABASE_URL from env (via pydantic-settings).
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Inject DB URL from env (via pydantic-settings). Prefer the unpooled
+# (direct) Neon connection for migrations — pgbouncer transaction pooling
+# doesn't support all session-level statements Alembic needs.
+_s = get_settings()
+config.set_main_option(
+    "sqlalchemy.url",
+    _s.database_url_direct or _s.database_url,
+)
 
 target_metadata = Base.metadata
 

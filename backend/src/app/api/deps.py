@@ -7,12 +7,16 @@ against spec §2 D5.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from fastapi import Depends
-from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from sqlalchemy.orm import Session
 
 
 def db_session() -> Iterator[Session]:

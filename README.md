@@ -53,25 +53,34 @@ pyproject.toml          Python deps + ruff / black / mypy / pytest config
 | `uv` | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Node | 22 LTS | `nvm install 22 && nvm use 22` |
 | npm | bundled | — |
-| Docker | 24+ | Docker Desktop (Mac) |
-| Postgres | 16 | via Docker Compose |
+| Neon account | — | https://neon.tech — create project `receivables-ageing-dashboard` |
+| Docker | (optional) | only if you want to run backend/frontend in containers |
 
-Don't substitute — the spec (D21 + bootstrap prompt) pins these.
+**Postgres provider:** Neon (see [ADR-0002](./docs/adr/0002-use-neon-for-postgres.md))
+— overrides the "Railway Postgres add-on" clause in spec D21. Railway
+still hosts the FastAPI app.
 
 ---
 
 ## First-time setup
 
 ```bash
-# 1. Python deps
+# 1. Python deps (uv auto-provisions Python 3.12 if missing)
 uv sync
 
-# 2. Start Postgres
-docker compose up -d postgres
+# 2. Neon — create the DB
+#    a. Sign in at https://neon.tech
+#    b. Create project; copy BOTH connection strings from the dashboard:
+#       - "Pooled connection"  → DATABASE_URL
+#       - "Direct connection"  → DATABASE_URL_DIRECT
+#    c. Append `sslmode=require` if the copied string doesn't already include it
+#    d. Prepend `+psycopg` to the driver:
+#       postgres://...   →   postgresql+psycopg://...
 
-# 3. Copy env + fill in Google OAuth + email keys
+# 3. Copy env + paste in the Neon URLs + secrets
 cp .env.example .env
-# edit .env (SESSION_SECRET at minimum; OAuth + email secrets before M1 deploy)
+# edit .env → set DATABASE_URL, DATABASE_URL_DIRECT, SESSION_SECRET
+# (OAuth + email secrets can wait until M1 deploy)
 
 # 4. Run migrations (none in M0 — creates alembic_version table only)
 uv run alembic -c backend/alembic.ini upgrade head
@@ -144,7 +153,7 @@ The `.gitignore` at repo root excludes `*.xlsx` from that path. See
 
 From [`.env.example`](./.env.example):
 
-- `DATABASE_URL` — Railway sets automatically when you add the Postgres plugin
+- `DATABASE_URL` + `DATABASE_URL_DIRECT` — from Neon dashboard (see ADR-0002)
 - `SESSION_SECRET` — generate: `python -c "import secrets; print(secrets.token_urlsafe(64))"`
 - `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` — from Google Cloud Console, authorized redirect URI = `https://<railway-domain>/auth/google/callback`
 - `GOOGLE_OAUTH_ALLOWED_DOMAIN=emb.global` (default, keep)

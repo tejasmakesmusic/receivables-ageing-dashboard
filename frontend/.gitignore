@@ -3,5 +3,7 @@ dist
 dist-ssr
 *.local
 .vite
+.tsbuild-node
+*.tsbuildinfo
 coverage
 .DS_Store
