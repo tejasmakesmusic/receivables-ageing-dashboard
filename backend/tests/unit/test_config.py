@@ -7,8 +7,10 @@ import pytest
 from app.config import Settings
 
 
-def test_auth_provider_defaults_to_stub_in_dev() -> None:
-    s = Settings(app_env="development")
+def test_auth_provider_default_is_stub() -> None:
+    # Default is unconditional — the production guard lives in app/core/startup.py,
+    # not in the field default. See Task 12.
+    s = Settings()
     assert s.auth_provider == "stub"
 
 
