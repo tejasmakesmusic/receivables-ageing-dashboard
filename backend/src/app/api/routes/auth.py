@@ -5,6 +5,8 @@ Routes (all mounted under /auth via include_router prefix):
   GET /google/callback — exchange code, upsert user, issue session cookie
   GET /logout         — clear session cookie, redirect to /
   GET /error          — fallback HTML error page (real UI in M3)
+  GET /pending        — pending approval page (spec §13)
+  GET /me             — current user info endpoint (spec §10)
 
 Stub mode (auth_provider="stub") bypasses real OAuth for local dev + tests.
 """
@@ -28,7 +30,7 @@ from sqlalchemy.orm import (
     Session,  # noqa: TCH002 — needed at runtime for Annotated[Session, Depends(...)]
 )
 
-from app.api.deps import db_session
+from app.api.deps import db_session, get_current_user
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.rbac import Role
@@ -102,9 +104,7 @@ def _upsert_user(
         The persisted User ORM object.
     """
     existing: User | None = (
-        session.query(User)
-        .filter(func.lower(User.email) == email.lower())
-        .first()
+        session.query(User).filter(func.lower(User.email) == email.lower()).first()
     )
 
     now = datetime.now(UTC)
@@ -122,7 +122,9 @@ def _upsert_user(
         )
         session.add(user)
         session.flush()  # populate user.id before writing audit log
-        log.info("auth.user_created", email_hash=hashlib.sha256(email.lower().encode()).hexdigest()[:16])
+        log.info(
+            "auth.user_created", email_hash=hashlib.sha256(email.lower().encode()).hexdigest()[:16]
+        )
     else:
         user = existing
         if google_sub and not user.google_sub:
@@ -130,7 +132,9 @@ def _upsert_user(
         if name and name != user.name:
             user.name = name
         user.last_login_at = now
-        log.info("auth.user_login", email_hash=hashlib.sha256(email.lower().encode()).hexdigest()[:16])
+        log.info(
+            "auth.user_login", email_hash=hashlib.sha256(email.lower().encode()).hexdigest()[:16]
+        )
 
     audit = AuditLog(
         id=uuid.uuid4(),
@@ -164,14 +168,16 @@ def google_login() -> RedirectResponse:
     # --- real Google OAuth path ---
     state = secrets.token_urlsafe(32)
 
-    google_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
-        "client_id": settings.google_oauth_client_id,
-        "redirect_uri": settings.google_oauth_redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "hd": settings.google_oauth_allowed_domain,
-        "state": state,
-    })
+    google_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(
+        {
+            "client_id": settings.google_oauth_client_id,
+            "redirect_uri": settings.google_oauth_redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "hd": settings.google_oauth_allowed_domain,
+            "state": state,
+        }
+    )
 
     response = RedirectResponse(url=google_url, status_code=302)
     response.set_cookie(
@@ -237,7 +243,9 @@ async def google_callback(  # noqa: PLR0911
             claims = _decode_id_token_payload(id_token)
         except (ValueError, json.JSONDecodeError) as exc:
             log.error("auth.id_token_decode_failed", error=type(exc).__name__)
-            return RedirectResponse(url="/auth/error?reason=id_token_decode_failed", status_code=302)
+            return RedirectResponse(
+                url="/auth/error?reason=id_token_decode_failed", status_code=302
+            )
 
         # 4. Verify hosted domain claim
         hd_claim = claims.get("hd", "")
@@ -297,3 +305,56 @@ def auth_error(reason: str = Query(default="unknown")) -> HTMLResponse:
     safe_reason = reason.replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     html = f"<h1>Authentication Error</h1><p>Reason: {safe_reason}</p>"
     return HTMLResponse(content=html, status_code=200)
+
+
+@router.get("/pending", response_model=None)
+def pending(
+    user: Annotated[User, Depends(get_current_user)],
+) -> HTMLResponse | RedirectResponse:
+    """Pending approval page — show if user role is PENDING, otherwise redirect to /.
+
+    Args:
+        user: Current authenticated user (raises 401 if not logged in).
+
+    Returns:
+        HTMLResponse with pending message if user role is PENDING.
+        RedirectResponse to / if user has been promoted to a different role.
+    """
+    # If user has already been promoted, redirect to dashboard
+    if user.role != Role.PENDING:
+        return RedirectResponse(url="/", status_code=302)
+
+    # Show pending approval page with user's email
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Awaiting Approval — EMB Receivables</title></head>
+<body>
+  <h1>Account pending approval</h1>
+  <p>Your <strong>{user.email}</strong> account has been registered and is awaiting
+  admin approval. You will be notified by email once approved.</p>
+  <p><a href="/auth/logout">Sign out</a></p>
+</body>
+</html>"""
+    return HTMLResponse(content=html_content, status_code=200)
+
+
+@router.get("/me")
+def current_user_info(
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, str | None]:
+    """Get current user info (session check endpoint).
+
+    Args:
+        user: Current authenticated user (raises 401 if not logged in).
+
+    Returns:
+        JSON dict with user id, email, name, role, and entity_id_scope.
+        PENDING role users can call this endpoint.
+    """
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "role": user.role.value,
+        "entity_id_scope": str(user.entity_id_scope) if user.entity_id_scope else None,
+    }
