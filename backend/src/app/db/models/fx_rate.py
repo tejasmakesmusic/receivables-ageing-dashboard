@@ -1,7 +1,21 @@
-"""FX rate — AED→INR (etc.), immutable after create (spec D15).
+"""FX rate — AED→INR (etc.), strictly immutable after create (spec D15).
 
-Immutability is enforced at the app layer via a SQLAlchemy event hook in
-`app/db/events.py`. No DB trigger — keeps Neon branches cheap.
+Immutability is enforced belt-and-suspenders:
+
+1. ORM ``before_flush`` hook in ``app/db/events.py`` — rejects dirty
+   FxRate instances at the SQLAlchemy session layer so the error surfaces
+   with a Python stack trace in application code.
+2. Postgres ``BEFORE UPDATE`` trigger ``fx_rates_no_update`` (installed
+   by migration ``0001_initial``) — catches writes that bypass the ORM
+   (raw SQL, ``session.execute(update(...))``, psql shell, etc.) and
+   raises ``restrict_violation`` at the DB level.
+
+Additionally, a partial unique index ``ix_fx_rates_pair_open`` on
+``(from_ccy, to_ccy) WHERE effective_to IS NULL`` enforces at the DB
+level that at most one currently-open row exists per currency pair.
+Under the total-immutability contract (§7 rule 4) ``effective_to``
+always stays NULL; the column + partial index are retained as an
+escape hatch if the contract is ever relaxed.
 """
 
 from __future__ import annotations

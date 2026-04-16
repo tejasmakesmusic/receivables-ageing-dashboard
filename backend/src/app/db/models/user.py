@@ -25,7 +25,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # the auth callback — simpler than requiring the citext extension on Neon.
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     google_sub: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
+    # Nullable — Google SSO may not return a display name on the first
+    # callback. Better to store NULL than a sentinel empty string; the admin
+    # approval screen matches on email, not name.
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[Role] = mapped_column(
         Enum(Role, name="role_enum", native_enum=True),
         nullable=False,

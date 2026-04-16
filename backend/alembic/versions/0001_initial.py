@@ -75,7 +75,11 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("email", sa.String(320), nullable=False),
         sa.Column("google_sub", sa.String(64), nullable=True),
-        sa.Column("name", sa.String(255), nullable=False, server_default=""),
+        # users.name is nullable — Google SSO may not return a display name
+        # on first callback, and the CLAUDE.md data-handling rule discourages
+        # forcing a sentinel empty string. PENDING users are approved by
+        # admin on email anyway, not name.
+        sa.Column("name", sa.String(255), nullable=True),
         sa.Column(
             "role",
             postgresql.ENUM(
@@ -155,8 +159,12 @@ def upgrade() -> None:
     # A second row with effective_to=NULL would mean two "live" rates for the
     # same pair — logically impossible. Postgres partial unique index is the
     # cleanest enforcement (SQLAlchemy's UniqueConstraint can't express this).
+    # Naming: this is an `ix_` (index), not a `uq_` (table-level constraint),
+    # because SQLAlchemy emits CREATE UNIQUE INDEX rather than ALTER TABLE …
+    # ADD CONSTRAINT for partial uniques. The `ix_` prefix keeps catalog
+    # inspection predictable (pg_indexes vs pg_constraint).
     op.create_index(
-        "uq_fx_rates_pair_open",
+        "ix_fx_rates_pair_open",
         "fx_rates",
         ["from_ccy", "to_ccy"],
         unique=True,
@@ -225,7 +233,7 @@ def downgrade() -> None:
     # fx_rates — drop D15 trigger + function + partial index before table
     op.execute("DROP TRIGGER IF EXISTS fx_rates_no_update ON fx_rates;")
     op.execute("DROP FUNCTION IF EXISTS fx_rates_block_update();")
-    op.drop_index("uq_fx_rates_pair_open", table_name="fx_rates")
+    op.drop_index("ix_fx_rates_pair_open", table_name="fx_rates")
     op.drop_table("fx_rates")
     op.execute(f"DROP TYPE IF EXISTS {_FX_SOURCE_ENUM_NAME};")
 
