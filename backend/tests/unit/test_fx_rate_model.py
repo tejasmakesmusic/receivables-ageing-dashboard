@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-# Importing `app.db` registers the D15 immutability listener as a side
-# effect (via app/db/__init__.py). Tests assume the hook is active.
-import app.db  # noqa: F401
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+# Importing `app.db` registers the D15 immutability listener as a side
+# effect (via app/db/__init__.py). Tests assume the hook is active.
+import app.db  # noqa: F401
 from app.db.events import _block_fx_rate_update
 from app.db.models.fx_rate import FxRate
 

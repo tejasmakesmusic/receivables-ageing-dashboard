@@ -74,6 +74,11 @@ def db_session(test_engine: Engine) -> Iterator[Session]:  # type: ignore[misc]
     Each test sees a clean DB because we roll back at teardown.
     The bootstrap seed (0002) data IS present across tests because
     migrations run once at session scope.
+
+    Cleanup is nested so a failure in one step (e.g. session.close()
+    raises on a broken connection) does not prevent the outer rollback
+    + connection close from running — which would otherwise leak a
+    Postgres connection per failed test.
     """
     connection = test_engine.connect()
     transaction = connection.begin()
@@ -83,9 +88,29 @@ def db_session(test_engine: Engine) -> Iterator[Session]:  # type: ignore[misc]
     try:
         yield session
     finally:
-        session.close()
-        transaction.rollback()
-        connection.close()
+        try:
+            session.close()
+        finally:
+            try:
+                transaction.rollback()
+            finally:
+                connection.close()
+
+
+@pytest.fixture(scope="session")
+def http_client() -> Iterator[TestClient]:  # type: ignore[misc]
+    """Session-scoped TestClient with NO DB dependency.
+
+    Use for tests that exercise routes independent of DB state (e.g.
+    `/health` while it remains a static stub, OpenAPI shape checks,
+    middleware smoke). When a route grows a DB dependency, migrate its
+    test to the function-scoped `client` fixture below so it participates
+    in the per-test transaction rollback.
+    """
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture
