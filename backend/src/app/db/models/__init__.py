@@ -7,12 +7,14 @@ populates `Base.metadata` for Alembic autogenerate.
 
 from __future__ import annotations
 
+from app.db.models.audit_log import AuditLog
 from app.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.models.entity import Entity
 from app.db.models.fx_rate import FxRate, FxRateSource
 from app.db.models.user import User
 
 __all__ = [
+    "AuditLog",
     "Base",
     "Entity",
     "FxRate",
