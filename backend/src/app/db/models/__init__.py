@@ -8,5 +8,6 @@ populates `Base.metadata` for Alembic autogenerate.
 from __future__ import annotations
 
 from app.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.models.entity import Entity
 
-__all__ = ["Base", "TimestampMixin", "UUIDPrimaryKeyMixin"]
+__all__ = ["Base", "Entity", "TimestampMixin", "UUIDPrimaryKeyMixin"]
