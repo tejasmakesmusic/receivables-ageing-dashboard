@@ -100,11 +100,13 @@ fx_rates
   to_ccy          TEXT          -- 'INR'
   rate            DECIMAL(18,6)
   valid_from      DATE
-  valid_to        DATE          -- nullable = current
+  valid_to        DATE          -- always NULL under D15 (reserved; see §7)
   set_by          INT FK users(id)
   set_at          TIMESTAMPTZ
   notes           TEXT
-  -- rows are immutable once set; new rate = new row with new valid_from
+  -- rows are strictly immutable (D15); new rate = new row with new valid_from.
+  -- Enforced by ORM before_flush hook + Postgres BEFORE UPDATE trigger +
+  -- partial unique index on (from_ccy, to_ccy) WHERE valid_to IS NULL.
 
 parties_canonical
   id              SERIAL PK
@@ -385,11 +387,11 @@ def compute_ageing(invoice_date, credit_days, as_of_date):
 
 ## 7. FX conversion rules
 
-1. AED→INR rate lookup: find the `fx_rates` row where `from_ccy='AED' AND to_ccy='INR' AND valid_from <= invoice.invoice_date AND (valid_to IS NULL OR invoice.invoice_date <= valid_to)`.
+1. AED→INR rate lookup: find all `fx_rates` rows where `from_ccy='AED' AND to_ccy='INR' AND valid_from <= invoice.invoice_date`, then pick the one with `MAX(valid_from)`. Rate rows are strictly immutable (D15); `valid_to` plays no role in lookup and in practice stays NULL on every row. The column is retained in the schema as an escape hatch if the total-immutability contract is ever relaxed.
 2. Applied only for consolidated view. UAE dashboard shows native AED.
 3. Missing rate = FAIL the consolidated view render with explicit error "No FX rate configured for invoice date 2026-03-15, please set in Admin → FX Rates".
-4. Rate rows are immutable. To change, admin creates a new row with a new `valid_from` (and closes the prior row by setting its `valid_to`).
-5. Every INR figure in consolidated view carries a tooltip: "Converted at AED→INR {rate} effective {valid_from} to {valid_to}".
+4. Rate rows are strictly immutable (D15) — enforced belt-and-suspenders by (a) an ORM `before_flush` hook in `app/db/events.py` and (b) a Postgres `BEFORE UPDATE` trigger installed by migration `0001_initial`. To change a rate, admin inserts a NEW row with a new `valid_from`; the prior row is never modified. A partial unique index on `(from_ccy, to_ccy) WHERE valid_to IS NULL` enforces "at most one currently-open row per currency pair" at the DB level.
+5. Every INR figure in consolidated view carries a tooltip: "Converted at AED→INR {rate} effective from {valid_from}". (No upper bound shown — rows are immutable, so the displayed rate was the active one from `valid_from` until at least the next row's `valid_from`; the tooltip leaves the implicit upper bound out.)
 
 ---
 
@@ -461,7 +463,7 @@ POST   /snapshots/:id/discard
 # Config
 GET/POST/PATCH/DELETE /config/credit-period
 GET/POST/PATCH/DELETE /config/aliases
-GET/POST              /config/fx-rates   # no DELETE (immutable)
+GET/POST              /config/fx-rates   # no DELETE or PATCH — rows immutable per D15 (trigger-enforced)
 GET/POST/PATCH        /config/exception-buckets
 
 # Data
