@@ -2,6 +2,15 @@
 
 Every role change, FX rate create, ingestion upload, rule activation etc.
 writes a row here with before/after JSON snapshots.
+
+Immutability is enforced by discipline, not by an ORM event hook (unlike
+FxRate/D15). Writes flow exclusively through the `write_audit_log` helper
+(Task 21), which is the single documented entry point. No before_flush
+guard here because:
+  - tests and bootstrap migrations need to seed rows directly
+  - future archival/retention jobs need to DELETE old rows
+  - admin "redact PII from this row" workflows may need targeted UPDATE
+These are all legitimate write paths that a hook would block.
 """
 
 from __future__ import annotations
@@ -29,7 +38,13 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # Convention: snake_case verb naming the mutation type.
+    # Examples: "fx_rate_create", "role_change", "user_activate",
+    # "entity_publish". Enforced by write_audit_log in Task 21.
     action: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Name of the table `entity_id` points at — e.g. "users", "fx_rates".
+    # No FK because the reference is polymorphic; the write helper is
+    # responsible for keeping (entity_type, entity_id) pairs coherent.
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
