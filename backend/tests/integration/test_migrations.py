@@ -33,4 +33,7 @@ def test_migration_files_parse() -> None:
     """alembic heads must succeed — proves every versions/*.py is importable."""
     result = _alembic(["heads"])
     assert result.returncode == 0, result.stderr
-    assert "0001" in result.stdout or "initial" in result.stdout
+    # Verify the latest migration is the head (update when a new migration lands).
+    assert "0002_seed_bootstrap_admin" in result.stdout, (
+        f"Unexpected alembic heads output: {result.stdout!r}"
+    )
