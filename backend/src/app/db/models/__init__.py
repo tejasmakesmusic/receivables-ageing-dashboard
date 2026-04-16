@@ -9,5 +9,6 @@ from __future__ import annotations
 
 from app.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.models.entity import Entity
+from app.db.models.user import User
 
-__all__ = ["Base", "Entity", "TimestampMixin", "UUIDPrimaryKeyMixin"]
+__all__ = ["Base", "Entity", "TimestampMixin", "UUIDPrimaryKeyMixin", "User"]
