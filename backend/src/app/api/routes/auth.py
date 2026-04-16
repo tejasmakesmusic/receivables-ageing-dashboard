@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html as html_lib
 import json
 import secrets
 import uuid
@@ -324,13 +325,16 @@ def pending(
     if user.role != Role.PENDING:
         return RedirectResponse(url="/", status_code=302)
 
-    # Show pending approval page with user's email
+    # Show pending approval page with user's email.
+    # html_lib.escape() prevents reflected XSS — email is DB-sourced but was
+    # originally user-supplied via Google, so defensively escape it.
+    safe_email = html_lib.escape(user.email)
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>Awaiting Approval — EMB Receivables</title></head>
 <body>
   <h1>Account pending approval</h1>
-  <p>Your <strong>{user.email}</strong> account has been registered and is awaiting
+  <p>Your <strong>{safe_email}</strong> account has been registered and is awaiting
   admin approval. You will be notified by email once approved.</p>
   <p><a href="/auth/logout">Sign out</a></p>
 </body>
