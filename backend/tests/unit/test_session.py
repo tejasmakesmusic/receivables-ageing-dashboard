@@ -144,15 +144,43 @@ class TestReadErrors:
 
         assert result is None
 
+    def test_read_expired_cookie_returns_none(
+        self, sample_session_data: SessionData, mock_settings: MagicMock
+    ) -> None:
+        """Expired cookie (SignatureExpired) should return None."""
+        # Create a valid cookie
+        response = MagicMock()
+        with patch("app.core.session.get_settings", return_value=mock_settings):
+            create_session_cookie(sample_session_data, response)
+
+        call_kwargs = response.set_cookie.call_args[1]
+        signed_value = call_kwargs["value"]
+
+        # Force the serializer to raise SignatureExpired during loads
+        from itsdangerous import SignatureExpired
+
+        request = MagicMock()
+        request.cookies = {"session": signed_value}
+
+        with patch("app.core.session.URLSafeTimedSerializer") as mock_serializer_cls:
+            mock_instance = mock_serializer_cls.return_value
+            mock_instance.loads.side_effect = SignatureExpired("token expired")
+
+            with patch("app.core.session.get_settings", return_value=mock_settings):
+                result = read_session_cookie(request)
+
+        assert result is None, "Expired cookie must return None"
+
 
 class TestClearSessionCookie:
     """Test clear_session_cookie."""
 
     def test_clear_sets_max_age_zero(self, mock_settings: MagicMock) -> None:
-        """clear_session_cookie should set max_age=0."""
+        """clear_session_cookie should set max_age=0 and mirror the create attributes."""
         response = MagicMock()
 
-        clear_session_cookie(response)
+        with patch("app.core.session.get_settings", return_value=mock_settings):
+            clear_session_cookie(response)
 
         assert response.set_cookie.called
         call_kwargs = response.set_cookie.call_args[1]
@@ -162,6 +190,9 @@ class TestClearSessionCookie:
         assert call_kwargs["path"] == "/"
         assert call_kwargs["httponly"] is True
         assert call_kwargs["samesite"] == "lax"
+        # secure must mirror create_session_cookie so browser treats them as
+        # the same cookie and deletes it.
+        assert call_kwargs["secure"] == mock_settings.session_cookie_secure
 
 
 class TestSessionDataVariations:

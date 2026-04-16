@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from itsdangerous import BadData, URLSafeTimedSerializer
 
 from app.config import get_settings
 from app.core.rbac import Role
@@ -84,10 +84,11 @@ def read_session_cookie(request: Request) -> SessionData | None:
 
     try:
         payload = serializer.loads(cookie_value, max_age=settings.session_max_age_seconds)
-    except (BadSignature, SignatureExpired):
-        return None
-    except Exception:
-        # Catch any other deserialization errors (malformed payload, etc.)
+    except BadData:
+        # BadData is the base class for BadSignature, SignatureExpired,
+        # BadPayload, BadHeader — covers all itsdangerous decode failures
+        # without masking programming errors (NameError etc.) that a bare
+        # `except Exception` would swallow.
         return None
 
     try:
@@ -104,13 +105,18 @@ def read_session_cookie(request: Request) -> SessionData | None:
 def clear_session_cookie(response: Response) -> None:
     """Delete the session cookie by setting max_age=0.
 
+    Must mirror the same attributes (secure, path) used in create_session_cookie
+    so the browser treats them as the same cookie and removes it.
+
     Args:
         response: Starlette Response object to clear the cookie on.
     """
+    settings = get_settings()
     response.set_cookie(
         key="session",
         value="",
         httponly=True,
+        secure=settings.session_cookie_secure,
         samesite="lax",
         max_age=0,
         path="/",
