@@ -51,17 +51,17 @@ def get_current_user(
         HTTPException: 401 if cookie missing/invalid or user not found.
                        403 if user account is deactivated.
     """
-    # Step 1: Read session cookie
+    # Read session cookie — returns None if missing, expired, or tampered
     session_data = read_session_cookie(request)
     if not session_data:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Step 3: Look up user in DB
+    # Look up user in DB by the UUID embedded in the cookie
     user = session.get(User, session_data.user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    # Step 5: Check if user is active
+    # Reject deactivated accounts (admin can flip is_active=False)
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account deactivated")
 
@@ -98,7 +98,14 @@ def require_role(*roles: Role) -> Callable[[User], User]:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
 
+    # Guard against callers passing plain strings instead of Role enum members.
+    # Fail at definition time (startup) so misuse is caught before a request lands.
+    from app.core.rbac import Role as _Role  # local import avoids module-level circular dep
+
+    if not all(isinstance(r, _Role) for r in roles):
+        raise TypeError(f"require_role() expects Role enum values, got: {roles!r}")
+
     return check_role
 
 
-__all__ = ["db_session", "get_current_user", "require_role", "Depends"]
+__all__ = ["db_session", "get_current_user", "require_role"]
