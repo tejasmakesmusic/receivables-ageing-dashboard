@@ -177,7 +177,7 @@ class ParseResult(BaseModel):
     errors: list[ParseError] = Field(default_factory=list)
     warnings: list[ParseError] = Field(default_factory=list)
 
-    # Set by Xero parser (Task 3); None for Tally / Credit Period.
+    # Populated by the Xero parser only; None for Tally and Credit Period.
     as_of_date: date | None = None
 
     file_sha256: str
