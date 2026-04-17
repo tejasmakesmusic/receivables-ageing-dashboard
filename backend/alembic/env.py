@@ -7,11 +7,13 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# Import all model modules so Base.metadata is fully populated.
-# (Empty in M0; populated as models are added.)
-import app.models  # noqa: F401
+# Import the models package so every model module is loaded and
+# Base.metadata is fully populated. (Empty until Task 3; grows as
+# Entity / User / FxRate / AuditLog land.)
+import app.db.models  # noqa: F401
 from app.config import get_settings
-from app.db.base import Base
+from app.db.models import Base
+from app.db.session import _normalize_dsn
 
 config = context.config
 
@@ -24,7 +26,7 @@ if config.config_file_name is not None:
 _s = get_settings()
 config.set_main_option(
     "sqlalchemy.url",
-    _s.database_url_direct or _s.database_url,
+    _normalize_dsn(_s.database_url_direct or _s.database_url),
 )
 
 target_metadata = Base.metadata

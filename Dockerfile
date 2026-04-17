@@ -33,11 +33,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen || uv sync
+# README.md is referenced from pyproject.toml's readme field; hatchling
+# requires it at build time when uv sync compiles the root package.
+COPY pyproject.toml uv.lock* README.md ./
+RUN uv sync --frozen
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONPATH="/app/backend/src:${PYTHONPATH}"
 
@@ -57,29 +59,39 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     PORT=8000
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
 
 # Non-root user for runtime
 RUN groupadd -r app && useradd -r -g app app
 
 WORKDIR /app
 
-# Install runtime deps only (no dev extras)
-COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen --no-dev || uv sync --no-dev
+# Install runtime deps only (no dev extras). README.md needed by hatchling.
+COPY pyproject.toml uv.lock* README.md ./
+RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONPATH="/app/backend/src:${PYTHONPATH}"
 
 # Backend source
 COPY backend/ ./backend/
 
+# Railway entrypoint script
+COPY scripts/ ./scripts/
+
 # Frontend production bundle (served via FastAPI StaticFiles — spec §11)
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+# Install wget for HEALTHCHECK probe (python:3.12-slim strips it)
+RUN apt-get update && apt-get install -y --no-install-recommends wget \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN chown -R app:app /app
 USER app
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:${PORT:-8000}/health || exit 1
 
 # Railway sets $PORT; respect it.
 CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

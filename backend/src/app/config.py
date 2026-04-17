@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     google_oauth_allowed_domain: str = "emb.global"
     google_oauth_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
+    # ---- Auth provider toggle (M1) ----
+    # "stub" is for local dev + tests only. Startup guard raises if stub is
+    # selected in production — see app/core/startup.py.
+    auth_provider: Literal["google", "stub"] = "stub"
+
     # ---- Email provider (D22) ----
     email_provider: Literal["resend", "sendgrid"] = "resend"
     resend_api_key: str = ""
