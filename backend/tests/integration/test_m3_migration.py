@@ -576,12 +576,16 @@ def test_party_alias_unique_alias_text_canonical(db_session: Session) -> None:
 
 @pytest.mark.integration
 def test_m3_migration_heads_includes_0003() -> None:
-    """alembic heads must include 0003_m3_ingestion as the current head."""
+    """alembic heads must include 0004_snapshots_as_of_nullable as the current head.
+
+    Updated from 0003_m3_ingestion → 0004_snapshots_as_of_nullable by M3 Task 2
+    (added nullable migration for CREDIT_PERIOD uploads).
+    """
     result = _alembic(["heads"])
     assert result.returncode == 0, result.stderr
     assert (
-        "0003_m3_ingestion" in result.stdout
-    ), f"0003_m3_ingestion not in alembic heads output: {result.stdout!r}"
+        "0004_snapshots_as_of_nullable" in result.stdout
+    ), f"0004_snapshots_as_of_nullable not in alembic heads output: {result.stdout!r}"
 
 
 @pytest.mark.serial  # must not run concurrently with other DB-mutating tests; see docstring
@@ -607,18 +611,18 @@ def test_m3_downgrade_then_upgrade_idempotent() -> None:
     down = _alembic(["downgrade", "-1"])
     assert down.returncode == 0, f"downgrade failed:\n{down.stderr}"
 
-    # Confirm M3 tables are gone after downgrade.
-    # (We check via alembic current — if it shows 0002 we know 0003 was removed.)
+    # After downgrade -1 from 0004, we should be at 0003_m3_ingestion.
+    # (M3 Task 2 added 0004_snapshots_as_of_nullable on top of 0003.)
     current = _alembic(["current"])
     assert (
-        "0002_seed_bootstrap_admin" in current.stdout
-    ), f"Expected current to be 0002 after downgrade: {current.stdout!r}"
+        "0003_m3_ingestion" in current.stdout
+    ), f"Expected current to be 0003 after downgrade: {current.stdout!r}"
 
-    # Re-apply 0003.
+    # Re-apply head (0004).
     up = _alembic(["upgrade", "head"])
     assert up.returncode == 0, f"re-upgrade failed:\n{up.stderr}"
 
     current2 = _alembic(["current"])
     assert (
-        "0003_m3_ingestion" in current2.stdout
-    ), f"Expected current to be 0003 after re-upgrade: {current2.stdout!r}"
+        "0004_snapshots_as_of_nullable" in current2.stdout
+    ), f"Expected current to be 0004 after re-upgrade: {current2.stdout!r}"
