@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 # ---------------------------------------------------------------------------
@@ -154,6 +154,16 @@ def test_party_name_forward_fill(simple_tally_bytes: bytes) -> None:
     party_invs = next(iter(multi.values()))
     first_name = party_invs[0].party_name_raw
     assert all(inv.party_name_raw == first_name for inv in party_invs)
+    # Cross-party isolation (FIX-7): a DIFFERENT party must not share the first party's name.
+    other_parties = {p: invs for p, invs in by_party.items() if p != first_name}
+    assert other_parties, (
+        "Expected at least two distinct parties for cross-party isolation test "
+        "(synthetic file has PartyAlpha and PartyBeta)"
+    )
+    other_invs = next(iter(other_parties.values()))
+    assert (
+        other_invs[0].party_name_raw != first_name
+    ), "Forward-fill leaked across party boundary: two different parties share the same name"
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +183,8 @@ def test_subtotal_rows_not_emitted_as_invoices(simple_tally_bytes: bytes) -> Non
                 inv.invoice_date is not None
             ), f"OK invoice at row {inv.row_index} has None invoice_date"
             assert inv.amount is not None, f"OK invoice at row {inv.row_index} has None amount"
+    # Simple synthetic fixture: 2 invoices under PartyAlpha + 1 under PartyBeta = 3 OK (FIX-6).
+    assert len([i for i in result.invoices if i.status == ParseStatus.OK]) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +333,10 @@ def test_subtotal_mismatch_warning_synthetic() -> None:
     # Pin the non-blocking contract explicitly (spec §4.1 re-amended).
     assert result.is_valid is True
     assert not any(e.code == "SUBTOTAL_MISMATCH" for e in result.errors)
+    # Pin exact delta: subtotal=1100, invoice_sum=1000, diff=100 (FIX-5).
+    w = subtotal_mismatches[0]
+    assert w.detail is not None
+    assert Decimal(w.detail["subtotal_value"]) - Decimal(w.detail["sum_of_rows"]) == Decimal("100")
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +383,10 @@ def test_grand_total_mismatch_error_synthetic() -> None:
     # GRAND_TOTAL_MISMATCH is a warning (non-blocking): is_valid must still be True
     # (assuming no other blocking errors are present in this synthetic file).
     assert result.is_valid is True
+    # Pin exact delta: sum_of_subtotals=8000, grand_total=8050, diff=50 (FIX-5).
+    w_gt = mismatch_warnings[0]
+    assert w_gt.detail is not None
+    assert Decimal(w_gt.detail["delta"]) == Decimal("50")
 
 
 # ---------------------------------------------------------------------------
@@ -410,3 +430,103 @@ def test_blank_subtotal_rows_skipped_silently_synthetic() -> None:
         w for w in result.warnings if "blank" in w.code.lower() or "nan" in w.code.lower()
     ]
     assert not blank_warnings, f"Unexpected blank-row warnings: {blank_warnings}"
+    # One invoice per party = 2 OK total (FIX-6).
+    assert len([i for i in result.invoices if i.status == ParseStatus.OK]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Test 14: party header with opening_amount populated forward-fills (FIX-1)
+# ---------------------------------------------------------------------------
+
+
+def test_party_header_with_opening_balance_amount_forward_fills() -> None:
+    """Party header with non-empty opening_amount still classifies as header.
+
+    Spec §4.1 rule 2: opening_amount and pending_amount are NOT part of the
+    party-header predicate.  A Tally export variant that carries the party's
+    opening balance on the header row must not fall through to PARSE_ERROR,
+    and subsequent invoice rows must forward-fill the party name correctly.
+
+    Regression guard for the over-constrained predicate removed in FIX-1.
+    """
+    # Header row: party_name populated, date+ref_no empty, opening_amount=10000 (non-empty).
+    opening_balance_header = [None, None, "OpeningBalanceParty", 10000, None, None, None]
+    invoice_row = [date(2026, 4, 1), "INV-OB-001", None, 5000, 5000, None, None]
+    subtotal_row = [None, None, None, 15000, 5000, None, None]
+    grand_total_row = [None, None, None, 15000, 5000, None, None]
+
+    data_rows: list[list[Any]] = [
+        opening_balance_header,
+        invoice_row,
+        subtotal_row,
+        grand_total_row,
+    ]
+    file_bytes = _build_wb_bytes(data_rows)
+    result = parse_tally_grpbills(file_bytes)
+
+    ok_invoices = [i for i in result.invoices if i.status == ParseStatus.OK]
+    assert ok_invoices, (
+        "Expected at least one OK invoice; header with opening_amount must not "
+        "produce PARSE_ERROR — check _is_party_header predicate (FIX-1)"
+    )
+    # Forward-fill: the invoice's party_name_raw must be the header's party name.
+    assert ok_invoices[0].party_name_raw == "OpeningBalanceParty"
+
+
+# ---------------------------------------------------------------------------
+# Test 15: _parse_date returns plain date, not datetime (FIX-3)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_date_handles_datetime_object_returns_plain_date() -> None:
+    """A datetime.datetime cell must produce invoice_date of type date, not datetime.
+
+    datetime is a subclass of date so isinstance checks can silently pass through
+    datetime objects without calling .date(). _parse_date must handle datetime first
+    to satisfy the date | None annotation.
+    """
+    dt_cell = datetime(2026, 4, 17, 14, 30)
+    data_rows: list[list[Any]] = [
+        [None, None, "DateTimeTestCo", None, None, None, None],
+        [dt_cell, "INV-DT-001", None, 1000, 1000, None, None],
+        [None, None, None, 1000, 1000, None, None],
+        [None, None, None, 1000, 1000, None, None],
+    ]
+    file_bytes = _build_wb_bytes(data_rows)
+    result = parse_tally_grpbills(file_bytes)
+
+    ok_invoices = [i for i in result.invoices if i.status == ParseStatus.OK]
+    assert ok_invoices, "Expected at least one OK invoice for datetime-cell test"
+    inv = ok_invoices[0]
+    assert inv.invoice_date == date(
+        2026, 4, 17
+    ), f"Expected date(2026, 4, 17), got {inv.invoice_date!r}"
+    # Critical: must be exactly date, NOT datetime (datetime is subclass of date).
+    assert type(inv.invoice_date) is date, (
+        f"Expected type date, got {type(inv.invoice_date)} — "
+        "_parse_date must call .date() on datetime objects (FIX-3)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 16: real fixture OK invoice count == 291 (FIX-4)
+# ---------------------------------------------------------------------------
+
+
+def test_real_fixture_ok_invoice_count_matches_known_fixture(
+    tally_file_bytes: bytes,
+) -> None:
+    """Real GrpBills.xlsx must produce exactly 291 OK invoices.
+
+    ADR-0003 addendum documents 291 invoice rows.  This test is the
+    authoritative count gate — if the parser logic changes the count the test
+    fails, not the ADR.  The number 291 was verified by a direct parse run on
+    the fixture (2026-04-17) with 0 PARSE_ERROR rows.
+    """
+    result = parse_tally_grpbills(tally_file_bytes)
+    ok_invoices = [i for i in result.invoices if i.status == ParseStatus.OK]
+    assert len(ok_invoices) == 291, (
+        f"Expected 291 OK invoices on real GrpBills.xlsx fixture; got {len(ok_invoices)}. "
+        "If the fixture was replaced, re-measure and update this count together with "
+        "ADR-0003 addendum."
+    )

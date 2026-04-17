@@ -146,19 +146,16 @@ def _detect_grand_total(
 ) -> tuple[int, Decimal] | tuple[None, None]:
     """Return (row_index, pending_amount) for the grand total row.
 
-    Detection heuristic (robust, no hard-coded row numbers):
-    - Walk the sheet from the bottom upward.
-    - The grand total is the **last** subtotal-shaped row that is immediately
-      preceded by another subtotal-shaped row (i.e. both rows have the same
-      shape: date/ref/party empty, pending/opening populated).
-    - If no such row pair exists, the last subtotal-shaped row is treated as
-      the grand total unconditionally (fall-back).
+    Implementation: collect every subtotal-shaped row (date/ref/party all
+    empty, pending or opening populated) in forward order.  The last such row
+    is unconditionally treated as the grand total — no adjacency check is
+    performed.
 
-    Rationale: in a real Tally export the party-subtotal for the last party
-    (e.g. Z42 LABS) is at row N, and the overall grand total is at row N+1.
-    Both rows are subtotal-shaped; the grand total has pending >> last-party
-    subtotal in practice, but we detect by position not magnitude so that the
-    parser remains robust for synthetic test data.
+    - If no subtotal-shaped rows exist → return (None, None).
+    - If exactly one subtotal-shaped row exists → treat it as the grand total;
+      if its pending_amount is NaN → return (None, None).
+    - If two or more exist → the last one is the grand total; if its
+      pending_amount is NaN → return (None, None).
     """
     subtotal_rows: list[tuple[int, Any]] = []  # (raw_index, row)
     for idx in range(data_start, len(df)):
