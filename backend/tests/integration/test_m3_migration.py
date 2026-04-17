@@ -575,17 +575,22 @@ def test_party_alias_unique_alias_text_canonical(db_session: Session) -> None:
 
 
 @pytest.mark.integration
-def test_m3_migration_heads_includes_0003() -> None:
-    """alembic heads must include 0004_snapshots_as_of_nullable as the current head.
+def test_m3_migration_heads_is_linear() -> None:
+    """alembic heads must return exactly one head (linear M3 history).
 
-    Updated from 0003_m3_ingestion → 0004_snapshots_as_of_nullable by M3 Task 2
-    (added nullable migration for CREDIT_PERIOD uploads).
+    The specific head revision id shifts as M3 tasks land migrations on top
+    (0003 → 0004 → 0005 → ...). What matters is that there's a single head
+    and the chain upgrades cleanly — pinning a specific id makes this test
+    need maintenance every time a new migration lands. M3's `test_m3_*`
+    tests cover the schema shape under `upgrade head` separately.
     """
     result = _alembic(["heads"])
     assert result.returncode == 0, result.stderr
-    assert (
-        "0004_snapshots_as_of_nullable" in result.stdout
-    ), f"0004_snapshots_as_of_nullable not in alembic heads output: {result.stdout!r}"
+    # `alembic heads` prints one line per head; a linear history has exactly one.
+    head_lines = [ln for ln in result.stdout.strip().splitlines() if ln.strip()]
+    assert len(head_lines) == 1, (
+        f"Expected exactly one M3 migration head (linear history), got: {result.stdout!r}"
+    )
 
 
 @pytest.mark.serial  # must not run concurrently with other DB-mutating tests; see docstring
@@ -599,7 +604,15 @@ def test_m3_downgrade_then_upgrade_idempotent() -> None:
     this test needs an isolation mechanism (dedicated Neon branch or a
     session-scoped mutex).
 
-    Downgrade -1 then upgrade head must complete without error.
+    Downgrade to 0003_m3_ingestion (M3 baseline) then upgrade back to head
+    must complete without error. Anchors on the M3 base revision explicitly
+    rather than `-1` so the test is robust as more M3 migrations are added
+    (0004 nullable-as_of, 0005 staging_overrides, ...).
+
+    CRITICAL: if this test fails mid-way, the schema is left partially
+    downgraded. All subsequent tests relying on later-migration columns
+    (e.g. staging_overrides_json) will fail. The try/finally below guarantees
+    we always `upgrade head` on exit, even on assertion failure.
 
     The ``db_session`` fixture's session-scoped ``test_engine`` runs
     ``upgrade head`` at setup, so the branch is always at head when
@@ -608,21 +621,23 @@ def test_m3_downgrade_then_upgrade_idempotent() -> None:
     Mark xfail if you need to skip: add ``@pytest.mark.xfail`` with an issue
     link.  Never use ``skip`` without one per CLAUDE.md testing discipline.
     """
-    down = _alembic(["downgrade", "-1"])
-    assert down.returncode == 0, f"downgrade failed:\n{down.stderr}"
+    try:
+        down = _alembic(["downgrade", "0003_m3_ingestion"])
+        assert down.returncode == 0, f"downgrade failed:\n{down.stderr}"
 
-    # After downgrade -1 from 0004, we should be at 0003_m3_ingestion.
-    # (M3 Task 2 added 0004_snapshots_as_of_nullable on top of 0003.)
-    current = _alembic(["current"])
-    assert (
-        "0003_m3_ingestion" in current.stdout
-    ), f"Expected current to be 0003 after downgrade: {current.stdout!r}"
-
-    # Re-apply head (0004).
-    up = _alembic(["upgrade", "head"])
-    assert up.returncode == 0, f"re-upgrade failed:\n{up.stderr}"
+        current = _alembic(["current"])
+        assert (
+            "0003_m3_ingestion" in current.stdout
+        ), f"Expected current to be 0003 after downgrade: {current.stdout!r}"
+    finally:
+        # ALWAYS re-upgrade to head so the shared Neon branch is safe for
+        # subsequent tests, even if the assertions above fail.
+        up = _alembic(["upgrade", "head"])
+        assert up.returncode == 0, f"re-upgrade failed:\n{up.stderr}"
 
     current2 = _alembic(["current"])
+    # Just verify we're not stuck at 0003 — don't pin the exact head revision
+    # so this test doesn't need updating every time a new M3 migration lands.
     assert (
-        "0004_snapshots_as_of_nullable" in current2.stdout
-    ), f"Expected current to be 0004 after re-upgrade: {current2.stdout!r}"
+        "0003_m3_ingestion" not in current2.stdout
+    ), f"Expected current to be past 0003 after re-upgrade: {current2.stdout!r}"
