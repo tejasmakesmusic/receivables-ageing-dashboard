@@ -17,6 +17,7 @@ from app.parsers.common import (
     is_empty_cell,
     stringify_cell,
 )
+from app.parsers.credit_period import parse_credit_period_master
 from app.parsers.tally import parse_tally_grpbills
 from app.parsers.xero import parse_xero_aged_receivables
 
@@ -28,6 +29,7 @@ __all__ = [
     "StagedInvoice",
     "compute_file_sha256",
     "is_empty_cell",
+    "parse_credit_period_master",
     "parse_tally_grpbills",
     "parse_xero_aged_receivables",
     "stringify_cell",
