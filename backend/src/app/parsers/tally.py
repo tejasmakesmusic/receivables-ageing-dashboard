@@ -20,7 +20,7 @@ Guardrails (spec §15 + CLAUDE.md):
 from __future__ import annotations
 
 import io
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -34,6 +34,7 @@ from app.parsers.common import (
     StagedInvoice,
     compute_file_sha256,
     is_empty_cell,
+    parse_date_cell,
     stringify_cell,
 )
 
@@ -104,35 +105,6 @@ def _is_subtotal_or_grand_total(row: pd.Series[Any]) -> bool:
 def _row_to_raw_json(row: pd.Series[Any]) -> dict[str, str | None]:
     """Convert a full raw row to a JSON-safe dict (spec §4.1 rule 3)."""
     return {col: stringify_cell(row[col]) for col in _COL_NAMES}
-
-
-# ---------------------------------------------------------------------------
-# Date parsing
-# ---------------------------------------------------------------------------
-
-
-def _parse_date(val: Any) -> date | None:
-    """Parse a cell value to ``datetime.date``.
-
-    Returns ``None`` if ``val`` is empty.  Raises ``ValueError`` with a
-    descriptive message if the value is present but unparseable.
-    """
-    if is_empty_cell(val):
-        return None
-    if isinstance(val, datetime):
-        return val.date()
-    if isinstance(val, date):
-        return val
-    # pandas Timestamp (comes from openpyxl for datetime cells)
-    if hasattr(val, "date") and callable(val.date):
-        result: date = val.date()
-        return result
-    # Fallback: try parsing string
-    try:
-        parsed: date = pd.to_datetime(str(val)).date()
-        return parsed
-    except Exception as exc:
-        raise ValueError(f"Cannot parse date from {val!r}: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +283,7 @@ def parse_tally_grpbills(file_bytes: bytes) -> ParseResult:  # noqa: PLR0912,PLR
             parsed_date: date | None = None
             date_parse_error: str | None = None
             try:
-                parsed_date = _parse_date(date_raw)
+                parsed_date = parse_date_cell(date_raw)
             except ValueError as exc:
                 date_parse_error = str(exc)
 
@@ -457,7 +429,22 @@ def parse_tally_grpbills(file_bytes: bytes) -> ParseResult:  # noqa: PLR0912,PLR
         Decimal("0"),
     )
 
-    if grand_total_pending is not None:
+    if grand_total_pending is None:
+        # Edge case: no subtotal-shaped rows at all (file lacks a grand total line).
+        # Emit a non-blocking warning so the analyst can decide if the file is
+        # legitimate or truncated (spec §4.1 — GRAND_TOTAL_ROW_NOT_DETECTED).
+        warnings.append(
+            ParseError(
+                row_index=-1,
+                code="GRAND_TOTAL_ROW_NOT_DETECTED",
+                message=(
+                    "Parser could not identify a grand total row in the sheet. "
+                    "The file may be truncated or the format has changed."
+                ),
+                detail={"sum_of_invoice_pending": str(sum_of_invoice_pending)},
+            )
+        )
+    else:
         # Hard check: sum(party_subtotal_pending) vs grand_total (₹1 tolerance).
         sum_of_party_subtotals = sum(
             (v for v in party_subtotals.values() if v is not None),
@@ -489,7 +476,7 @@ def parse_tally_grpbills(file_bytes: bytes) -> ParseResult:  # noqa: PLR0912,PLR
                 )
             )
 
-        # Informational warning (always emitted for auditability — spec §4.1 rule 8).
+        # Informational warning (emitted when grand total row is detected — spec §4.1 rule 8).
         invoice_delta = sum_of_invoice_pending - grand_total_pending
         warnings.append(
             ParseError(

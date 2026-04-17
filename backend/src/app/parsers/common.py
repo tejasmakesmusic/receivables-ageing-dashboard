@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
@@ -115,7 +115,13 @@ class StagedInvoice(BaseModel):
 
 
 class StagedCreditPeriod(BaseModel):
-    """One row from the Credit Period master (India or UAE sheet, spec §4.3)."""
+    """One row from the Credit Period master (India or UAE sheet, spec §4.3).
+
+    Unlike StagedInvoice, this model does not carry a raw_row_json field: the
+    Credit Period master is a configuration file, not a transactional record,
+    and downstream auditing uses the credit_period_config table's valid_from /
+    valid_to versioning (spec §3) rather than a per-row audit trail.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -179,6 +185,11 @@ class ParseResult(BaseModel):
     warnings: list[ParseError] = Field(default_factory=list)
 
     # Populated by the Xero parser only; None for Tally and Credit Period.
+    # M3 contract:
+    #   - TALLY: as_of_date=None — M3 upload form must collect and supply.
+    #   - XERO:  as_of_date sniffed from row 2 (or None on sniff failure).
+    #           M3 uses this when present; falls back to form input when None.
+    #   - CREDIT_PERIOD: always None (field not applicable).
     as_of_date: date | None = None
 
     file_sha256: str
@@ -234,3 +245,40 @@ def stringify_cell(val: Any) -> str | None:
     if is_empty_cell(val):
         return None
     return str(val)
+
+
+def parse_date_cell(val: Any) -> date | None:
+    """Parse a pandas/xlsx cell value to ``datetime.date``.
+
+    Returns ``None`` if *val* is empty (via ``is_empty_cell``).
+    Raises ``ValueError`` with a descriptive message if the value is present
+    but cannot be parsed as a date.
+
+    Type dispatch order (important — datetime must be checked before date
+    because ``datetime`` is a subclass of ``date``):
+
+    1. Empty  → ``None``
+    2. ``datetime.datetime``  → ``.date()``  (subclass check first)
+    3. ``datetime.date``      → return as-is
+    4. pandas ``Timestamp`` (has a callable ``.date`` attribute) → ``.date()``
+    5. Anything else → ``pd.to_datetime(str(val)).date()`` with descriptive
+       ``ValueError`` on failure.
+
+    Shared by all parsers (Tally, Xero) — replaces per-module ``_parse_date``.
+    """
+    if is_empty_cell(val):
+        return None
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    # pandas Timestamp (comes from openpyxl for datetime cells)
+    if hasattr(val, "date") and callable(val.date):
+        result: date = val.date()
+        return result
+    # Fallback: try parsing string
+    try:
+        parsed: date = pd.to_datetime(str(val)).date()
+        return parsed
+    except Exception as exc:
+        raise ValueError(f"Cannot parse date from {val!r}: {exc}") from exc

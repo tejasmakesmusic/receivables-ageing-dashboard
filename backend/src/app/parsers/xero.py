@@ -30,7 +30,7 @@ from __future__ import annotations
 import contextlib
 import io
 import re
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -44,6 +44,7 @@ from app.parsers.common import (
     StagedInvoice,
     compute_file_sha256,
     is_empty_cell,
+    parse_date_cell,
     stringify_cell,
 )
 
@@ -143,31 +144,6 @@ def _row_to_raw_json(
     integer positional indices, not column-name indices.
     """
     return {col: stringify_cell(row.iloc[col_name_to_idx[col]]) for col in col_names}
-
-
-def _parse_date(val: Any) -> date | None:
-    """Parse a cell value to ``datetime.date``.
-
-    Returns ``None`` if ``val`` is empty.  Raises ``ValueError`` with a
-    descriptive message if the value is present but unparseable.
-    Mirrors the Task 2 Tally implementation exactly.
-    """
-    if is_empty_cell(val):
-        return None
-    if isinstance(val, datetime):
-        return val.date()
-    if isinstance(val, date):
-        return val
-    # pandas Timestamp (comes from openpyxl for datetime cells)
-    if hasattr(val, "date") and callable(val.date):
-        result: date = val.date()
-        return result
-    # Fallback: try parsing string
-    try:
-        parsed: date = pd.to_datetime(str(val)).date()
-        return parsed
-    except Exception as exc:
-        raise ValueError(f"Cannot parse date from {val!r}: {exc}") from exc
 
 
 def _build_xero_metadata(
@@ -439,7 +415,7 @@ def parse_xero_aged_receivables(file_bytes: bytes) -> ParseResult:  # noqa: PLR0
             try:
                 if inv_date_col is None:
                     raise ValueError("Invoice Date column not found in header")
-                parsed_date = _parse_date(row.iloc[inv_date_col])
+                parsed_date = parse_date_cell(row.iloc[inv_date_col])
             except ValueError as exc:
                 date_parse_error = str(exc)
 

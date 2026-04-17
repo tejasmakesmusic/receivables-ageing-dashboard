@@ -103,6 +103,21 @@ Considered and rejected. Row count ranges would need per-entity calibration ("no
 - **M5 exceptions:** may want to pre-seed an "Unallocated credit" exception bucket to complement D9's set. Decide when M5 is scoped.
 - **M6 A6 reconciliation:** the `delta` between dashboard AR (gross per-invoice) and Tally closing AR (net) is now expected and explainable via `UNALLOCATED_CREDITS_DELTA` from the latest snapshot. Reconciliation screen should surface this delta directly.
 
+### Reconcile signals — when each fires
+
+Four warning codes surface reconciliation information from the Tally parser. None are blocking (`is_valid` stays True):
+
+| Code | Fires when | What it surfaces |
+|---|---|---|
+| `SUBTOTAL_MISMATCH` | A party's sub-total row differs from the sum of that party's invoice `pending_amount` rows by > ₹1 | Party-level unallocated credits / advance receipts (ADEEP-type) |
+| `GRAND_TOTAL_MISMATCH` | Grand total row detected AND `sum(party_subtotals) − grand_total > ₹1` | Group-level netting magnitude; useful analyst signal even when expected |
+| `UNALLOCATED_CREDITS_DELTA` | Grand total row detected (always, on such files) | Book-level gross vs net gap: `sum(invoice pending) − grand_total`; non-zero = unallocated credits exist |
+| `GRAND_TOTAL_ROW_NOT_DETECTED` | No subtotal-shaped row found in the sheet (edge case: truncated file or changed format) | Parser cannot reconcile at all; analyst must verify file completeness |
+
+`GRAND_TOTAL_MISMATCH` and `UNALLOCATED_CREDITS_DELTA` are mutually exclusive with `GRAND_TOTAL_ROW_NOT_DETECTED` — the first two require a detected grand total row; the last fires precisely when none is detected.
+
 ### Test consequences
 
 The `test_grand_total_mismatch_error_synthetic` test name retains "error" for historical clarity but asserts the mismatch appears in `result.warnings` (not `result.errors`) and that `result.is_valid` stays True. The test is still a meaningful parser-bug detector: a synthetic file with a ₹50 offset between party-subtotals-sum and grand-total still triggers the warning.
+
+The `test_grand_total_row_not_detected_synthetic` test (added in M2 branch cleanup) builds a file with only invoice rows and no subtotal-shaped rows. It asserts: `GRAND_TOTAL_ROW_NOT_DETECTED` in `result.warnings`; no `GRAND_TOTAL_MISMATCH`; no `UNALLOCATED_CREDITS_DELTA`; `result.is_valid == True`.

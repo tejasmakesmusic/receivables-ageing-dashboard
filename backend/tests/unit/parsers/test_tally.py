@@ -32,6 +32,9 @@ FIXTURE_PATH = Path(__file__).resolve().parents[2] / "fixtures" / "sample_files"
 
 @pytest.fixture
 def tally_file_bytes() -> bytes:
+    # Per M2 plan open decision #2 — real fixtures are .gitignored; skip in
+    # envs (CI) that don't have them locally. Revisit with sanitized fixtures
+    # in M3 if CI coverage gap bites.
     if not FIXTURE_PATH.exists():
         pytest.skip(f"fixture not present: {FIXTURE_PATH}")
     return FIXTURE_PATH.read_bytes()
@@ -509,7 +512,49 @@ def test_parse_date_handles_datetime_object_returns_plain_date() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 16: real fixture OK invoice count == 291 (FIX-4)
+# Test 16: GRAND_TOTAL_ROW_NOT_DETECTED (synthetic — FIX-2)
+# ---------------------------------------------------------------------------
+
+
+def test_grand_total_row_not_detected_synthetic() -> None:
+    """A file with no subtotal-shaped rows emits GRAND_TOTAL_ROW_NOT_DETECTED.
+
+    Spec §4.1 (amended): when the parser cannot find a grand total row it must
+    emit GRAND_TOTAL_ROW_NOT_DETECTED in warnings (non-blocking).  No
+    GRAND_TOTAL_MISMATCH or UNALLOCATED_CREDITS_DELTA must appear — both require
+    a detected grand total row.  is_valid must remain True.
+    """
+    # Only invoice rows — no party subtotal, no grand total (pure invoice file).
+    data_rows: list[list[Any]] = [
+        [None, None, "SoloParty", None, None, None, None],  # party header
+        [date(2026, 1, 10), "INV-S-001", None, 1000, 1000, None, None],  # invoice
+        [date(2026, 1, 20), "INV-S-002", None, 2000, 2000, None, None],  # invoice
+    ]
+    file_bytes = _build_wb_bytes(data_rows)
+    result = parse_tally_grpbills(file_bytes)
+
+    warning_codes = [w.code for w in result.warnings]
+    assert (
+        "GRAND_TOTAL_ROW_NOT_DETECTED" in warning_codes
+    ), f"Expected GRAND_TOTAL_ROW_NOT_DETECTED in warnings; got {warning_codes}"
+    assert (
+        "GRAND_TOTAL_MISMATCH" not in warning_codes
+    ), "GRAND_TOTAL_MISMATCH must not fire when no grand total row was detected"
+    assert (
+        "UNALLOCATED_CREDITS_DELTA" not in warning_codes
+    ), "UNALLOCATED_CREDITS_DELTA must not fire when no grand total row was detected"
+    assert result.is_valid is True, (
+        f"is_valid must stay True (GRAND_TOTAL_ROW_NOT_DETECTED is non-blocking). "
+        f"errors={[e.code for e in result.errors]}"
+    )
+    # Detail must include sum_of_invoice_pending.
+    gtr_warning = next(w for w in result.warnings if w.code == "GRAND_TOTAL_ROW_NOT_DETECTED")
+    assert gtr_warning.detail is not None
+    assert "sum_of_invoice_pending" in gtr_warning.detail
+
+
+# ---------------------------------------------------------------------------
+# Test 17: real fixture OK invoice count == 291 (FIX-4) — renumbered from 16
 # ---------------------------------------------------------------------------
 
 

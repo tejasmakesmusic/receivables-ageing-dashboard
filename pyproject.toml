@@ -114,6 +114,10 @@ ignore = [
 # pydantic v2 with `from __future__ import annotations` requires date/Decimal
 # at runtime in the module namespace — model_rebuild() would be needed otherwise.
 "backend/src/app/parsers/common.py" = ["TCH003"]
+# `date` is used in local type annotations at runtime (parsed_date: date | None)
+# and in the ParseResult.as_of_date field passed to pydantic — must be runtime.
+"backend/src/app/parsers/tally.py" = ["TCH003"]
+"backend/src/app/parsers/xero.py" = ["TCH003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

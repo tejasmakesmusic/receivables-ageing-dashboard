@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pandas as pd
@@ -23,6 +23,7 @@ from app.parsers.common import (
     StagedInvoice,
     compute_file_sha256,
     is_empty_cell,
+    parse_date_cell,
     stringify_cell,
 )
 
@@ -444,6 +445,7 @@ def test_parsers_package_exports() -> None:
         "StagedInvoice",
         "compute_file_sha256",
         "is_empty_cell",
+        "parse_date_cell",
         "stringify_cell",
     ]:
         assert hasattr(pkg, name), f"app.parsers missing export: {name}"
@@ -501,3 +503,69 @@ def test_stringify_cell_returns_none_for_empty_and_str_for_value() -> None:
 
     result_float = stringify_cell(3.14)
     assert isinstance(result_float, str)
+
+
+# ---------------------------------------------------------------------------
+# 15. parse_date_cell (FIX-1 — extracted from Tally/Xero _parse_date)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_date_cell_empty_inputs_return_none() -> None:
+    """Empty inputs (NaN, None, empty string) must return None."""
+    assert parse_date_cell(None) is None
+    assert parse_date_cell(float("nan")) is None
+    assert parse_date_cell(pd.NaT) is None
+    assert parse_date_cell("") is None
+    assert parse_date_cell("   ") is None
+
+
+def test_parse_date_cell_plain_date_returned_as_is() -> None:
+    """A datetime.date value must be returned unchanged."""
+    d = date(2026, 4, 17)
+    result = parse_date_cell(d)
+    assert result == d
+    assert type(result) is date
+
+
+def test_parse_date_cell_datetime_returns_plain_date() -> None:
+    """A datetime.datetime must be converted to date via .date().
+
+    datetime is a subclass of date — the datetime branch must be checked
+    FIRST so we call .date() on it rather than returning the datetime object
+    directly (which would violate the date | None annotation at runtime).
+    """
+    dt = datetime(2026, 4, 17, 14, 30)
+    result = parse_date_cell(dt)
+    assert result == date(2026, 4, 17)
+    # Must be exactly date, NOT datetime.
+    assert (
+        type(result) is date
+    ), f"Expected type date, got {type(result)} — datetime subclass must call .date()"
+
+
+def test_parse_date_cell_pandas_timestamp() -> None:
+    """A pd.Timestamp must be converted to date."""
+    ts = pd.Timestamp("2026-04-17")
+    result = parse_date_cell(ts)
+    assert result == date(2026, 4, 17)
+    assert type(result) is date
+
+
+def test_parse_date_cell_string_via_pandas_fallback() -> None:
+    """An ISO-format string must parse via the pd.to_datetime fallback."""
+    result = parse_date_cell("2026-04-17")
+    assert result == date(2026, 4, 17)
+
+
+def test_parse_date_cell_invalid_string_raises_value_error() -> None:
+    """An unparseable string must raise ValueError with a descriptive message."""
+    with pytest.raises(ValueError, match="Cannot parse date from"):
+        parse_date_cell("??")
+
+
+def test_parse_date_cell_exported_from_parsers_package() -> None:
+    """parse_date_cell must be importable from app.parsers (via __init__)."""
+    import app.parsers as pkg
+
+    assert hasattr(pkg, "parse_date_cell"), "app.parsers missing export: parse_date_cell"
+    assert pkg.parse_date_cell is parse_date_cell
