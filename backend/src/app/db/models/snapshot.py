@@ -91,7 +91,8 @@ class Snapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # duplicate-rejection (spec §4.4).
     upload_file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     upload_file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Nullable — CREDIT_PERIOD uploads have no logical as-of date (migration 0004).
+    as_of_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # 'TALLY' | 'XERO' | 'CREDIT_PERIOD' — enforced by CHECK above.
     source_hint: Mapped[str] = mapped_column(String(32), nullable=False)
     # 'STAGED' | 'PUBLISHED' | 'DISCARDED' — enforced by CHECK above.
