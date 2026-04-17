@@ -36,7 +36,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock* ./
+# README.md is referenced from pyproject.toml's readme field; hatchling
+# requires it at build time when uv sync compiles the root package.
+COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONPATH="/app/backend/src:${PYTHONPATH}"
@@ -64,8 +66,8 @@ RUN groupadd -r app && useradd -r -g app app
 
 WORKDIR /app
 
-# Install runtime deps only (no dev extras)
-COPY pyproject.toml uv.lock* ./
+# Install runtime deps only (no dev extras). README.md needed by hatchling.
+COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONPATH="/app/backend/src:${PYTHONPATH}"
