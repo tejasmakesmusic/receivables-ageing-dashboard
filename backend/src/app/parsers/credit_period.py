@@ -69,19 +69,6 @@ _COL_AMOUNT = "Amount"
 # ---------------------------------------------------------------------------
 
 
-def _find_header_row(df: pd.DataFrame) -> int | None:
-    """Return the 0-indexed row number whose col-0 cell equals 'Client Name'.
-
-    Returns None if no such row exists within the first 20 rows (guards
-    against infinite scan on malformed files).
-    """
-    for idx in range(min(20, len(df))):
-        cell = df.iloc[idx, 0]
-        if isinstance(cell, str) and cell.strip() == _COL_CLIENT_NAME:
-            return idx
-    return None
-
-
 def _build_col_map(df: pd.DataFrame, header_row_idx: int) -> dict[str, int]:
     """Build column-name → positional-index map from the header row.
 
@@ -114,8 +101,9 @@ def _find_reason_col(col_map: dict[str, int]) -> int | None:
 def _parse_credit_days(val: Any) -> int | None:  # noqa: PLR0911
     """Coerce a cell value to a non-negative int for credit_days.
 
-    Returns None if the value cannot be parsed to a non-negative integer.
-    Does NOT raise — callers emit errors and continue.
+    Returns None if the value cannot be coerced to a non-negative integer,
+    including for negative numbers, fractional floats, empty cells, or
+    unparseable strings. Does NOT raise — callers emit errors and continue.
     """
     if is_empty_cell(val):
         return None
@@ -123,15 +111,17 @@ def _parse_credit_days(val: Any) -> int | None:  # noqa: PLR0911
     if isinstance(val, float):
         if val != int(val):
             return None  # fractional — invalid
-        return int(val)
+        result = int(val)
+        return result if result >= 0 else None
     if isinstance(val, int):
-        return val
+        return val if val >= 0 else None
     # Try string coercion.
     try:
         f = float(str(val).strip())
         if f != int(f):
             return None
-        return int(f)
+        result = int(f)
+        return result if result >= 0 else None
     except (ValueError, TypeError):
         return None
 
@@ -144,7 +134,7 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
 ) -> list[StagedCreditPeriod]:
     """Parse a single India or UAE sheet and return StagedCreditPeriod rows.
 
-    File-level errors (SHEET_NOT_FOUND, MISSING_REQUIRED_COLUMN, DUPLICATE_CLIENT,
+    Per-row and sheet-level errors (MISSING_REQUIRED_COLUMN, DUPLICATE_CLIENT,
     UNPARSEABLE_CREDIT_DAYS) are appended to *errors* in-place.
 
     Data-handling: no raw client names in log messages. Counts only.
@@ -152,23 +142,12 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
     staged: list[StagedCreditPeriod] = []
 
     # ------------------------------------------------------------------ #
-    # 1. Find header row                                                   #
+    # 1. Find header row (always row 0 for the real fixture)              #
     # ------------------------------------------------------------------ #
-    header_row_idx = _find_header_row(df)
-    if header_row_idx is None:
-        errors.append(
-            ParseError(
-                row_index=-1,
-                code="MISSING_REQUIRED_COLUMN",
-                message=(
-                    f"Sheet '{sheet_name}': cannot locate '{_COL_CLIENT_NAME}' "
-                    "header in first 20 rows."
-                ),
-                detail={"sheet": sheet_name, "missing": [_COL_CLIENT_NAME]},
-            )
-        )
-        return staged
-
+    # Hard-coded to row 0: the real fixture has the header at row 0 in
+    # both India and UAE sheets, and no production scenario motivates a
+    # dynamic scan. Simpler, fewer branches, equally correct. (FIX-7 Option A)
+    header_row_idx = 0
     col_map = _build_col_map(df, header_row_idx)
 
     # ------------------------------------------------------------------ #
@@ -228,17 +207,16 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
         parsed_days = _parse_credit_days(credit_val)
 
         if parsed_days is None:
-            # Value is either empty or not a parseable integer.
+            # Value is either empty, negative, or not a parseable integer.
             parse_errors_local.append(
                 ParseError(
-                    row_index=-1,
+                    row_index=raw_idx,
                     code="UNPARSEABLE_CREDIT_DAYS",
                     message=(
                         f"Sheet '{sheet_name}': row {raw_idx} has unparseable " "credit_days value."
                     ),
                     detail={
                         "sheet": sheet_name,
-                        "row_index": raw_idx,
                         "value": str(credit_val) if not is_empty_cell(credit_val) else None,
                     },
                 )
@@ -262,34 +240,21 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
                 reason_note=reason_note,
             )
         except ValidationError as exc:
-            # Extract the first error message for the detail.
+            # Only credit_days < 0 can reach here — name is pre-screened by is_empty_cell.
+            # After FIX-1, _parse_credit_days returns None for negatives, so this path
+            # is a defensive fallback in case pydantic adds new validators on StagedCreditPeriod.
             first_msg = exc.errors()[0]["msg"] if exc.errors() else str(exc)
-            if "credit_days" in first_msg or "credit_days" in str(exc):
-                parse_errors_local.append(
-                    ParseError(
-                        row_index=-1,
-                        code="UNPARSEABLE_CREDIT_DAYS",
-                        message=(f"Sheet '{sheet_name}': row {raw_idx} — {first_msg}"),
-                        detail={
-                            "sheet": sheet_name,
-                            "row_index": raw_idx,
-                            "value": str(parsed_days),
-                        },
-                    )
+            parse_errors_local.append(
+                ParseError(
+                    row_index=raw_idx,
+                    code="UNPARSEABLE_CREDIT_DAYS",
+                    message=(f"Sheet '{sheet_name}': row {raw_idx} — {first_msg}"),
+                    detail={
+                        "sheet": sheet_name,
+                        "value": str(parsed_days),
+                    },
                 )
-            else:
-                parse_errors_local.append(
-                    ParseError(
-                        row_index=-1,
-                        code="UNPARSEABLE_CREDIT_DAYS",
-                        message=(f"Sheet '{sheet_name}': row {raw_idx} — {first_msg}"),
-                        detail={
-                            "sheet": sheet_name,
-                            "row_index": raw_idx,
-                            "value": str(parsed_days),
-                        },
-                    )
-                )
+            )
             continue
 
         collected.append((name_str, parsed_days, reason_note, raw_idx))
@@ -310,6 +275,11 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
     ]
 
     if dup_records:
+        # NOTE (CLAUDE.md data-handling): detail.duplicates contains raw client names
+        # because spec §4.3 rule 5 requires showing the analyst WHICH names are
+        # duplicated so they can fix the master file. This is a structured UI payload,
+        # NOT log output. Downstream log sinks (structlog, audit_log rendering) must
+        # redact detail.duplicates when emitting these errors to observability streams.
         errors.append(
             ParseError(
                 row_index=-1,

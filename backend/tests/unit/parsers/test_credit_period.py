@@ -692,3 +692,64 @@ def test_unparseable_credit_days_row_does_not_block_valid_rows() -> None:
     assert (
         30 in ind_days and 15 in ind_days
     ), f"Expected credit_days {{30, 15}} in emitted rows; got {ind_days}"
+
+
+# ---------------------------------------------------------------------------
+# Test 20: populated name + empty credit_days → UNPARSEABLE_CREDIT_DAYS (FIX-6)
+# ---------------------------------------------------------------------------
+
+
+def test_empty_credit_days_with_populated_name_emits_unparseable_error() -> None:
+    """Distinguish 'empty name → skip' from 'populated name + empty credit_days → error'.
+
+    Spec §4.3: empty Client Name rows are SKIPPED silently (cosmetic separators).
+    But a row with a populated Client Name and empty credit_days value is a
+    data-quality issue the analyst must see — emit UNPARSEABLE_CREDIT_DAYS.
+
+    India sheet:
+      Row 1: name="ClientAlpha", credit_days=30     (valid → emitted)
+      Row 2: name="ClientBeta",  credit_days=None   (populated name + empty days → error)
+    UAE sheet: minimal valid (so MISSING_SHEET doesn't fire).
+    """
+    india_rows: list[list[Any]] = [
+        _make_ind_row("ClientAlpha", 30),
+        _make_ind_row("ClientBeta", None),  # populated name, empty credit_days → UNPARSEABLE
+    ]
+    file_bytes = _build_wb_bytes(
+        india_rows=india_rows,
+        uae_rows=[_make_uae_row("ValidUaeClient LLC", 30)],
+    )
+    result = parse_credit_period_master(file_bytes)
+
+    # is_valid must be False (one error present).
+    assert result.is_valid is False, (
+        "A populated name with empty credit_days must produce an error and set is_valid=False. "
+        f"errors={[e.code for e in result.errors]}"
+    )
+
+    # Exactly one UNPARSEABLE_CREDIT_DAYS error expected (from ClientBeta row).
+    unparseable = [e for e in result.errors if e.code == "UNPARSEABLE_CREDIT_DAYS"]
+    assert len(unparseable) == 1, (
+        f"Expected exactly 1 UNPARSEABLE_CREDIT_DAYS error; got {len(unparseable)}. "
+        f"All errors: {[e.code for e in result.errors]}"
+    )
+
+    # The error row_index must be a real row index (not the -1 file-level sentinel).
+    err = unparseable[0]
+    assert err.row_index > 0, (
+        f"UNPARSEABLE_CREDIT_DAYS.row_index must be the actual data row, not -1; "
+        f"got row_index={err.row_index}"
+    )
+
+    # The valid row (ClientAlpha, credit_days=30) must be emitted.
+    ind_rows = [cp for cp in result.credit_periods if cp.entity_code == "IND"]
+    assert len(ind_rows) == 1, f"Expected 1 IND row (ClientAlpha); got {len(ind_rows)}"
+    assert (
+        ind_rows[0].credit_days == 30
+    ), f"ClientAlpha must have credit_days=30; got {ind_rows[0].credit_days}"
+
+    # The bad row (ClientBeta) must NOT be emitted as a StagedCreditPeriod.
+    assert not any(
+        cp.credit_days == 0 and cp.entity_code == "IND" for cp in result.credit_periods
+    ), "ClientBeta (empty credit_days) must not appear in credit_periods"
+    # Structural check: only 1 IND row (already asserted above), so ClientBeta isn't in output.
