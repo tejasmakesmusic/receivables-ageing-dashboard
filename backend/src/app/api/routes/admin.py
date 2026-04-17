@@ -74,6 +74,7 @@ def approve_user(
 
     before = {"role": user.role.value, "is_active": user.is_active}
     user.role = role
+    user.is_active = True
 
     audit = AuditLog(
         id=uuid.uuid4(),
