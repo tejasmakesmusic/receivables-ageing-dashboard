@@ -305,6 +305,35 @@ class TestSnapshotUploadRbac:
         r = _upload(client, _make_tally_xlsx(), "IND", "TALLY", "2026-01-31")
         assert r.status_code == 401
 
+    def test_csrf_missing_returns_403(self, client: TestClient, db_session: Session) -> None:
+        """Valid session but no X-CSRF-Token header → CSRF middleware rejects with 403."""
+        _login_as_admin(client)
+
+        # Record snapshot count before — no snapshot should be created.
+        snapshot_count_before = db_session.scalar(text("SELECT COUNT(*) FROM snapshots"))
+
+        file_bytes = _make_tally_xlsx([_tally_data_row()])
+        # Post WITHOUT the CSRF header (bypass _upload helper which adds it).
+        r = client.post(
+            "/snapshots",
+            data={"entity_code": "IND", "source_hint": "TALLY", "as_of_date": "2026-01-31"},
+            files={
+                "file": (
+                    "test_csrf.xlsx",
+                    io.BytesIO(file_bytes),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            # Deliberately omit headers= so X-CSRF-Token is absent.
+        )
+
+        assert r.status_code == 403, f"Expected 403 from CSRF guard, got {r.status_code}: {r.text}"
+
+        snapshot_count_after = db_session.scalar(text("SELECT COUNT(*) FROM snapshots"))
+        assert (
+            snapshot_count_after == snapshot_count_before
+        ), "No snapshot should be created when CSRF token is missing"
+
     def test_admin_can_upload_any_entity(self, client: TestClient, db_session: Session) -> None:
         _login_as_admin(client)
         r = _upload(
@@ -338,6 +367,7 @@ class TestSnapshotUploadRbac:
 class TestSnapshotUploadHappyPath:
     def test_tally_upload_returns_201(self, client: TestClient, db_session: Session) -> None:
         _login_as_admin(client)
+        # Synthetic file has exactly 1 invoice row (_tally_data_row has date + ref → invoice).
         file_bytes = _make_tally_xlsx([_tally_data_row()])
         r = _upload(client, file_bytes, "IND", "TALLY", "2026-01-31")
         assert r.status_code == 201
@@ -348,6 +378,9 @@ class TestSnapshotUploadHappyPath:
         assert "snapshot_id" in body
         assert "file_sha256" in body
         assert "parse_summary" in body
+        summary = body["parse_summary"]
+        assert summary["invoices_parsed"] == 1  # exactly 1 well-formed invoice row
+        assert summary["parse_error_count"] == 0  # synthetic file is well-formed
 
     def test_xero_upload_returns_201(self, client: TestClient, db_session: Session) -> None:
         _login_as_admin(client)
@@ -489,6 +522,9 @@ class TestPartitionPreflight:
         detail = r.json()["detail"]
         assert detail["code"] == "MISSING_PARTITION"
         assert "as_of_date" in detail
+        assert (
+            "runbook" in detail["hint"].lower()
+        ), "MISSING_PARTITION hint must reference the runbook so operators know where to look"
 
     def test_credit_period_skips_partition_check(
         self, client: TestClient, db_session: Session
@@ -555,37 +591,57 @@ class TestSourceDetection:
 
 
 class TestParseErrorsBlockSnapshot:
-    def test_wrong_sheet_name_blocks_snapshot(
+    def test_file_level_parse_error_returns_422_no_snapshot_created(
         self, client: TestClient, db_session: Session
     ) -> None:
-        """TALLY upload with wrong sheet name → parser fails → 422, no snapshot row."""
+        """TALLY upload with wrong sheet name → SHEET_NOT_FOUND → 422, no snapshot row.
+
+        Using source_hint="TALLY" with a file whose only sheet is named
+        "WrongSheet" (not "Sundry Debtors") deterministically triggers the
+        parser's SHEET_NOT_FOUND file-level error.  The source-hint validation
+        step passes because we also include "Sundry Debtors" in the workbook
+        for detection, then replace it with the wrong name for the actual data.
+
+        Simpler approach: build a file that has "Sundry Debtors" as required by
+        source detection but a *second* sheet that is the only one with data —
+        no, the parser opens _SHEET_NAME directly.  Instead we build a file
+        whose only sheet name is "WrongSheet" and supply source_hint="TALLY" so
+        auto-detection is skipped; the parser then fails to find "Sundry Debtors".
+        """
         _login_as_admin(client)
-        # Force a TALLY hint but use wrong sheet name.
+
+        # Build a minimal XLSX with no "Sundry Debtors" sheet.
         wb = openpyxl.Workbook()
-        wb.active.title = "Sundry Debtors"  # type: ignore[union-attr]
-        # Create file with correct sheet name so detection passes,
-        # but then rename it so the parser's internal check fails.
-        # Actually: we supply source_hint="TALLY" with a Xero file.
-        # detection will 400 due to mismatch. Instead, build a file with
-        # "Sundry Debtors" sheet but wrong column structure.
-        ws = wb.active
-        ws.append(["Wrong", "Column", "Structure"])  # no metadata rows
+        wb.active.title = "WrongSheet"  # type: ignore[union-attr]
+        wb.active.append(["some", "data", "here"])  # type: ignore[union-attr]
         buf = io.BytesIO()
         wb.save(buf)
         file_bytes = buf.getvalue()
 
+        # Record snapshot count before upload attempt.
+        sha256_hex = __import__("hashlib").sha256(file_bytes).hexdigest()
         snapshot_count_before = db_session.scalar(text("SELECT COUNT(*) FROM snapshots"))
+
+        # source_hint="TALLY" bypasses auto-detect; parser opens "Sundry Debtors" → fails.
         r = _upload(client, file_bytes, "IND", "TALLY", "2026-01-31")
-        # The Tally parser may emit file-level errors for missing columns.
-        # Either 422 (file errors) or 201 (parser tolerant) — verify snapshot count is correct.
-        if r.status_code == 422:
-            snapshot_count_after = db_session.scalar(text("SELECT COUNT(*) FROM snapshots"))
-            assert (
-                snapshot_count_after == snapshot_count_before
-            ), "No snapshot should be created when file-level parse errors block it"
-        else:
-            # Parser may be lenient on empty data — just verify 201 is returned.
-            assert r.status_code == 201
+
+        assert r.status_code == 422, f"Expected 422, got {r.status_code}: {r.text}"
+        body = r.json()
+        detail = body["detail"]
+        assert detail["code"] == "PARSE_ERROR"
+        error_codes = [e["code"] for e in detail["errors"]]
+        assert "SHEET_NOT_FOUND" in error_codes, f"Expected SHEET_NOT_FOUND in {error_codes}"
+
+        # No snapshot row must have been persisted for this file.
+        snapshot_count_after = db_session.scalar(text("SELECT COUNT(*) FROM snapshots"))
+        assert (
+            snapshot_count_after == snapshot_count_before
+        ), "Snapshot must NOT be created when file-level parse errors are present"
+        rows_for_sha = db_session.scalar(
+            text("SELECT COUNT(*) FROM snapshots WHERE upload_file_sha256 = :sha"),
+            {"sha": sha256_hex},
+        )
+        assert rows_for_sha == 0, "No snapshot row should exist for the rejected file's sha256"
 
 
 # ---------------------------------------------------------------------------
