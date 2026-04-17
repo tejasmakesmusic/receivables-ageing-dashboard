@@ -66,7 +66,7 @@ WORKDIR /app
 
 # Install runtime deps only (no dev extras)
 COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen --no-dev || uv sync --no-dev
+RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONPATH="/app/backend/src:${PYTHONPATH}"
 
