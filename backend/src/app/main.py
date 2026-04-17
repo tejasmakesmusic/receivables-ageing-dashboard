@@ -20,13 +20,14 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
+configure_logging()  # Must run BEFORE any get_logger() call (cache_logger_on_first_use=True)
 settings = get_settings()
 log = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    configure_logging()
+    # Placeholder for future startup tasks (e.g., scheduler init).
     yield
 
 

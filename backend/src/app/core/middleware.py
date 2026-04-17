@@ -39,29 +39,30 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         request_id = str(uuid.uuid4())
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
-
         start = time.perf_counter()
         log.info("request.start", method=request.method, path=request.url.path)
-
-        response = await call_next(request)
-
-        duration_ms = round((time.perf_counter() - start) * 1000, 1)
-        log.info(
-            "request.end",
-            method=request.method,
-            path=request.url.path,
-            status=response.status_code,
-            duration_ms=duration_ms,
-        )
-
-        response.headers["X-Request-ID"] = request_id
-        structlog.contextvars.clear_contextvars()
-        return response
+        response: Response | None = None
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            duration_ms = round((time.perf_counter() - start) * 1000, 1)
+            log.info(
+                "request.end",
+                method=request.method,
+                path=request.url.path,
+                status=response.status_code if response is not None else None,
+                duration_ms=duration_ms,
+            )
+            if response is not None:
+                response.headers["X-Request-ID"] = request_id
+            structlog.contextvars.clear_contextvars()
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
-    _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
-    _EXEMPT_PREFIXES = ("/auth/", "/health")
+    _SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+    _EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/",)  # prefix match
+    _EXEMPT_EXACT: frozenset[str] = frozenset({"/health"})  # exact match
 
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         from app.config import get_settings
@@ -71,15 +72,28 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         cookie_token = request.cookies.get("csrf_token")
         token = cookie_token or secrets.token_hex(32)
 
-        if request.method not in self._SAFE_METHODS and not any(
-            request.url.path.startswith(p) for p in self._EXEMPT_PREFIXES
+        if (
+            request.method not in self._SAFE_METHODS
+            and request.url.path not in self._EXEMPT_EXACT
+            and not any(request.url.path.startswith(p) for p in self._EXEMPT_PREFIXES)
         ):
-            # Read raw body and parse csrf_token field (form-urlencoded).
+            # Extract csrf_token based on content type.
             # BaseHTTPMiddleware caches request.body() so the endpoint still
             # sees the full body after this read.
-            body_bytes = await request.body()
-            form_params = dict(_urlparse.parse_qsl(body_bytes.decode("utf-8", errors="replace")))
-            form_token = form_params.get("csrf_token", "")
+            content_type = request.headers.get("content-type", "")
+            if "application/x-www-form-urlencoded" in content_type:
+                body_bytes = await request.body()
+                form_params = dict(
+                    _urlparse.parse_qsl(body_bytes.decode("utf-8", errors="replace"))
+                )
+                form_token = form_params.get("csrf_token", "")
+            elif "multipart/form-data" in content_type:
+                # File upload: read CSRF token from X-CSRF-Token header instead of body
+                form_token = request.headers.get("X-CSRF-Token", "")
+            else:
+                # Unknown content type on a state-changing request — reject
+                form_token = ""
+
             if not cookie_token or not secrets.compare_digest(cookie_token, str(form_token)):
                 return Response("CSRF validation failed", status_code=403)
 
