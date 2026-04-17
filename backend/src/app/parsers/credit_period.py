@@ -145,7 +145,7 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
     """Parse a single India or UAE sheet and return StagedCreditPeriod rows.
 
     File-level errors (SHEET_NOT_FOUND, MISSING_REQUIRED_COLUMN, DUPLICATE_CLIENT,
-    INVALID_CREDIT_DAYS) are appended to *errors* in-place.
+    UNPARSEABLE_CREDIT_DAYS) are appended to *errors* in-place.
 
     Data-handling: no raw client names in log messages. Counts only.
     """
@@ -232,7 +232,7 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
             parse_errors_local.append(
                 ParseError(
                     row_index=-1,
-                    code="INVALID_CREDIT_DAYS",
+                    code="UNPARSEABLE_CREDIT_DAYS",
                     message=(
                         f"Sheet '{sheet_name}': row {raw_idx} has unparseable " "credit_days value."
                     ),
@@ -268,7 +268,7 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
                 parse_errors_local.append(
                     ParseError(
                         row_index=-1,
-                        code="INVALID_CREDIT_DAYS",
+                        code="UNPARSEABLE_CREDIT_DAYS",
                         message=(f"Sheet '{sheet_name}': row {raw_idx} — {first_msg}"),
                         detail={
                             "sheet": sheet_name,
@@ -281,7 +281,7 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
                 parse_errors_local.append(
                     ParseError(
                         row_index=-1,
-                        code="INVALID_CREDIT_DAYS",
+                        code="UNPARSEABLE_CREDIT_DAYS",
                         message=(f"Sheet '{sheet_name}': row {raw_idx} — {first_msg}"),
                         detail={
                             "sheet": sheet_name,
@@ -297,30 +297,31 @@ def _parse_sheet(  # noqa: PLR0912,PLR0915
     # ------------------------------------------------------------------ #
     # 4. Duplicate detection (within this sheet)                          #
     # ------------------------------------------------------------------ #
-    seen: dict[str, int] = {}  # name → first row_idx
-    duplicates: list[str] = []
-    first_occurrences: dict[str, int] = {}
-
+    # Build name → [row_indices] map.
+    name_to_row_indices: dict[str, list[int]] = {}
     for name_str, _days, _reason, row_idx in collected:
-        if name_str in seen:
-            if name_str not in first_occurrences:
-                # First time we detect this as a duplicate — record the first occurrence.
-                first_occurrences[name_str] = seen[name_str]
-            if name_str not in duplicates:
-                duplicates.append(name_str)
-        else:
-            seen[name_str] = row_idx
+        name_to_row_indices.setdefault(name_str, []).append(row_idx)
 
-    if duplicates:
+    # Spec §4.3 rule 5: emit ALL duplicates found (not just the first).
+    dup_records: list[dict[str, object]] = [
+        {"name": name, "row_indices": idxs}
+        for name, idxs in name_to_row_indices.items()
+        if len(idxs) > 1
+    ]
+
+    if dup_records:
         errors.append(
             ParseError(
                 row_index=-1,
                 code="DUPLICATE_CLIENT",
-                message=(f"Duplicate client names in {sheet_name}: " f"{len(duplicates)} found"),
+                message=(
+                    f"Duplicate client names in {entity_code} sheet: "
+                    f"{len(dup_records)} name(s) appear more than once. "
+                    "Fix duplicates before re-uploading."
+                ),
                 detail={
-                    "sheet": sheet_name,
-                    "duplicates": duplicates,
-                    "first_occurrences": first_occurrences,
+                    "entity": entity_code,
+                    "duplicates": dup_records,
                 },
             )
         )
@@ -404,28 +405,29 @@ def parse_credit_period_master(file_bytes: bytes) -> ParseResult:
         )
 
     # ------------------------------------------------------------------ #
-    # 2. Check for required sheets (process whichever IS present)         #
+    # 2. Check for required sheets (spec §4.3 rule 1)                     #
+    # Both must be present; emit MISSING_SHEET with detail["missing"]     #
+    # listing ALL absent sheets.  Still try to parse whatever IS present.  #
     # ------------------------------------------------------------------ #
     india_df: pd.DataFrame | None = all_sheets.get(_SHEET_INDIA)
     uae_df: pd.DataFrame | None = all_sheets.get(_SHEET_UAE)
 
+    missing_sheets: list[str] = []
     if india_df is None:
-        errors.append(
-            ParseError(
-                row_index=-1,
-                code="SHEET_NOT_FOUND",
-                message=f"Required sheet '{_SHEET_INDIA}' not found in workbook.",
-                detail={"sheet": _SHEET_INDIA, "available": list(all_sheets.keys())},
-            )
-        )
-
+        missing_sheets.append(_SHEET_INDIA)
     if uae_df is None:
+        missing_sheets.append(_SHEET_UAE)
+
+    if missing_sheets:
         errors.append(
             ParseError(
                 row_index=-1,
-                code="SHEET_NOT_FOUND",
-                message=f"Required sheet '{_SHEET_UAE}' not found in workbook.",
-                detail={"sheet": _SHEET_UAE, "available": list(all_sheets.keys())},
+                code="MISSING_SHEET",
+                message=(
+                    f"Required sheet(s) absent from workbook: {missing_sheets}. "
+                    f"Present: {sorted(all_sheets.keys())}."
+                ),
+                detail={"missing": missing_sheets},
             )
         )
 

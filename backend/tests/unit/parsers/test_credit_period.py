@@ -176,7 +176,7 @@ def test_real_fixture_parser_runs_and_emits_expected_error_codes(
     Fixture inspection 2026-04-17:
       - India: 3 duplicate names → DUPLICATE_CLIENT
       - UAE: 2 duplicate groups → DUPLICATE_CLIENT
-      - UAE: 7 rows with empty credit_days → INVALID_CREDIT_DAYS
+      - UAE: 7 rows with empty credit_days → UNPARSEABLE_CREDIT_DAYS
     """
     result = parse_credit_period_master(credit_period_file_bytes)
     # Parser must complete without exception (structural integrity).
@@ -189,9 +189,9 @@ def test_real_fixture_parser_runs_and_emits_expected_error_codes(
         f"Expected DUPLICATE_CLIENT in errors on real fixture. "
         f"errors={[e.code for e in result.errors]}"
     )
-    # UAE sheet has empty credit_days rows → INVALID_CREDIT_DAYS must appear.
-    assert "INVALID_CREDIT_DAYS" in error_codes, (
-        f"Expected INVALID_CREDIT_DAYS in errors on real fixture. "
+    # UAE sheet has empty credit_days rows → UNPARSEABLE_CREDIT_DAYS must appear.
+    assert "UNPARSEABLE_CREDIT_DAYS" in error_codes, (
+        f"Expected UNPARSEABLE_CREDIT_DAYS in errors on real fixture. "
         f"errors={[e.code for e in result.errors]}"
     )
     # is_valid must be False (errors present).
@@ -209,14 +209,14 @@ def test_real_fixture_exact_error_counts(credit_period_file_bytes: bytes) -> Non
     """Exact error counts verified by fixture inspection on 2026-04-17.
 
     India: 1 DUPLICATE_CLIENT error (3 dupe names in one error record).
-    UAE:   1 DUPLICATE_CLIENT error (2 dupe names) + 7 INVALID_CREDIT_DAYS errors.
+    UAE:   1 DUPLICATE_CLIENT error (2 dupe names) + 7 UNPARSEABLE_CREDIT_DAYS errors.
     Total errors: 9.
 
     If the fixture is replaced or cleansed, re-measure and update.
     """
     result = parse_credit_period_master(credit_period_file_bytes)
     dup_errs = [e for e in result.errors if e.code == "DUPLICATE_CLIENT"]
-    invalid_errs = [e for e in result.errors if e.code == "INVALID_CREDIT_DAYS"]
+    invalid_errs = [e for e in result.errors if e.code == "UNPARSEABLE_CREDIT_DAYS"]
 
     # 1 DUPLICATE_CLIENT per sheet that has dupes (India + UAE = 2 total).
     assert (
@@ -225,7 +225,7 @@ def test_real_fixture_exact_error_counts(credit_period_file_bytes: bytes) -> Non
     # 7 rows with empty credit_days in UAE.
     assert (
         len(invalid_errs) == 7
-    ), f"Expected 7 INVALID_CREDIT_DAYS errors on real fixture; got {len(invalid_errs)}."
+    ), f"Expected 7 UNPARSEABLE_CREDIT_DAYS errors on real fixture; got {len(invalid_errs)}."
 
 
 # ---------------------------------------------------------------------------
@@ -329,40 +329,40 @@ def test_credit_days_zero_is_valid() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 8: credit_days = -5 → INVALID_CREDIT_DAYS in errors; is_valid False
+# Test 8: credit_days = -5 → UNPARSEABLE_CREDIT_DAYS in errors; is_valid False
 # ---------------------------------------------------------------------------
 
 
 def test_negative_credit_days_emits_invalid_error() -> None:
-    """credit_days=-5 must emit INVALID_CREDIT_DAYS in errors; is_valid False."""
+    """credit_days=-5 must emit UNPARSEABLE_CREDIT_DAYS in errors; is_valid False."""
     file_bytes = _build_wb_bytes(
         india_rows=[_make_ind_row("NegativeClient Ltd", -5)],
         uae_rows=[_make_uae_row("ValidUaeClient LLC", 30)],
     )
     result = parse_credit_period_master(file_bytes)
     assert result.is_valid is False, "Negative credit_days must make is_valid False"
-    invalid_errs = [e for e in result.errors if e.code == "INVALID_CREDIT_DAYS"]
+    invalid_errs = [e for e in result.errors if e.code == "UNPARSEABLE_CREDIT_DAYS"]
     assert invalid_errs, (
-        f"Expected INVALID_CREDIT_DAYS in errors. " f"errors={[e.code for e in result.errors]}"
+        f"Expected UNPARSEABLE_CREDIT_DAYS in errors. " f"errors={[e.code for e in result.errors]}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Test 9: credit_days = "not a number" → INVALID_CREDIT_DAYS; is_valid False
+# Test 9: credit_days = "not a number" → UNPARSEABLE_CREDIT_DAYS; is_valid False
 # ---------------------------------------------------------------------------
 
 
 def test_non_numeric_credit_days_emits_invalid_error() -> None:
-    """credit_days='not a number' must emit INVALID_CREDIT_DAYS in errors."""
+    """credit_days='not a number' must emit UNPARSEABLE_CREDIT_DAYS in errors."""
     file_bytes = _build_wb_bytes(
         india_rows=[_make_ind_row("BadValueClient Ltd", "not a number")],
         uae_rows=[_make_uae_row("ValidUaeClient LLC", 30)],
     )
     result = parse_credit_period_master(file_bytes)
     assert result.is_valid is False, "Unparseable credit_days must make is_valid False"
-    invalid_errs = [e for e in result.errors if e.code == "INVALID_CREDIT_DAYS"]
+    invalid_errs = [e for e in result.errors if e.code == "UNPARSEABLE_CREDIT_DAYS"]
     assert invalid_errs, (
-        f"Expected INVALID_CREDIT_DAYS in errors. " f"errors={[e.code for e in result.errors]}"
+        f"Expected UNPARSEABLE_CREDIT_DAYS in errors. " f"errors={[e.code for e in result.errors]}"
     )
     # detail must include the sheet and value.
     err = invalid_errs[0]
@@ -427,12 +427,15 @@ def test_duplicate_client_names_in_india_sheet_fails_parse() -> None:
     )
     err = dup_errs[0]
     assert err.detail is not None
+    # Spec §4.3 rule 5: detail must have "entity" key (not "sheet")
     assert (
-        err.detail.get("sheet") == "India"
-    ), f"detail['sheet'] must be 'India'; got {err.detail.get('sheet')!r}"
-    assert "AlphaClient Ltd" in err.detail.get(
-        "duplicates", []
-    ), "detail['duplicates'] must contain the duplicated name"
+        err.detail.get("entity") == "IND"
+    ), f"detail['entity'] must be 'IND'; got {err.detail.get('entity')!r}"
+    # detail['duplicates'] is a list of dicts {name: ..., row_indices: [...]}
+    dup_names = [d["name"] for d in err.detail.get("duplicates", [])]
+    assert "AlphaClient Ltd" in dup_names, (
+        f"detail['duplicates'] must contain the duplicated name; " f"got names: {dup_names}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +477,11 @@ def test_same_client_name_in_both_sheets_is_valid() -> None:
 
 
 def test_missing_india_sheet_emits_sheet_not_found_and_uae_processed() -> None:
-    """Workbook without India sheet → SHEET_NOT_FOUND for India; UAE parsed."""
+    """Workbook without India sheet → MISSING_SHEET error (spec §4.3 rule 1); UAE parsed.
+
+    detail["missing"] must list ["India"].
+    UAE rows must still be emitted (parser continues with present sheets).
+    """
     file_bytes = _build_wb_bytes(
         india_rows=[],
         uae_rows=[_make_uae_row("UaeOnlyClient LLC", 30)],
@@ -484,14 +491,13 @@ def test_missing_india_sheet_emits_sheet_not_found_and_uae_processed() -> None:
     result = parse_credit_period_master(file_bytes)
     assert result.is_valid is False, "Missing India sheet must produce an error"
 
-    sheet_errs = [e for e in result.errors if e.code == "SHEET_NOT_FOUND"]
-    assert sheet_errs, f"Expected SHEET_NOT_FOUND error. errors={[e.code for e in result.errors]}"
-    india_errs = [
-        e
-        for e in sheet_errs
-        if e.detail is not None and e.detail.get("sheet") == "India" or "India" in e.message
-    ]
-    assert india_errs, "SHEET_NOT_FOUND error must reference the 'India' sheet"
+    sheet_errs = [e for e in result.errors if e.code == "MISSING_SHEET"]
+    assert sheet_errs, f"Expected MISSING_SHEET error. errors={[e.code for e in result.errors]}"
+    err = sheet_errs[0]
+    assert err.detail is not None
+    assert "India" in err.detail.get(
+        "missing", []
+    ), f"detail['missing'] must contain 'India'; got {err.detail.get('missing')!r}"
 
     # UAE sheet must still have been processed.
     uae_rows = [cp for cp in result.credit_periods if cp.entity_code == "UAE"]
@@ -543,3 +549,146 @@ def test_deterministic_file_sha256(simple_cp_bytes: bytes) -> None:
     assert (
         r1.file_sha256 == r2.file_sha256
     ), "Two parse calls on the same bytes must produce the same file_sha256"
+
+
+# ---------------------------------------------------------------------------
+# Test 16: duplicate client names in UAE sheet → DUPLICATE_CLIENT, entity="UAE"
+# ---------------------------------------------------------------------------
+
+
+def test_duplicate_client_names_in_uae_sheet_fails_parse() -> None:
+    """'AlphaUae LLC' appears twice in UAE sheet → DUPLICATE_CLIENT with entity='UAE'.
+
+    Spec §4.3 rule 5: detail["entity"] == "UAE", is_valid False.
+    """
+    uae_rows: list[list[Any]] = [
+        _make_uae_row("AlphaUae LLC", 30, "Extended contract"),
+        _make_uae_row("BetaUae LLC", 0),
+        _make_uae_row("AlphaUae LLC", 15),  # duplicate
+    ]
+    file_bytes = _build_wb_bytes(
+        india_rows=[_make_ind_row("ValidIndClient Ltd", 30)],
+        uae_rows=uae_rows,
+    )
+    result = parse_credit_period_master(file_bytes)
+    assert result.is_valid is False, "Duplicate client in UAE sheet must make is_valid False"
+
+    dup_errs = [e for e in result.errors if e.code == "DUPLICATE_CLIENT"]
+    assert dup_errs, (
+        f"Expected DUPLICATE_CLIENT in errors. " f"errors={[e.code for e in result.errors]}"
+    )
+    uae_dup_errs = [e for e in dup_errs if e.detail is not None and e.detail.get("entity") == "UAE"]
+    assert uae_dup_errs, (
+        f"Expected DUPLICATE_CLIENT with entity='UAE'. "
+        f"dup errors detail: {[e.detail for e in dup_errs]}"
+    )
+    err = uae_dup_errs[0]
+    assert err.detail is not None
+    dup_names = [d["name"] for d in err.detail.get("duplicates", [])]
+    assert (
+        "AlphaUae LLC" in dup_names
+    ), f"detail['duplicates'] must contain the duplicated name; got {dup_names}"
+
+
+# ---------------------------------------------------------------------------
+# Test 17: missing UAE sheet → MISSING_SHEET, detail["missing"]==["UAE"], India processed
+# ---------------------------------------------------------------------------
+
+
+def test_missing_uae_sheet_emits_missing_sheet_and_india_processed() -> None:
+    """Workbook without UAE sheet → MISSING_SHEET error (spec §4.3 rule 1).
+
+    detail["missing"] must contain "UAE".
+    India rows must still be emitted (parser continues with present sheets).
+    """
+    file_bytes = _build_wb_bytes(
+        india_rows=[_make_ind_row("IndOnlyClient Ltd", 30)],
+        uae_rows=[],
+        include_india=True,
+        include_uae=False,
+    )
+    result = parse_credit_period_master(file_bytes)
+    assert result.is_valid is False, "Missing UAE sheet must produce an error"
+
+    sheet_errs = [e for e in result.errors if e.code == "MISSING_SHEET"]
+    assert sheet_errs, f"Expected MISSING_SHEET error. errors={[e.code for e in result.errors]}"
+    err = sheet_errs[0]
+    assert err.detail is not None
+    assert "UAE" in err.detail.get(
+        "missing", []
+    ), f"detail['missing'] must contain 'UAE'; got {err.detail.get('missing')!r}"
+
+    # India sheet must still have been processed.
+    ind_rows = [cp for cp in result.credit_periods if cp.entity_code == "IND"]
+    assert len(ind_rows) == 1, (
+        f"India sheet must still be processed even when UAE is missing; "
+        f"got {len(ind_rows)} IND rows"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 18: real fixture — emitted count per entity (skip if fixture absent)
+# ---------------------------------------------------------------------------
+
+
+def test_real_fixture_emitted_count_per_entity(credit_period_file_bytes: bytes) -> None:
+    """Pin the exact number of credit_periods emitted per entity on the real fixture.
+
+    Measured 2026-04-17: fixture has data quality issues (duplicates → those
+    sheets return 0 emitted rows).  The counts below reflect the parser's
+    correct behaviour per spec §4.3 rule 5 (fail sheet on duplicates).
+
+    India: 3 duplicate names → DUPLICATE_CLIENT → 0 IND rows emitted.
+    UAE:   2 duplicate groups → DUPLICATE_CLIENT → 0 UAE rows emitted.
+
+    Both counts are 0 because both sheets have duplicates.  If the fixture is
+    cleansed, re-run the parser, record the new counts, and update here.
+    """
+    result = parse_credit_period_master(credit_period_file_bytes)
+    ind_count = sum(1 for cp in result.credit_periods if cp.entity_code == "IND")
+    uae_count = sum(1 for cp in result.credit_periods if cp.entity_code == "UAE")
+    # Both sheets have duplicates → parser emits 0 rows for each.
+    assert ind_count == 0, (
+        f"Expected 0 IND rows (India sheet has duplicates); got {ind_count}. "
+        "If fixture was cleansed, re-measure and update."
+    )
+    assert uae_count == 0, (
+        f"Expected 0 UAE rows (UAE sheet has duplicates); got {uae_count}. "
+        "If fixture was cleansed, re-measure and update."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 19: unparseable credit_days row doesn't block other rows in same sheet
+# ---------------------------------------------------------------------------
+
+
+def test_unparseable_credit_days_row_does_not_block_valid_rows() -> None:
+    """A row with credit_days='thirty' emits UNPARSEABLE_CREDIT_DAYS error.
+
+    The bad row is NOT emitted.  Valid rows before AND after it ARE emitted.
+    is_valid is False (error present).
+    """
+    india_rows: list[list[Any]] = [
+        _make_ind_row("ValidBeforeClient Ltd", 30),  # row 1 — OK
+        _make_ind_row("BadValueClient Ltd", "thirty"),  # row 2 — UNPARSEABLE
+        _make_ind_row("ValidAfterClient Ltd", 15),  # row 3 — OK
+    ]
+    file_bytes = _build_wb_bytes(
+        india_rows=india_rows,
+        uae_rows=[_make_uae_row("ValidUaeClient LLC", 0)],
+    )
+    result = parse_credit_period_master(file_bytes)
+    assert result.is_valid is False, "UNPARSEABLE_CREDIT_DAYS error must make is_valid False"
+
+    unparseable_errs = [e for e in result.errors if e.code == "UNPARSEABLE_CREDIT_DAYS"]
+    assert unparseable_errs, (
+        f"Expected UNPARSEABLE_CREDIT_DAYS in errors. " f"errors={[e.code for e in result.errors]}"
+    )
+    # Bad row not emitted; valid rows are.
+    ind_rows = [cp for cp in result.credit_periods if cp.entity_code == "IND"]
+    assert len(ind_rows) == 2, f"Expected 2 IND rows (1 bad row skipped); got {len(ind_rows)}"
+    ind_days = {cp.credit_days for cp in ind_rows}
+    assert (
+        30 in ind_days and 15 in ind_days
+    ), f"Expected credit_days {{30, 15}} in emitted rows; got {ind_days}"
