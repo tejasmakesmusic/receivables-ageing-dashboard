@@ -195,7 +195,10 @@ def test_as_of_date_before_invoice_date() -> None:
         credit_days=30,
         as_of_date=as_of_date,
     )
-    assert result.overdue_days < 0
+    # due_date = 2025-12-31 + 30d = 2026-01-30
+    # overdue_days = (2025-01-01 - 2026-01-30).days = -394
+    assert result.due_date == datetime.date(2026, 1, 30)
+    assert result.overdue_days == -394
     assert result.bucket == AgeingBucket.NOT_DUE
 
 

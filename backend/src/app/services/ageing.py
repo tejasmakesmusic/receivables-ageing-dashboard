@@ -98,9 +98,11 @@ def compute_ageing(
         If ``credit_days`` is negative.
     """
     # --- type guards: reject non-date and datetime.datetime subclass ------
-    # datetime.datetime IS a subclass of datetime.date, so isinstance alone is
-    # insufficient — we use exact type() equality to reject any subclass.
-    # This also rejects str, None, int, etc. since they are not date at all.
+    # type() exact-equality catches two distinct rejection reasons:
+    #   (a) datetime.datetime — IS a subclass of date, so isinstance(x, date)
+    #       would pass. We reject because spec §6 wants plain calendar dates.
+    #   (b) str / None / int / any other type — simply not date at all.
+    # isinstance() alone only covers (b). type() covers both.
     if type(invoice_date) is not date:
         raise TypeError(f"invoice_date must be datetime.date, got {type(invoice_date).__name__!r}")
     if type(as_of_date) is not date:
