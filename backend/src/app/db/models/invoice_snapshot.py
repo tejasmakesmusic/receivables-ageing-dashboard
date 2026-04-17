@@ -94,6 +94,12 @@ class InvoiceSnapshot(Base):
         ForeignKey("snapshots.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    # invoice_id: FK to invoices.id; ondelete=RESTRICT means an invoice
+    # cannot be hard-deleted without first removing all its invoice_snapshot
+    # rows across every partition. This is intentional — our data lifecycle
+    # uses status=SETTLED for "no longer outstanding"; we do not hard-delete
+    # invoices. Any future hard-delete path must batch-delete child snapshots
+    # per partition first.
     invoice_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("invoices.id", ondelete="RESTRICT"),

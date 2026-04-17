@@ -162,4 +162,5 @@ markers = [
   "unit: fast isolated tests (no DB, no network)",
   "integration: require Postgres",
   "parser: parser tests against real sample files",
+  "serial: must not run concurrently with other DB-mutating tests (e.g. downgrade/upgrade round-trips)",
 ]

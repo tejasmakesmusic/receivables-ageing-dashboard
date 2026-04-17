@@ -62,12 +62,26 @@ CREATE TABLE invoice_snapshots_2027_q1
     FOR VALUES FROM ('2027-01-01') TO ('2027-04-01');
 ```
 
+### Ownership
+
+Partition creation is operational work, not application code. Until the
+M6 cron is in place (expected ~2026-06), **Tejaswa (project owner)** must
+manually create the next quarterly partition by the 25th of the month
+BEFORE the new quarter begins.
+
+Calendar reminders to set:
+- **2026-06-25** → create 2026-Q3 partition (covers 2026-07-01 to 2026-10-01)
+- **2026-09-25** → create 2026-Q4 partition (covers 2026-10-01 to 2027-01-01)
+- **2026-12-25** → create 2027-Q1 partition
+
 ### What happens if you forget
 
 Postgres raises `no partition of relation "invoice_snapshots" found for row`
 on the first INSERT with an `as_of_date` outside all defined partition
-ranges.  The upload endpoint will return HTTP 500.  Create the partition and
+ranges.  If an INSERT arrives for an `as_of_date` outside all existing partition ranges, Postgres raises an error; the request fails with HTTP 500 until the partition is created. M3 Task 2 (`POST /snapshots`) will add a pre-flight check to surface this as an HTTP 422 with a clear message instead of a mid-transaction 500.  Create the partition and
 retry the upload.
+
+Follow-up: M3 Task 2 acceptance criteria includes "reject snapshot upload when no partition exists for the supplied as_of_date; return 422 with code=MISSING_PARTITION".
 
 ### Quarter boundary dates
 

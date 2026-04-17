@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+import sqlalchemy.exc
 from sqlalchemy import text
 
 if TYPE_CHECKING:
@@ -313,6 +314,261 @@ def test_m3_invoice_snapshot_partition_routing(db_session: Session) -> None:
 
 
 # ---------------------------------------------------------------------------
+# CHECK constraint violation tests
+#
+# Each test inserts a deliberately bad value via raw SQL (bypassing the ORM's
+# Python-level enum enforcement) and asserts the DB CHECK constraint fires.
+# Using raw SQL is intentional — if the constraint were accidentally removed
+# from the DDL, the ORM would still reject it; raw SQL proves the DB enforces
+# it independently.
+# ---------------------------------------------------------------------------
+
+# Seed UUIDs from 0002_seed_bootstrap_admin — must stay in sync with that
+# migration file.
+_ENTITY_IND_ID = "600e57f5-8718-4517-9c99-cf56d4bd7a51"
+_USER_TEJASWA_ID = "3805b9d4-906a-4da9-a0b8-aca542e62ba4"
+
+
+def _make_minimal_snapshot(db_session: Session, sha_suffix: str = "") -> str:
+    """Insert a minimal valid snapshot row and return its id as a str UUID.
+
+    Uses a randomised sha256 to avoid collisions across tests.  Callers must
+    supply a ``sha_suffix`` if they need two snapshots in the same test.
+    """
+    sid = str(uuid.uuid4())
+    sha = f"check-constraint-test-sha-{sid}{sha_suffix}"[:64]
+    db_session.execute(
+        text(
+            "INSERT INTO snapshots "
+            "(id, entity_id, uploaded_by, upload_file_sha256, as_of_date, "
+            "source_hint, status, uploaded_at, created_at, updated_at) "
+            "VALUES (:id, :eid, :uid, :sha, '2026-02-15', 'TALLY', 'STAGED', NOW(), NOW(), NOW())"
+        ),
+        {"id": sid, "eid": _ENTITY_IND_ID, "uid": _USER_TEJASWA_ID, "sha": sha},
+    )
+    return sid
+
+
+def _make_minimal_party(db_session: Session) -> str:
+    """Insert a minimal valid parties_canonical row and return its id."""
+    pid = str(uuid.uuid4())
+    db_session.execute(
+        text(
+            "INSERT INTO parties_canonical (id, entity_id, name, created_by, created_at) "
+            "VALUES (:id, :eid, :name, :uid, NOW())"
+        ),
+        {
+            "id": pid,
+            "eid": _ENTITY_IND_ID,
+            "name": f"Test Party {pid[:8]}",
+            "uid": _USER_TEJASWA_ID,
+        },
+    )
+    return pid
+
+
+def _make_minimal_invoice(db_session: Session, snapshot_id: str, party_id: str) -> str:
+    """Insert a minimal valid invoice row and return its id."""
+    iid = str(uuid.uuid4())
+    db_session.execute(
+        text(
+            "INSERT INTO invoices "
+            "(id, entity_id, canonical_id, invoice_ref, invoice_date, amount, "
+            "currency, credit_days_applied, credit_days_source, due_date, "
+            "status, first_seen_snapshot_id, raw_row_json, created_at, updated_at) "
+            "VALUES (:id, :eid, :cid, :ref, '2026-01-15', 10000.00, "
+            "'INR', 30, 'DEFAULT', '2026-02-14', 'OPEN', :sid, '{}', NOW(), NOW())"
+        ),
+        {
+            "id": iid,
+            "eid": _ENTITY_IND_ID,
+            "cid": party_id,
+            "ref": f"TEST-{iid[:8]}",
+            "sid": snapshot_id,
+        },
+    )
+    return iid
+
+
+@pytest.mark.integration
+def test_invoice_snapshot_bucket_check_rejects_invalid_value(db_session: Session) -> None:
+    """CHECK constraint on invoice_snapshots.bucket must reject values outside
+    the D6 enum. Guards against silent migration drift (e.g. if the bucket
+    CHECK were accidentally removed from the raw DDL block).
+    """
+    snapshot_id = _make_minimal_snapshot(db_session)
+    party_id = _make_minimal_party(db_session)
+    invoice_id = _make_minimal_invoice(db_session, snapshot_id, party_id)
+
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db_session.execute(
+            text(
+                "INSERT INTO invoice_snapshots "
+                "(snapshot_id, invoice_id, as_of_date, outstanding_amount, overdue_days, bucket, created_at) "
+                "VALUES (:s, :i, '2026-02-15', 1000.00, 5, 'INVALID', NOW())"
+            ),
+            {"s": snapshot_id, "i": invoice_id},
+        )
+        db_session.flush()
+    db_session.rollback()
+
+
+@pytest.mark.integration
+def test_snapshot_status_check_rejects_invalid_value(db_session: Session) -> None:
+    """CHECK constraint on snapshots.status must reject values outside
+    STAGED / PUBLISHED / DISCARDED.
+    """
+    sid = str(uuid.uuid4())
+    sha = f"status-check-bad-{sid}"[:64]
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db_session.execute(
+            text(
+                "INSERT INTO snapshots "
+                "(id, entity_id, uploaded_by, upload_file_sha256, as_of_date, "
+                "source_hint, status, uploaded_at, created_at, updated_at) "
+                "VALUES (:id, :eid, :uid, :sha, '2026-02-15', 'TALLY', 'ACTIVE', NOW(), NOW(), NOW())"
+            ),
+            {"id": sid, "eid": _ENTITY_IND_ID, "uid": _USER_TEJASWA_ID, "sha": sha},
+        )
+        db_session.flush()
+    db_session.rollback()
+
+
+@pytest.mark.integration
+def test_snapshot_source_hint_check_rejects_invalid_value(db_session: Session) -> None:
+    """CHECK constraint on snapshots.source_hint must reject values outside
+    TALLY / XERO / CREDIT_PERIOD.
+    """
+    sid = str(uuid.uuid4())
+    sha = f"source-hint-check-bad-{sid}"[:64]
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db_session.execute(
+            text(
+                "INSERT INTO snapshots "
+                "(id, entity_id, uploaded_by, upload_file_sha256, as_of_date, "
+                "source_hint, status, uploaded_at, created_at, updated_at) "
+                "VALUES (:id, :eid, :uid, :sha, '2026-02-15', 'QUICKBOOKS', 'STAGED', NOW(), NOW(), NOW())"
+            ),
+            {"id": sid, "eid": _ENTITY_IND_ID, "uid": _USER_TEJASWA_ID, "sha": sha},
+        )
+        db_session.flush()
+    db_session.rollback()
+
+
+@pytest.mark.integration
+def test_invoice_status_check_rejects_invalid_value(db_session: Session) -> None:
+    """CHECK constraint on invoices.status must reject values outside
+    OPEN / SETTLED.
+    """
+    snapshot_id = _make_minimal_snapshot(db_session, sha_suffix="-inv-status")
+    party_id = _make_minimal_party(db_session)
+    iid = str(uuid.uuid4())
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db_session.execute(
+            text(
+                "INSERT INTO invoices "
+                "(id, entity_id, canonical_id, invoice_ref, invoice_date, amount, "
+                "currency, credit_days_applied, credit_days_source, due_date, "
+                "status, first_seen_snapshot_id, raw_row_json, created_at, updated_at) "
+                "VALUES (:id, :eid, :cid, 'TEST-BAD-STATUS', '2026-01-15', 10000.00, "
+                "'INR', 30, 'DEFAULT', '2026-02-14', 'PAID', :sid, '{}', NOW(), NOW())"
+            ),
+            {"id": iid, "eid": _ENTITY_IND_ID, "cid": party_id, "sid": snapshot_id},
+        )
+        db_session.flush()
+    db_session.rollback()
+
+
+@pytest.mark.integration
+def test_party_alias_source_check_rejects_invalid_value(db_session: Session) -> None:
+    """CHECK constraint on party_aliases.source must reject values outside
+    TALLY / XERO / MANUAL.
+    """
+    party_id = _make_minimal_party(db_session)
+    alias_id = str(uuid.uuid4())
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db_session.execute(
+            text(
+                "INSERT INTO party_aliases "
+                "(id, canonical_id, alias_text, source, created_by, created_at) "
+                "VALUES (:id, :cid, 'Bad Source Alias', 'SAP', :uid, NOW())"
+            ),
+            {"id": alias_id, "cid": party_id, "uid": _USER_TEJASWA_ID},
+        )
+        db_session.flush()
+    db_session.rollback()
+
+
+# ---------------------------------------------------------------------------
+# UNIQUE constraint violation tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_snapshot_upload_file_sha256_unique(db_session: Session) -> None:
+    """uq_snapshots_upload_file_sha256 must prevent duplicate sha256 values."""
+    sha = "unique-sha256-collision-test-" + str(uuid.uuid4())[:32]
+    sha = sha[:64]
+
+    sid1 = str(uuid.uuid4())
+    db_session.execute(
+        text(
+            "INSERT INTO snapshots "
+            "(id, entity_id, uploaded_by, upload_file_sha256, as_of_date, "
+            "source_hint, status, uploaded_at, created_at, updated_at) "
+            "VALUES (:id, :eid, :uid, :sha, '2026-02-15', 'TALLY', 'STAGED', NOW(), NOW(), NOW())"
+        ),
+        {"id": sid1, "eid": _ENTITY_IND_ID, "uid": _USER_TEJASWA_ID, "sha": sha},
+    )
+    db_session.flush()  # commit first row to make unique index visible
+
+    sid2 = str(uuid.uuid4())
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db_session.execute(
+            text(
+                "INSERT INTO snapshots "
+                "(id, entity_id, uploaded_by, upload_file_sha256, as_of_date, "
+                "source_hint, status, uploaded_at, created_at, updated_at) "
+                "VALUES (:id, :eid, :uid, :sha, '2026-05-01', 'XERO', 'STAGED', NOW(), NOW(), NOW())"
+            ),
+            {"id": sid2, "eid": _ENTITY_IND_ID, "uid": _USER_TEJASWA_ID, "sha": sha},
+        )
+        db_session.flush()
+    db_session.rollback()
+
+
+@pytest.mark.integration
+def test_party_alias_unique_alias_text_canonical(db_session: Session) -> None:
+    """uq_party_aliases_alias_canonical must prevent duplicate (alias_text, canonical_id) pairs."""
+    party_id = _make_minimal_party(db_session)
+    alias_text = f"Duplicate Alias {uuid.uuid4()}"
+
+    aid1 = str(uuid.uuid4())
+    db_session.execute(
+        text(
+            "INSERT INTO party_aliases "
+            "(id, canonical_id, alias_text, source, created_by, created_at) "
+            "VALUES (:id, :cid, :txt, 'TALLY', :uid, NOW())"
+        ),
+        {"id": aid1, "cid": party_id, "txt": alias_text, "uid": _USER_TEJASWA_ID},
+    )
+    db_session.flush()  # make the unique index visible
+
+    aid2 = str(uuid.uuid4())
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        db_session.execute(
+            text(
+                "INSERT INTO party_aliases "
+                "(id, canonical_id, alias_text, source, created_by, created_at) "
+                "VALUES (:id, :cid, :txt, 'XERO', :uid, NOW())"
+            ),
+            {"id": aid2, "cid": party_id, "txt": alias_text, "uid": _USER_TEJASWA_ID},
+        )
+        db_session.flush()
+    db_session.rollback()
+
+
+# ---------------------------------------------------------------------------
 # Migration round-trip (independent of db_session — runs its own alembic).
 # This is potentially slow but critical to confirm downgrade/upgrade works.
 # ---------------------------------------------------------------------------
@@ -328,14 +584,22 @@ def test_m3_migration_heads_includes_0003() -> None:
     ), f"0003_m3_ingestion not in alembic heads output: {result.stdout!r}"
 
 
+@pytest.mark.serial  # must not run concurrently with other DB-mutating tests; see docstring
 @pytest.mark.integration
 def test_m3_downgrade_then_upgrade_idempotent() -> None:
-    """Downgrade -1 then upgrade head must complete without error.
+    """Mutates the shared Neon branch schema (runs alembic downgrade -1).
 
-    This test mutates the shared Neon branch schema — it runs at the end of
-    the integration suite.  The ``db_session`` fixture's session-scoped
-    ``test_engine`` runs ``upgrade head`` at setup, so the branch is always
-    at head when db_session fixtures are used.
+    MUST NOT run concurrently with any other M3 test — it temporarily
+    removes M3 tables between the downgrade and the subsequent upgrade.
+    Current CI runs single-worker so this is safe; if CI ever parallelises,
+    this test needs an isolation mechanism (dedicated Neon branch or a
+    session-scoped mutex).
+
+    Downgrade -1 then upgrade head must complete without error.
+
+    The ``db_session`` fixture's session-scoped ``test_engine`` runs
+    ``upgrade head`` at setup, so the branch is always at head when
+    db_session fixtures are used.
 
     Mark xfail if you need to skip: add ``@pytest.mark.xfail`` with an issue
     link.  Never use ``skip`` without one per CLAUDE.md testing discipline.
