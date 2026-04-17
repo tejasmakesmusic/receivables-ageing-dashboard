@@ -57,9 +57,7 @@ class TestCallbackStubCreatesPendingUser:
         assert user is not None
 
         log_row = (
-            db_session.query(AuditLog)
-            .filter_by(action="user_login", entity_id=user.id)
-            .first()
+            db_session.query(AuditLog).filter_by(action="user_login", entity_id=user.id).first()
         )
         assert log_row is not None
         assert log_row.after is not None
@@ -127,9 +125,7 @@ class TestCallbackStubExistingUserUpdatesLogin:
         assert updated.last_login_at is not None
         assert updated.last_login_at >= first_login_at, "last_login_at must be updated on re-login"
 
-    def test_google_sub_backfill_on_existing_user(
-        self, db_session: Session
-    ) -> None:
+    def test_google_sub_backfill_on_existing_user(self, db_session: Session) -> None:
         """Existing user without google_sub gets it set when provided on next login.
 
         The stub path always passes google_sub=None, so this tests _upsert_user
@@ -168,9 +164,7 @@ class TestCallbackStubExistingUserUpdatesLogin:
         assert updated.id == user_id, "Should update the existing user, not create a new one"
         assert updated.google_sub == "google-sub-12345", "google_sub must be backfilled"
 
-    def test_second_login_audit_log_count(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_second_login_audit_log_count(self, client: TestClient, db_session: Session) -> None:
         """Each login writes one audit_log row, so two logins → two rows."""
         from app.db.models.audit_log import AuditLog
 
@@ -183,8 +177,6 @@ class TestCallbackStubExistingUserUpdatesLogin:
         assert user is not None
 
         log_count = (
-            db_session.query(AuditLog)
-            .filter_by(action="user_login", entity_id=user.id)
-            .count()
+            db_session.query(AuditLog).filter_by(action="user_login", entity_id=user.id).count()
         )
         assert log_count == 2, f"Expected 2 audit_log rows, got {log_count}"

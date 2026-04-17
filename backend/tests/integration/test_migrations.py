@@ -34,6 +34,6 @@ def test_migration_files_parse() -> None:
     result = _alembic(["heads"])
     assert result.returncode == 0, result.stderr
     # Verify the latest migration is the head (update when a new migration lands).
-    assert "0002_seed_bootstrap_admin" in result.stdout, (
-        f"Unexpected alembic heads output: {result.stdout!r}"
-    )
+    assert (
+        "0002_seed_bootstrap_admin" in result.stdout
+    ), f"Unexpected alembic heads output: {result.stdout!r}"

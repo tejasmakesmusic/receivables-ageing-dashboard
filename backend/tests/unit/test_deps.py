@@ -43,9 +43,10 @@ class TestGetCurrentUser:
         self, mock_request: MagicMock, mock_session: MagicMock
     ) -> None:
         """Missing or invalid cookie should raise 401 Not authenticated."""
-        with patch("app.api.deps.read_session_cookie", return_value=None), pytest.raises(
-            HTTPException
-        ) as exc_info:
+        with (
+            patch("app.api.deps.read_session_cookie", return_value=None),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             get_current_user(mock_request, mock_session)
 
         assert exc_info.value.status_code == 401
@@ -62,9 +63,10 @@ class TestGetCurrentUser:
         # Mock session.get() to return None (user not found)
         mock_session.get.return_value = None
 
-        with patch(
-            "app.api.deps.read_session_cookie", return_value=session_data
-        ), pytest.raises(HTTPException) as exc_info:
+        with (
+            patch("app.api.deps.read_session_cookie", return_value=session_data),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             get_current_user(mock_request, mock_session)
 
         assert exc_info.value.status_code == 401
@@ -82,9 +84,10 @@ class TestGetCurrentUser:
         mock_user.is_active = False
         mock_session.get.return_value = mock_user
 
-        with patch(
-            "app.api.deps.read_session_cookie", return_value=session_data
-        ), pytest.raises(HTTPException) as exc_info:
+        with (
+            patch("app.api.deps.read_session_cookie", return_value=session_data),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             get_current_user(mock_request, mock_session)
 
         assert exc_info.value.status_code == 403

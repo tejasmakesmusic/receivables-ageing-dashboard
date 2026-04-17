@@ -129,8 +129,6 @@ class TestCsrfPostAdminWithValidTokenPasses:
         csrf_token = client.cookies.get("csrf_token", csrf_token)
 
         # Import here to avoid circular import issues at collection time
-        from app.db.models.user import User
-        from sqlalchemy.orm import Session
 
         # We don't have direct DB access in this test — use the deactivate
         # endpoint on a known-bad UUID to confirm CSRF passes (auth/DB may 404

@@ -58,9 +58,7 @@ class FxRateSource(StrEnum):
 class FxRate(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "fx_rates"
     __table_args__ = (
-        UniqueConstraint(
-            "from_ccy", "to_ccy", "effective_from", name="uq_fx_rate_triple"
-        ),
+        UniqueConstraint("from_ccy", "to_ccy", "effective_from", name="uq_fx_rate_triple"),
     )
 
     from_ccy: Mapped[str] = mapped_column(String(3), nullable=False)

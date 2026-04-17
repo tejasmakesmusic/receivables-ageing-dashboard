@@ -48,4 +48,6 @@ def test_health_db_error_path() -> None:
     body = r.json()
     assert body["status"] == "ok", "App liveness should stay ok even when DB is down"
     assert body["db"] == "error"
-    assert "db_error" not in body, "Raw exception string must NOT appear in unauthenticated response"
+    assert (
+        "db_error" not in body
+    ), "Raw exception string must NOT appear in unauthenticated response"

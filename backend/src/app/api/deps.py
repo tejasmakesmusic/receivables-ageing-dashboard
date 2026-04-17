@@ -28,7 +28,8 @@ def db_session() -> Iterator[Session]:
 
 
 def get_current_user(
-    request: Request, session: Session = Depends(db_session)  # noqa: B008
+    request: Request,
+    session: Session = Depends(db_session),  # noqa: B008
 ) -> User:
     """Extract and validate the current user from the session cookie.
 

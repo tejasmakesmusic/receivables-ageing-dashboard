@@ -42,14 +42,18 @@ def test_entities_seeded_ind_uae(db_session: Session) -> None:
     assert ind_row[1] == "EMB Global India", f"IND name mismatch: {ind_row[1]!r}"
     assert ind_row[2] == "IN", f"IND country mismatch: {ind_row[2]!r}"
     assert ind_row[3] == "INR", f"IND currency mismatch: {ind_row[3]!r}"
-    assert ind_row[4] is None, "IND default_credit_days should be NULL (set via admin config, spec D8)"
+    assert (
+        ind_row[4] is None
+    ), "IND default_credit_days should be NULL (set via admin config, spec D8)"
 
     # UAE details
     uae_row = next(row for row in result if row[0] == "UAE")
     assert "MANTARAV DIGITAL" in uae_row[1], f"UAE name mismatch: {uae_row[1]!r}"
     assert uae_row[2] == "AE", f"UAE country mismatch: {uae_row[2]!r}"
     assert uae_row[3] == "AED", f"UAE currency mismatch: {uae_row[3]!r}"
-    assert uae_row[4] is None, "UAE default_credit_days should be NULL (set via admin config, spec D8)"
+    assert (
+        uae_row[4] is None
+    ), "UAE default_credit_days should be NULL (set via admin config, spec D8)"
 
 
 def test_user_tejaswa_seeded_admin(db_session: Session) -> None:
@@ -86,9 +90,9 @@ def test_audit_log_user_bootstrap_create(db_session: Session) -> None:
     assert action == "user_bootstrap_create"
     assert entity_type == "users"
     assert actor_user_id is None, "Bootstrap should have actor_user_id=NULL (system action)"
-    assert str(entity_id) == _USER_TEJASWA_ID, (
-        f"entity_id should be Tejaswa's UUID {_USER_TEJASWA_ID}, got {entity_id}"
-    )
+    assert (
+        str(entity_id) == _USER_TEJASWA_ID
+    ), f"entity_id should be Tejaswa's UUID {_USER_TEJASWA_ID}, got {entity_id}"
 
     # psycopg returns JSONB columns as Python dicts; if this were a string the
     # next assertion would raise TypeError, not AssertionError.
