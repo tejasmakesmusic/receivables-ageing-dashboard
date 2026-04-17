@@ -41,7 +41,7 @@ jobs:
       GOOGLE_OAUTH_CLIENT_SECRET: ci-dummy
       GOOGLE_OAUTH_REDIRECT_URI: http://localhost:8000/auth/google/callback
       GOOGLE_OAUTH_ALLOWED_DOMAIN: emb.global
-      APP_ENV: test
+      APP_ENV: development
       AUTH_PROVIDER: stub
     steps:
       - uses: actions/checkout@v4
