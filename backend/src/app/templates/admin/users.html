@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>User Management — EMB Receivables</title></head>
+<body>
+  <h1>User Management</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Email</th><th>Name</th><th>Role</th><th>Active</th><th>Last Login</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for user in users %}
+      <tr>
+        <td>{{ user.email }}</td>
+        <td>{{ user.name or "—" }}</td>
+        <td>{{ user.role.value }}</td>
+        <td>{{ "Yes" if user.is_active else "No" }}</td>
+        <td>{{ user.last_login_at.strftime("%Y-%m-%d %H:%M") if user.last_login_at else "Never" }}</td>
+        <td>
+          {% if user.role.value == "PENDING" %}
+            <form method="post" action="/admin/users/{{ user.id }}/approve">
+              <select name="role">
+                <option value="ANALYST">ANALYST</option>
+                <option value="CFO">CFO</option>
+                <option value="ADMIN">ADMIN</option>
+              </select>
+              <button type="submit">Approve</button>
+            </form>
+          {% endif %}
+          {% if user.is_active %}
+            <form method="post" action="/admin/users/{{ user.id }}/deactivate">
+              <button type="submit">Deactivate</button>
+            </form>
+          {% else %}
+            <form method="post" action="/admin/users/{{ user.id }}/reactivate">
+              <button type="submit">Reactivate</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p><a href="/">Home</a> | <a href="/auth/logout">Sign out</a></p>
+</body>
+</html>

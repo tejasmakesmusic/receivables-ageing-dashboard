@@ -15,37 +15,30 @@ dependencies = [
   "uvicorn[standard]>=0.32,<0.33",
   "starlette>=0.41,<0.42",
   "python-multipart>=0.0.17,<0.0.18",  # for multipart uploads (S1)
-
   # Data
   "sqlalchemy>=2.0,<2.1",
   "alembic>=1.14,<1.15",
   "psycopg[binary]>=3.2,<3.3",         # Postgres driver (SQLAlchemy 2.x)
-
   # Schemas / config
   "pydantic>=2.9,<3",
   "pydantic-settings>=2.6,<3",
-
   # Auth / session
   "authlib>=1.3,<2",                   # Google OAuth (D4)
   "itsdangerous>=2.2,<3",              # signed-cookie sessions (§11)
-
   # Logging
   "structlog>=24.4,<25",
-
   # Scheduling
   "apscheduler>=3.10,<4",              # cron for CFO digest (§8.1)
-
   # Rate limiting
   "slowapi>=0.1.9,<0.2",
-
   # Parsers / matching
   "openpyxl>=3.1,<4",
   "pandas>=2.2,<3",                    # xlsx parsing only
   "rapidfuzz>=3.10,<4",                # fuzzy alias matching (D11)
-
   # Email providers (keep both; one is selected at runtime via EMAIL_PROVIDER)
   "resend>=2.4,<3",
   "sendgrid>=6.11,<7",
+  "jinja2>=3.1,<4",
 ]
 
 [project.optional-dependencies]

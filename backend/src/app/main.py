@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 
 from app.api.deps import db_session
+from app.api.routes.admin import router as admin_router
 from app.api.routes.auth import router as auth_router
 from app.config import get_settings
 from app.core.logging import get_logger
@@ -28,6 +29,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
 
 @app.get("/health", tags=["meta"])
