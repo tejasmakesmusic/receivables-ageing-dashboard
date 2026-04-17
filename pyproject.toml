@@ -138,7 +138,7 @@ files = ["backend/src"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["apscheduler.*", "slowapi.*", "factory_boy.*", "sendgrid.*", "resend.*"]
+module = ["apscheduler.*", "slowapi.*", "factory_boy.*", "sendgrid.*", "resend.*", "openpyxl.*", "pandas.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

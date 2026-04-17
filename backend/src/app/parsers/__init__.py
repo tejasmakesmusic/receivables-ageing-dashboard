@@ -15,6 +15,7 @@ from app.parsers.common import (
     StagedInvoice,
     compute_file_sha256,
 )
+from app.parsers.tally import parse_tally_grpbills
 
 __all__ = [
     "ParseError",
@@ -23,4 +24,5 @@ __all__ = [
     "StagedCreditPeriod",
     "StagedInvoice",
     "compute_file_sha256",
+    "parse_tally_grpbills",
 ]
