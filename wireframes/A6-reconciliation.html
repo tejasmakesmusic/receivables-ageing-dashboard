@@ -81,7 +81,7 @@
       <span class="text-red-500 text-xl">&#9888;</span>
       <div>
         <div class="text-sm font-semibold text-red-800">Publish of next snapshot (IND) blocked until this one is MATCHED</div>
-        <div class="text-xs text-red-600 mt-0.5">Per spec consequence #6: reconciliation must be confirmed before the next snapshot can be published. Delta is currently −₹1.28 Cr — closing AR entry does not reconcile against Dashboard AR and exception totals.</div>
+        <div class="text-xs text-red-600 mt-0.5">Per spec consequence #6: reconciliation must be confirmed before the next snapshot can be published. Delta is currently +₹1.28 Cr — closing AR entry does not reconcile against Dashboard AR and exception totals.</div>
       </div>
     </div>
     <button class="flex-shrink-0 text-xs text-red-700 border border-red-300 bg-red-100 hover:bg-red-200 px-3 py-1.5 rounded font-medium">
@@ -103,7 +103,7 @@
     <div class="bg-white border border-gray-200 rounded-lg px-5 py-4">
       <div class="text-xs text-gray-500 mb-1">Exception bucket total (computed)</div>
       <div class="text-2xl font-bold text-orange-600">₹5,50,00,000</div>
-      <div class="text-xs text-gray-400 mt-1">Sum of ACTIVE exception-tagged invoices (LEGAL + DISPUTED + CN_PENDING + WRITTEN_OFF).</div>
+      <div class="text-xs text-gray-400 mt-1">Sum of all ACTIVE exception tags on OPEN invoices in this snapshot.</div>
     </div>
 
     <!-- Tile 3: Tally/Xero closing AR — user entry -->
@@ -111,7 +111,7 @@
       <div class="text-xs text-indigo-500 mb-1 font-medium">Tally/Xero closing AR (enter here)</div>
       <div class="flex items-center gap-1 mb-1">
         <span class="text-gray-500 text-sm font-medium">₹</span>
-        <input type="text" placeholder="Enter amount…" value="14,50,00,000" class="text-2xl font-bold text-gray-900 w-full border-0 border-b border-indigo-300 focus:outline-none focus:border-indigo-500 bg-transparent" />
+        <input type="text" placeholder="Enter amount…" value="22,94,00,000" class="text-2xl font-bold text-gray-900 w-full border-0 border-b border-indigo-300 focus:outline-none focus:border-indigo-500 bg-transparent" />
       </div>
       <div class="text-xs text-gray-400 mt-1">From Tally's closing balance report / Xero aged receivables total as at 2026-04-08.</div>
       <button class="mt-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded font-medium w-full">Save</button>
@@ -121,14 +121,14 @@
     <!-- Tile 4: Delta -->
     <div class="bg-white border border-red-300 rounded-lg px-5 py-4">
       <div class="text-xs text-gray-500 mb-1">Delta</div>
-      <div class="text-2xl font-bold text-red-700">−₹1.28 Cr</div>
+      <div class="text-2xl font-bold text-red-700">+₹1.28 Cr</div>
       <div class="text-xs text-gray-500 mt-1 leading-relaxed">
-        <strong>Formula:</strong><br/>
-        Delta = Dashboard AR − (Exception bucket total + Tally/Xero closing AR)<br/>
-        <span class="text-gray-400">= ₹18.72 Cr − (₹5.50 Cr + ₹14.50 Cr) = <strong class="text-red-600">−₹1.28 Cr</strong></span>
+        <strong>Formula (spec D19):</strong><br/>
+        Delta = Dashboard AR + Exception buckets − Tally/Xero AR<br/>
+        <span class="text-gray-400">= ₹18.72 Cr + ₹5.50 Cr − ₹22.94 Cr = <strong class="text-red-600">+₹1.28 Cr</strong></span>
       </div>
       <div class="mt-2 text-xs text-gray-400 leading-relaxed">
-        When MATCHED: delta ≈ 0 (within ₹100 tolerance) → Dashboard AR is fully explained by (a) exception-tagged invoices + (b) Tally/Xero closing AR.
+        When MATCHED: delta ≈ 0 (within ₹100 tolerance) → Tally/Xero closing AR equals Dashboard AR (gross per-invoice) + Exception buckets (bridges the write-off gap).
       </div>
     </div>
 
@@ -141,7 +141,7 @@
       <span class="text-red-500 text-2xl">&#9888;</span>
       <div>
         <div class="text-lg font-bold text-red-600">MISMATCHED</div>
-        <div class="text-xs text-gray-500">Delta −₹1.28 Cr exceeds ₹100 tolerance. Tally/Xero closing AR (₹14.50 Cr) + exception total (₹5.50 Cr) ≠ Dashboard AR (₹18.72 Cr).</div>
+        <div class="text-xs text-gray-500">Delta +₹1.28 Cr exceeds ₹100 tolerance. Dashboard AR (₹18.72 Cr) + Exception buckets (₹5.50 Cr) ≠ Tally/Xero closing AR (₹22.94 Cr).</div>
       </div>
     </div>
     <!-- Showing other states as examples -->
@@ -159,7 +159,7 @@
     <div class="bg-white border border-gray-200 rounded-lg">
       <div class="px-5 py-3 border-b border-gray-100">
         <h2 class="text-sm font-medium text-gray-800">Exception bucket subtotals</h2>
-        <p class="text-xs text-gray-400 mt-0.5">Identifies which bucket is driving any mismatch. Exception bucket total = sum of all <strong>ACTIVE</strong> exception tags on OPEN invoices in this snapshot, across <strong>all</strong> bucket types (seeded D9 set + admin-added). Both participate in the Delta formula.</p>
+        <p class="text-xs text-gray-400 mt-0.5">Identifies which bucket is driving any mismatch. Exception bucket total = sum of all <strong>ACTIVE</strong> exception tags on OPEN invoices in this snapshot.</p>
       </div>
       <table class="w-full text-xs">
         <thead>
@@ -211,8 +211,8 @@
       <textarea rows="8" placeholder="Add reconciliation notes…" class="w-full text-xs border border-gray-300 rounded px-3 py-2 resize-none focus:outline-none focus:border-indigo-400">Snapshot #3418 IND reconciliation [MISMATCHED]:
 - Dashboard AR ₹18.72Cr (gross per-invoice outstanding, 291 invoices).
 - Exception total ₹5.50Cr (22 ACTIVE tagged invoices across all bucket types).
-- Tally/Xero closing AR entered as ₹14.50Cr — sourced from Tally GL closing balance report as at 2026-04-08.
-- Delta = 18.72 − (5.50 + 14.50) = −1.28Cr. Investigating: possible untagged write-off or data entry error in Tally AR figure.
+- Tally/Xero closing AR entered as ₹22.94Cr — sourced from Tally GL closing balance report as at 2026-04-08.
+- Delta = 18.72 + 5.50 − 22.94 = +1.28Cr (spec D19 formula). Investigating: possible over-entry on Tally AR, or an invoice we've tagged as exception that Tally has not yet written off.
 - This snapshot publish is blocked until delta is within ₹100 tolerance.</textarea>
       <div class="flex items-center justify-between mt-3">
         <span class="text-xs text-gray-400">Last saved: 2026-04-17 09:30 by Analyst User</span>
@@ -251,8 +251,8 @@
             <td class="px-3 py-3 text-gray-700">2026-04-08</td>
             <td class="px-3 py-3 text-right text-gray-800">₹18.72 Cr</td>
             <td class="px-3 py-3 text-right text-gray-800">₹5.50 Cr</td>
-            <td class="px-3 py-3 text-right text-gray-600">₹14.50 Cr</td>
-            <td class="px-3 py-3 text-right text-red-600 font-medium">−₹1.28 Cr</td>
+            <td class="px-3 py-3 text-right text-gray-600">₹22.94 Cr</td>
+            <td class="px-3 py-3 text-right text-red-600 font-medium">+₹1.28 Cr</td>
             <td class="px-3 py-3"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">MISMATCHED</span></td>
             <td class="px-3 py-3 text-gray-600">Analyst User</td>
             <td class="px-3 py-3 text-gray-500">2026-04-17 09:14</td>
@@ -264,7 +264,7 @@
             <td class="px-3 py-3 text-gray-600">2026-03-31</td>
             <td class="px-3 py-3 text-right text-gray-700">₹17.84 Cr</td>
             <td class="px-3 py-3 text-right text-gray-700">₹4.80 Cr</td>
-            <td class="px-3 py-3 text-right text-gray-600">₹13.04 Cr</td>
+            <td class="px-3 py-3 text-right text-gray-600">₹22.64 Cr</td>
             <td class="px-3 py-3 text-right text-green-600 font-medium">₹0</td>
             <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">MATCHED</span></td>
             <td class="px-3 py-3 text-gray-600">Priya Menon</td>
@@ -277,7 +277,7 @@
             <td class="px-3 py-3 text-gray-600">2026-03-24</td>
             <td class="px-3 py-3 text-right text-gray-700">₹17.20 Cr</td>
             <td class="px-3 py-3 text-right text-gray-700">₹4.60 Cr</td>
-            <td class="px-3 py-3 text-right text-gray-600">₹12.60 Cr</td>
+            <td class="px-3 py-3 text-right text-gray-600">₹21.80 Cr</td>
             <td class="px-3 py-3 text-right text-green-600 font-medium">₹0</td>
             <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">MATCHED</span></td>
             <td class="px-3 py-3 text-gray-600">Analyst User</td>
@@ -290,7 +290,7 @@
             <td class="px-3 py-3 text-gray-600">2026-03-17</td>
             <td class="px-3 py-3 text-right text-gray-700">₹16.90 Cr</td>
             <td class="px-3 py-3 text-right text-gray-700">₹4.20 Cr</td>
-            <td class="px-3 py-3 text-right text-gray-600">₹12.70 Cr</td>
+            <td class="px-3 py-3 text-right text-gray-600">₹21.10 Cr</td>
             <td class="px-3 py-3 text-right text-green-600 font-medium">₹0</td>
             <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">MATCHED</span></td>
             <td class="px-3 py-3 text-gray-600">Priya Menon</td>
@@ -316,7 +316,7 @@
             <td class="px-3 py-3 text-gray-600">2026-03-03</td>
             <td class="px-3 py-3 text-right text-gray-700">₹15.80 Cr</td>
             <td class="px-3 py-3 text-right text-gray-700">₹3.70 Cr</td>
-            <td class="px-3 py-3 text-right text-gray-600">₹12.10 Cr</td>
+            <td class="px-3 py-3 text-right text-gray-600">₹19.50 Cr</td>
             <td class="px-3 py-3 text-right text-green-600 font-medium">₹0</td>
             <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">MATCHED</span></td>
             <td class="px-3 py-3 text-gray-600">Analyst User</td>
@@ -329,7 +329,7 @@
             <td class="px-3 py-3 text-gray-600">2026-02-24</td>
             <td class="px-3 py-3 text-right text-gray-700">₹15.20 Cr</td>
             <td class="px-3 py-3 text-right text-gray-700">₹3.40 Cr</td>
-            <td class="px-3 py-3 text-right text-gray-600">₹11.80 Cr</td>
+            <td class="px-3 py-3 text-right text-gray-600">₹18.60 Cr</td>
             <td class="px-3 py-3 text-right text-green-600 font-medium">₹0</td>
             <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">MATCHED</span></td>
             <td class="px-3 py-3 text-gray-600">Priya Menon</td>
@@ -342,7 +342,7 @@
             <td class="px-3 py-3 text-gray-600">2026-02-17</td>
             <td class="px-3 py-3 text-right text-gray-700">₹14.60 Cr</td>
             <td class="px-3 py-3 text-right text-gray-700">₹3.10 Cr</td>
-            <td class="px-3 py-3 text-right text-gray-600">₹11.50 Cr</td>
+            <td class="px-3 py-3 text-right text-gray-600">₹17.70 Cr</td>
             <td class="px-3 py-3 text-right text-green-600 font-medium">₹0</td>
             <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">MATCHED</span></td>
             <td class="px-3 py-3 text-gray-600">Analyst User</td>
@@ -354,13 +354,13 @@
     </div>
     <div class="px-5 py-3 border-t border-gray-100">
       <p class="text-xs text-gray-400 leading-relaxed">
-        <strong>How to reconcile:</strong>
-        Delta = Dashboard AR − (Exception bucket total + Tally/Xero closing AR).
-        When MATCHED (delta ≈ 0): the system's gross per-invoice AR is fully explained by
-        (a) invoices exception-tagged (not expected to collect) +
-        (b) Tally/Xero closing AR (what the books show as outstanding).
-        Dashboard AR is gross (includes exception-tagged); Tally AR is net (Tally has write-offs actually written off).
-        Exception bucket total bridges the gap.
+        <strong>How to reconcile (spec D19):</strong>
+        Delta = Dashboard AR + Exception buckets − Tally/Xero AR.
+        When MATCHED (delta ≈ 0): Tally/Xero closing AR equals Dashboard AR (gross per-invoice) plus Exception buckets.
+        Dashboard AR is gross and includes every exception-tagged invoice we're still tracking;
+        Tally AR is the books' outstanding balance (net of anything Tally has already written off).
+        Exception buckets bridge the gap — they represent invoices we're tagging that Tally either
+        already removed or is about to.
       </p>
     </div>
   </div>
