@@ -276,6 +276,10 @@ def _resolve_against_corpus(
     else:
         state = "UNMAPPED"
 
+    # Rounding applied to the returned int field AFTER state classification.
+    # Classification uses the raw float (lines 272/274) so that a score of
+    # 89.5 is FUZZY_LOW (state) but ratio=90 (rounded int for display) — the
+    # threshold decision must not be altered by the int-cast.
     candidates = [
         AliasCandidate(
             canonical_id=entry.canonical_id,
