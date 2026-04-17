@@ -85,3 +85,6 @@ storage/
 
 # ---- Build artifacts ----
 *.tsbuildinfo
+
+# Claude Code per-dev config
+.claude/
