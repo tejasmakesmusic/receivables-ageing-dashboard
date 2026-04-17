@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI
@@ -11,13 +12,23 @@ from app.api.deps import db_session
 from app.api.routes.admin import router as admin_router
 from app.api.routes.auth import router as auth_router
 from app.config import get_settings
-from app.core.logging import get_logger
+from app.core.logging import configure_logging, get_logger
+from app.core.middleware import CSRFMiddleware, RequestIDMiddleware
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from sqlalchemy.orm import Session
 
 settings = get_settings()
 log = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    configure_logging()
+    yield
+
 
 app = FastAPI(
     title="Receivables Ageing Dashboard",
@@ -26,7 +37,13 @@ app = FastAPI(
         "Internal EMB Global AR ageing platform (India/Tally + UAE/Xero). "
         "Scaffold only — routes added per milestone."
     ),
+    lifespan=lifespan,
 )
+
+# Middleware registration: last added = outermost (runs first).
+# RequestIDMiddleware must be outermost so request_id is bound before everything else.
+app.add_middleware(CSRFMiddleware)  # inner
+app.add_middleware(RequestIDMiddleware)  # outer — added last, runs first
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])

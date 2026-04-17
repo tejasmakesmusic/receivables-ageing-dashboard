@@ -51,6 +51,24 @@ def _create_pending(client: TestClient, email: str) -> None:
     )
 
 
+def _csrf_token(client: TestClient) -> str:
+    """Return the current csrf_token cookie value.
+
+    CSRFMiddleware sets the cookie on every response, including the GET
+    callbacks above, so by the time tests call this there is always a value.
+    Falls back to empty string — the test will then receive 403, which is
+    intentional for negative tests.
+    """
+    return client.cookies.get("csrf_token", "")
+
+
+def _post_with_csrf(client: TestClient, url: str, data: dict | None = None) -> object:
+    """POST with the csrf_token form field automatically injected."""
+    payload = dict(data or {})
+    payload["csrf_token"] = _csrf_token(client)
+    return client.post(url, data=payload, follow_redirects=False)
+
+
 # ---------------------------------------------------------------------------
 # Test 1: GET /admin/users requires ADMIN role
 # ---------------------------------------------------------------------------
@@ -99,11 +117,7 @@ class TestApproveUserChangesRole:
         assert user is not None
         assert user.role == Role.PENDING
 
-        r = client.post(
-            f"/admin/users/{user.id}/approve",
-            data={"role": "ANALYST"},
-            follow_redirects=False,
-        )
+        r = _post_with_csrf(client, f"/admin/users/{user.id}/approve", {"role": "ANALYST"})
         assert r.status_code == 303
         assert r.headers["location"] == "/admin/users"
 
@@ -127,11 +141,7 @@ class TestApproveWritesAuditLog:
         user = db_session.query(User).filter_by(email="auditapprove@emb.global").first()
         assert user is not None
 
-        client.post(
-            f"/admin/users/{user.id}/approve",
-            data={"role": "ANALYST"},
-            follow_redirects=False,
-        )
+        _post_with_csrf(client, f"/admin/users/{user.id}/approve", {"role": "ANALYST"})
 
         log_row = (
             db_session.query(AuditLog).filter_by(action="role_change", entity_id=user.id).first()
@@ -156,10 +166,7 @@ class TestDeactivateUser:
         assert user is not None
         assert user.is_active is True
 
-        r = client.post(
-            f"/admin/users/{user.id}/deactivate",
-            follow_redirects=False,
-        )
+        r = _post_with_csrf(client, f"/admin/users/{user.id}/deactivate")
         assert r.status_code == 303
         assert r.headers["location"] == "/admin/users"
 
@@ -184,10 +191,7 @@ class TestReactivateUser:
         assert user is not None
 
         # Deactivate first
-        client.post(
-            f"/admin/users/{user.id}/deactivate",
-            follow_redirects=False,
-        )
+        _post_with_csrf(client, f"/admin/users/{user.id}/deactivate")
         db_session.expire_all()
         user = db_session.query(User).filter_by(email="reactivateme@emb.global").first()
         assert user is not None
@@ -195,10 +199,7 @@ class TestReactivateUser:
 
         # Reactivate — session cookie is still Tejaswa's (ADMIN) because
         # no other callback was called between deactivate and here.
-        r = client.post(
-            f"/admin/users/{user.id}/reactivate",
-            follow_redirects=False,
-        )
+        r = _post_with_csrf(client, f"/admin/users/{user.id}/reactivate")
         assert r.status_code == 303
         assert r.headers["location"] == "/admin/users"
 
@@ -224,11 +225,7 @@ class TestApprovePendingRoleReturns422:
         user = db_session.query(User).filter_by(email="pendinginto@emb.global").first()
         assert user is not None
 
-        r = client.post(
-            f"/admin/users/{user.id}/approve",
-            data={"role": "PENDING"},
-            follow_redirects=False,
-        )
+        r = _post_with_csrf(client, f"/admin/users/{user.id}/approve", {"role": "PENDING"})
         assert r.status_code == 422
 
 
@@ -252,7 +249,7 @@ class TestAdminEdgeCases:
         admin = db_session.query(User).filter_by(email="tejaswa.sharma@emb.global").first()
         assert admin is not None
 
-        r = client.post(f"/admin/users/{admin.id}/deactivate", follow_redirects=False)
+        r = _post_with_csrf(client, f"/admin/users/{admin.id}/deactivate")
         assert r.status_code == 422
 
     def test_deactivate_already_inactive_is_noop(
@@ -275,7 +272,7 @@ class TestAdminEdgeCases:
         assert user is not None
 
         # Deactivate once
-        r = client.post(f"/admin/users/{user.id}/deactivate", follow_redirects=False)
+        r = _post_with_csrf(client, f"/admin/users/{user.id}/deactivate")
         assert r.status_code == 303
 
         db_session.expire_all()
@@ -289,7 +286,7 @@ class TestAdminEdgeCases:
         )
 
         # Deactivate again — should be no-op
-        r = client.post(f"/admin/users/{user.id}/deactivate", follow_redirects=False)
+        r = _post_with_csrf(client, f"/admin/users/{user.id}/deactivate")
         assert r.status_code == 303
 
         db_session.expire_all()

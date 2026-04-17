@@ -49,10 +49,11 @@ def list_users(
 ) -> HTMLResponse:
     """Render the user management page (admin only)."""
     users = list(session.scalars(select(User).order_by(User.created_at.desc())))
+    csrf_token = request.cookies.get("csrf_token", "")
     return _TEMPLATES.TemplateResponse(
         request,
         "admin/users.html",
-        {"users": users},
+        {"users": users, "csrf_token": csrf_token},
     )
 
 

@@ -20,6 +20,7 @@
         <td>
           {% if user.role.value == "PENDING" %}
             <form method="post" action="/admin/users/{{ user.id }}/approve">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <select name="role">
                 <option value="ANALYST">ANALYST</option>
                 <option value="CFO">CFO</option>
@@ -30,10 +31,12 @@
           {% endif %}
           {% if user.is_active %}
             <form method="post" action="/admin/users/{{ user.id }}/deactivate">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit">Deactivate</button>
             </form>
           {% else %}
             <form method="post" action="/admin/users/{{ user.id }}/reactivate">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit">Reactivate</button>
             </form>
           {% endif %}
