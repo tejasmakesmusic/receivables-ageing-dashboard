@@ -304,9 +304,8 @@ def test_parse_error_row_shape_synthetic() -> None:
 def test_subtotal_mismatch_warning_synthetic() -> None:
     """Party sub-total ₹100 off from invoice row sum → SUBTOTAL_MISMATCH warning.
 
-    GRAND_TOTAL_MISMATCH fires too (because sum-of-subtotals != grand_total),
-    but errors is non-empty only for GRAND_TOTAL_MISMATCH.  We verify that
-    SUBTOTAL_MISMATCH is in warnings (non-blocking) and that invoices are OK.
+    SUBTOTAL_MISMATCH lands in warnings (non-blocking) per re-amended §4.1.
+    is_valid stays True; errors list does not contain SUBTOTAL_MISMATCH.
     """
     data_rows: list[list[Any]] = [
         [None, None, "MismatchParty", None, None, None, None],  # party header
@@ -319,6 +318,9 @@ def test_subtotal_mismatch_warning_synthetic() -> None:
 
     subtotal_mismatches = [w for w in result.warnings if w.code == "SUBTOTAL_MISMATCH"]
     assert subtotal_mismatches, "Expected SUBTOTAL_MISMATCH in warnings"
+    # Pin the non-blocking contract explicitly (spec §4.1 re-amended).
+    assert result.is_valid is True
+    assert not any(e.code == "SUBTOTAL_MISMATCH" for e in result.errors)
 
 
 # ---------------------------------------------------------------------------

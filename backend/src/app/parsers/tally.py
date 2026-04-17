@@ -440,6 +440,13 @@ def parse_tally_grpbills(file_bytes: bytes) -> ParseResult:  # noqa: PLR0912,PLR
         invoice_sum = party_invoice_sums.get(party, Decimal("0"))
         delta = abs(subtotal_pending - invoice_sum)
         if delta > Decimal("1"):
+            # NOTE (CLAUDE.md data-handling): `party` is the raw party name from
+            # the Tally export. It is load-bearing for analyst triage — the
+            # warning is actionable only if the analyst knows which party to
+            # open. It belongs in the structured result (detail) for the UI to
+            # render. Downstream loggers (structlog in M3 upload pipeline,
+            # access logs, etc.) MUST redact `detail.party` when emitting these
+            # warnings to log output; do not log this field raw.
             warnings.append(
                 ParseError(
                     row_index=party_subtotal_row_idx.get(party, -1),
