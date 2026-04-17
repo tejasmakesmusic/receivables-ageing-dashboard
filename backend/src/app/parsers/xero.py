@@ -55,7 +55,7 @@ log = structlog.get_logger(__name__)
 
 _SHEET_NAME = "Aged Receivables Detail"
 _HEADER_ROW_IDX = 5  # 0-indexed; row 5 contains column names
-_DATA_START_ROW = 6  # first data row (after blank row 6)
+_DATA_START_ROW = 6  # first iterated row; blank row 6 is handled by _is_blank_row
 
 # Column names expected in the header row (spec §4.2 rule 2).
 # The parser indexes by name so column order changes don't break it.
@@ -63,7 +63,6 @@ _COL_CONTACT_ACCOUNT_NUMBER = "Contact Account Number"
 _COL_PRIMARY_PERSON = "Primary Person"
 _COL_INVOICE_DATE = "Invoice Date"
 _COL_INVOICE_NUMBER = "Invoice Number"
-_COL_INVOICE_REFERENCE = "Invoice Reference"
 _COL_TOTAL = "Total"
 _COL_INVOICE_SEEN = "Invoice Seen"
 _COL_INVOICE_SENT = "Invoice Sent"
@@ -332,14 +331,42 @@ def parse_xero_aged_receivables(file_bytes: bytes) -> ParseResult:  # noqa: PLR0
 
     col_map = _build_col_map(df)
 
+    # ------------------------------------------------------------------ #
+    # 3a. File-level guard: required columns must be present              #
+    # ------------------------------------------------------------------ #
+    required_cols = (
+        _COL_CONTACT_ACCOUNT_NUMBER,
+        _COL_INVOICE_DATE,
+        _COL_INVOICE_NUMBER,
+        _COL_TOTAL,
+    )
+    missing = [c for c in required_cols if c not in col_map]
+    if missing:
+        errors.append(
+            ParseError(
+                row_index=-1,
+                code="MISSING_REQUIRED_COLUMN",
+                message=f"Required Xero columns absent: {missing}",
+                detail={"missing": list(missing), "header_row_index": _HEADER_ROW_IDX},
+            )
+        )
+        return ParseResult(
+            invoices=[],
+            errors=errors,
+            warnings=warnings,
+            as_of_date=as_of_date,
+            file_sha256=sha256,
+            source_hint="XERO",
+        )
+
     # Derive ordered list of column names for raw_row_json (all named cols).
     col_names_ordered: list[str] = [
         str(v).strip() for v in df.iloc[_HEADER_ROW_IDX] if isinstance(v, str) and v.strip()
     ]
     # col_map maps name → int index (same mapping used for both predicates and raw_row_json).
 
-    # Resolve required column indices (None if not found in header).
-    contact_col: int = col_map.get(_COL_CONTACT_ACCOUNT_NUMBER, 0)
+    # Resolve required column indices (safe: presence guaranteed by required_cols check above).
+    contact_col: int = col_map[_COL_CONTACT_ACCOUNT_NUMBER]
     inv_date_col: int | None = col_map.get(_COL_INVOICE_DATE)
     inv_num_col: int | None = col_map.get(_COL_INVOICE_NUMBER)
     total_col: int | None = col_map.get(_COL_TOTAL)
@@ -410,9 +437,10 @@ def parse_xero_aged_receivables(file_bytes: bytes) -> ParseResult:  # noqa: PLR0
             parsed_date: date | None = None
             date_parse_error: str | None = None
             try:
-                assert inv_date_col is not None
+                if inv_date_col is None:
+                    raise ValueError("Invoice Date column not found in header")
                 parsed_date = _parse_date(row.iloc[inv_date_col])
-            except (ValueError, AssertionError) as exc:
+            except ValueError as exc:
                 date_parse_error = str(exc)
 
             # Parse Total.
@@ -458,7 +486,11 @@ def parse_xero_aged_receivables(file_bytes: bytes) -> ParseResult:  # noqa: PLR0
                 continue
 
             # Invoice Number: already confirmed non-empty by _is_invoice_row.
-            assert inv_num_col is not None
+            if inv_num_col is None:
+                raise RuntimeError(
+                    "Invoice Number column not found in header "
+                    "(should have been caught by MISSING_REQUIRED_COLUMN check)"
+                )
             invoice_ref = str(row.iloc[inv_num_col]).strip()
 
             # xero_metadata (spec §4.2 rule 6).

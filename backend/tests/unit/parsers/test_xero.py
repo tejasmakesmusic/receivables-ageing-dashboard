@@ -475,9 +475,10 @@ def test_invoice_seen_high_warning_synthetic() -> None:
     assert (
         w.detail["not_seen_count"] == 3
     ), f"Expected not_seen_count=3, got {w.detail['not_seen_count']}"
-    assert (
-        w.detail["percentage"] > 0.20
-    ), f"Expected percentage > 0.20, got {w.detail['percentage']}"
+    assert w.detail["total"] == 5, f"Expected total=5, got {w.detail['total']}"
+    assert w.detail["percentage"] == pytest.approx(
+        0.6
+    ), f"Expected percentage≈0.6, got {w.detail['percentage']}"
 
 
 # ---------------------------------------------------------------------------
@@ -579,3 +580,93 @@ def test_deterministic_file_sha256(simple_xero_bytes: bytes) -> None:
     r1 = parse_xero_aged_receivables(simple_xero_bytes)
     r2 = parse_xero_aged_receivables(simple_xero_bytes)
     assert r1.file_sha256 == r2.file_sha256
+
+
+# ---------------------------------------------------------------------------
+# Helper: build wb bytes with one column name removed from the header row
+# ---------------------------------------------------------------------------
+
+
+def _build_wb_bytes_drop_col(drop_col_name: str) -> bytes:
+    """Build a minimal Xero XLSX with ``drop_col_name`` absent from the header row.
+
+    All other structure matches the standard synthetic fixture.
+    """
+    # Build a modified header row with the target column replaced by None.
+    modified_header: list[Any] = [(None if col == drop_col_name else col) for col in _HEADER_ROW]
+
+    wb = openpyxl.Workbook()
+    ws = wb.create_sheet("Aged Receivables Detail")
+    del wb["Sheet"]
+
+    meta = [row[:] for row in _META_ROWS]
+    meta[5] = modified_header  # replace header row (index 5 in _META_ROWS)
+
+    for row in meta:
+        ws.append(row)
+
+    # One data row so the parser doesn't exit early on UNEXPECTED_SHAPE.
+    ws.append(_make_invoice_row(inv_num="DROP-001", total=100.0))
+    ws.append(_make_grand_total(100.0))
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Test 17: missing required column → single file-level MISSING_REQUIRED_COLUMN error
+# ---------------------------------------------------------------------------
+
+
+def test_missing_required_column_emits_file_level_error() -> None:
+    """Header row missing 'Invoice Number' → MISSING_REQUIRED_COLUMN, early return.
+
+    FIX-2 / FIX-3: one actionable file-level error instead of dozens of
+    per-row PARSE_ERRORs when a wrong Xero report variant is uploaded.
+    """
+    file_bytes = _build_wb_bytes_drop_col("Invoice Number")
+    result = parse_xero_aged_receivables(file_bytes)
+
+    assert result.is_valid is False, "Expected is_valid=False when a required column is absent"
+    missing_errs = [e for e in result.errors if e.code == "MISSING_REQUIRED_COLUMN"]
+    assert (
+        len(missing_errs) == 1
+    ), f"Expected exactly 1 MISSING_REQUIRED_COLUMN error; got {len(missing_errs)}"
+    err = missing_errs[0]
+    assert err.detail is not None
+    assert (
+        "Invoice Number" in err.detail["missing"]
+    ), f"Expected 'Invoice Number' in detail['missing']; got {err.detail['missing']!r}"
+    assert (
+        result.invoices == []
+    ), f"Expected early return with invoices=[]; got {len(result.invoices)} invoices"
+
+
+# ---------------------------------------------------------------------------
+# Test 18: missing Contact Account Number → file-level MISSING_REQUIRED_COLUMN error
+# ---------------------------------------------------------------------------
+
+
+def test_missing_contact_account_number_emits_file_level_error() -> None:
+    """Header row missing 'Contact Account Number' → MISSING_REQUIRED_COLUMN, early return.
+
+    FIX-3: the silent default to column 0 is replaced by an explicit required-column
+    check that produces a single actionable file-level error.
+    """
+    file_bytes = _build_wb_bytes_drop_col("Contact Account Number")
+    result = parse_xero_aged_receivables(file_bytes)
+
+    assert result.is_valid is False, "Expected is_valid=False when Contact Account Number is absent"
+    missing_errs = [e for e in result.errors if e.code == "MISSING_REQUIRED_COLUMN"]
+    assert (
+        len(missing_errs) == 1
+    ), f"Expected exactly 1 MISSING_REQUIRED_COLUMN error; got {len(missing_errs)}"
+    err = missing_errs[0]
+    assert err.detail is not None
+    assert "Contact Account Number" in err.detail["missing"], (
+        f"Expected 'Contact Account Number' in detail['missing']; " f"got {err.detail['missing']!r}"
+    )
+    assert (
+        result.invoices == []
+    ), f"Expected early return with invoices=[]; got {len(result.invoices)} invoices"
