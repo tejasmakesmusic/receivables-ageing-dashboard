@@ -306,18 +306,29 @@ audit_log
 - Row 5 = header row: `Contact Account Number | Primary Person | Phone | Email | Mobile | Contact Group | ... | Total | Outstanding Tax | PROJECT ID | SERVICE MONTH | Invoice Seen | Invoice Sent`
 - Data rows follow, interleaved with party sub-totals and grand total
 
-**Parser rules:**
-1. Sniff "As at DD Month YYYY" from row 2 → that's the `as_of_date`.
+**Parser rules:** (amended 2026-04-17 — see ADR-0004 for Xero grand-total behavior.)
+
+1. Sniff "As at DD Month YYYY" from row 2 → that's the `as_of_date`. Sniff failure → `AS_OF_DATE_SNIFF_FAILED` in `warnings` (non-blocking; caller can supply via upload form).
 2. Skip rows 0–5 metadata+header. Normalize headers from row 5.
 3. Rows where `Contact Account Number` is populated but other fields empty = **party header row**. Forward-fill party name.
-4. Rows where party name starts with literal `"Total "` = **sub-total or grand-total row**. SKIP.
-5. Invoice rows: extract invoice_date (col to confirm from real sample — likely `Invoice Date`), `Reference` → invoice_ref, `Due Date` (ignored for ageing), `Total` → amount, `Outstanding Tax` → stored but not used.
-6. Preserve UAE-specific columns into `xero_metadata` JSONB: `invoice_seen`, `invoice_sent`, `project_id`, `service_month`, `primary_person`, `email`.
+4. **Row-skip taxonomy:**
+   - `party_name_raw.startswith("Total ")` (with trailing space) → **party sub-total row**. SKIP emission.
+   - `party_name_raw.strip() == "Total"` (exact, no trailing content) → **grand total row**. Capture its values, do not emit as invoice.
+   - Trailer rows after the grand total (percentages, FX footnotes, blank separators) → SKIP silently.
+5. **Invoice rows:** extract:
+   - `invoice_date` ← column `Invoice Date` (confirm header text when parsing).
+   - `invoice_ref` ← column `Invoice Number` (this is the authoritative invoice identifier in Xero's export. The column Xero labels `Invoice Reference` contains the contact person's name — captured in `raw_row_json` only, never used as `invoice_ref`).
+   - `Due Date` → ignored for ageing.
+   - `amount` ← column `Total`.
+   - `Outstanding Tax` → stored in `raw_row_json`, not used for ageing.
+   - Rows with empty `Invoice Number` (credit notes / adjustments in Xero's export) → emit as `StagedInvoice(status=PARSE_ERROR, parse_error_reason="…no invoice number (credit note / adjustment)")`. Analyst resolves in M3 staging; candidate for M5 "Credit note pending" exception tag (D9).
+6. Preserve UAE-specific columns into `xero_metadata` JSONB: `invoice_seen`, `invoice_sent`, `project_id`, `service_month`, `primary_person`, `email`. All values stringified to `str | None`.
 7. Source currency = `AED` always (UAE entity).
 
 **Validation:**
-- Grand total must match sum of invoice rows. Tolerance: AED 1.
-- Warn if `Invoice Seen = "Not seen"` count >20% of rows (likely a data hygiene issue analyst should see).
+- **Grand total reconcile:** `sum(OK invoice Total)` vs grand total row's Total column within AED 1 → `GRAND_TOTAL_MISMATCH`. Emitted as **warning** (non-blocking), not error — Xero's "Aged Receivables Detail" grand total row reflects aged/overdue exposure rather than sum of invoice totals, so the two do not reliably match. See ADR-0004. Primary safety net is per-row classification completeness (same pattern as Tally per ADR-0003 addendum).
+- `INVOICE_SEEN_HIGH` warning when `Invoice Seen = "Not seen"` count > 20% of OK invoices (data-hygiene signal; non-blocking).
+- Unclassifiable row → emit as `StagedInvoice(status=PARSE_ERROR)`. Analyst sees in M3 staging; publish gate (§5) blocks until resolved.
 
 ### 4.3 Credit Period config — `Credit Period for Accounts - India & UAE.xlsx`
 
