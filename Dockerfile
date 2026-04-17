@@ -75,6 +75,9 @@ ENV PYTHONPATH="/app/backend/src:${PYTHONPATH}"
 # Backend source
 COPY backend/ ./backend/
 
+# Railway entrypoint script
+COPY scripts/ ./scripts/
+
 # Frontend production bundle (served via FastAPI StaticFiles — spec §11)
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
