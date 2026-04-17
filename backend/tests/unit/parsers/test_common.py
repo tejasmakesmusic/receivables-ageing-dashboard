@@ -11,6 +11,7 @@ import json
 from datetime import date
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 from pydantic import ValidationError
 
@@ -21,6 +22,8 @@ from app.parsers.common import (
     StagedCreditPeriod,
     StagedInvoice,
     compute_file_sha256,
+    is_empty_cell,
+    stringify_cell,
 )
 
 # ---------------------------------------------------------------------------
@@ -440,5 +443,61 @@ def test_parsers_package_exports() -> None:
         "StagedCreditPeriod",
         "StagedInvoice",
         "compute_file_sha256",
+        "is_empty_cell",
+        "stringify_cell",
     ]:
         assert hasattr(pkg, name), f"app.parsers missing export: {name}"
+
+
+# ---------------------------------------------------------------------------
+# 13. is_empty_cell — moved from tally._is_empty (FIX-2)
+# ---------------------------------------------------------------------------
+
+
+def test_is_empty_cell_handles_nan_nat_none_and_blank_strings() -> None:
+    """is_empty_cell must return True for NaN, NaT, None, '', and whitespace strings."""
+    # All of these should be treated as empty.
+    assert is_empty_cell(None) is True
+    assert is_empty_cell(float("nan")) is True
+    assert is_empty_cell(pd.NaT) is True
+    assert is_empty_cell("") is True
+    assert is_empty_cell("   ") is True
+
+    # A real string value is NOT empty.
+    assert is_empty_cell("abc") is False
+    assert is_empty_cell("0") is False
+    assert is_empty_cell(0) is False
+    assert is_empty_cell(Decimal("0")) is False
+
+
+# ---------------------------------------------------------------------------
+# 14. stringify_cell — moved from tally._stringify (FIX-2)
+# ---------------------------------------------------------------------------
+
+
+def test_stringify_cell_returns_none_for_empty_and_str_for_value() -> None:
+    """stringify_cell must return None for empty inputs, str for all non-empty values."""
+    import datetime
+
+    # Empty inputs all become None.
+    assert stringify_cell(None) is None
+    assert stringify_cell(float("nan")) is None
+    assert stringify_cell(pd.NaT) is None
+    assert stringify_cell("") is None
+    assert stringify_cell("   ") is None
+
+    # Non-empty inputs become str — types that parsers commonly encounter.
+    result_date = stringify_cell(datetime.date(2026, 4, 17))
+    assert isinstance(result_date, str)
+
+    result_decimal = stringify_cell(Decimal("12345.67"))
+    assert isinstance(result_decimal, str)
+
+    result_ts = stringify_cell(pd.Timestamp("2026-04-17 14:30"))
+    assert isinstance(result_ts, str)
+
+    result_int = stringify_cell(42)
+    assert isinstance(result_int, str)
+
+    result_float = stringify_cell(3.14)
+    assert isinstance(result_float, str)

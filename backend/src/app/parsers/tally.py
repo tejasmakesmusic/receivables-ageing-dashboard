@@ -20,7 +20,7 @@ Guardrails (spec §15 + CLAUDE.md):
 from __future__ import annotations
 
 import io
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -33,6 +33,8 @@ from app.parsers.common import (
     ParseStatus,
     StagedInvoice,
     compute_file_sha256,
+    is_empty_cell,
+    stringify_cell,
 )
 
 log = structlog.get_logger(__name__)
@@ -59,46 +61,38 @@ _COL_NAMES = [
 # ---------------------------------------------------------------------------
 
 
-def _is_empty(val: Any) -> bool:
-    """True for NaN, NaT, None, or blank string."""
-    if val is None:
-        return True
-    try:
-        if pd.isna(val):
-            return True
-    except (TypeError, ValueError):
-        pass
-    return isinstance(val, str) and not val.strip()
-
-
 def _is_party_header(row: pd.Series[Any]) -> bool:
-    """Party header: party_name populated, date+ref_no+opening+pending all empty."""
+    """Party header: party_name populated, date and ref_no both empty.
+
+    Spec §4.1 rule 2 (exact match): a row is a party header iff party_name is
+    non-empty AND date is empty AND ref_no is empty.  No constraint is placed on
+    opening_amount or pending_amount — a Tally export variant may carry the
+    party's opening balance on the header row without affecting classification.
+    """
     return (
-        not _is_empty(row["party_name"])
-        and _is_empty(row["date"])
-        and _is_empty(row["ref_no"])
-        and _is_empty(row["opening_amount"])
-        and _is_empty(row["pending_amount"])
+        not is_empty_cell(row["party_name"])
+        and is_empty_cell(row["date"])
+        and is_empty_cell(row["ref_no"])
     )
 
 
 def _is_invoice_row(row: pd.Series[Any]) -> bool:
     """Invoice row: date AND ref_no both populated."""
-    return not _is_empty(row["date"]) and not _is_empty(row["ref_no"])
+    return not is_empty_cell(row["date"]) and not is_empty_cell(row["ref_no"])
 
 
 def _is_blank_row(row: pd.Series[Any]) -> bool:
     """Completely empty row (cosmetic gap between party groups)."""
-    return all(_is_empty(row[c]) for c in _COL_NAMES)
+    return all(is_empty_cell(row[c]) for c in _COL_NAMES)
 
 
 def _is_subtotal_or_grand_total(row: pd.Series[Any]) -> bool:
     """Subtotal-shaped: date+ref+party all empty, pending or opening populated."""
     return (
-        _is_empty(row["date"])
-        and _is_empty(row["ref_no"])
-        and _is_empty(row["party_name"])
-        and (not _is_empty(row["opening_amount"]) or not _is_empty(row["pending_amount"]))
+        is_empty_cell(row["date"])
+        and is_empty_cell(row["ref_no"])
+        and is_empty_cell(row["party_name"])
+        and (not is_empty_cell(row["opening_amount"]) or not is_empty_cell(row["pending_amount"]))
     )
 
 
@@ -107,16 +101,9 @@ def _is_subtotal_or_grand_total(row: pd.Series[Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _stringify(val: Any) -> str | None:
-    """Convert any cell value to str, or None for NA/NaN/NaT."""
-    if _is_empty(val):
-        return None
-    return str(val)
-
-
 def _row_to_raw_json(row: pd.Series[Any]) -> dict[str, str | None]:
     """Convert a full raw row to a JSON-safe dict (spec §4.1 rule 3)."""
-    return {col: _stringify(row[col]) for col in _COL_NAMES}
+    return {col: stringify_cell(row[col]) for col in _COL_NAMES}
 
 
 # ---------------------------------------------------------------------------
@@ -130,8 +117,10 @@ def _parse_date(val: Any) -> date | None:
     Returns ``None`` if ``val`` is empty.  Raises ``ValueError`` with a
     descriptive message if the value is present but unparseable.
     """
-    if _is_empty(val):
+    if is_empty_cell(val):
         return None
+    if isinstance(val, datetime):
+        return val.date()
     if isinstance(val, date):
         return val
     # pandas Timestamp (comes from openpyxl for datetime cells)
@@ -184,14 +173,14 @@ def _detect_grand_total(
         # Only one subtotal-shaped row; treat it as the grand total.
         idx, row = subtotal_rows[-1]
         pending = row["pending_amount"]
-        if _is_empty(pending):
+        if is_empty_cell(pending):
             return None, None
         return idx, Decimal(str(pending))
 
     # Two or more: the last one is the grand total.
     idx, row = subtotal_rows[-1]
     pending = row["pending_amount"]
-    if _is_empty(pending):
+    if is_empty_cell(pending):
         # Grand total pending is NaN — can't reconcile.
         return None, None
     return idx, Decimal(str(pending))
@@ -309,7 +298,7 @@ def parse_tally_grpbills(file_bytes: bytes) -> ParseResult:  # noqa: PLR0912,PLR
             if current_party is not None and current_party not in party_subtotals:
                 # Only capture the FIRST subtotal per party.
                 pend = row["pending_amount"]
-                if not _is_empty(pend):
+                if not is_empty_cell(pend):
                     party_subtotals[current_party] = Decimal(str(pend))
                 else:
                     party_subtotals[current_party] = None  # pending=NaN (AWE-type)
@@ -333,7 +322,7 @@ def parse_tally_grpbills(file_bytes: bytes) -> ParseResult:  # noqa: PLR0912,PLR
             pend_raw = row["pending_amount"]
             parsed_amount: Decimal | None = None
             amount_parse_error: str | None = None
-            if _is_empty(pend_raw):
+            if is_empty_cell(pend_raw):
                 amount_parse_error = f"pending_amount is empty at row {raw_idx}"
             else:
                 try:

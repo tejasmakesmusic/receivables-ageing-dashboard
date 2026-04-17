@@ -14,6 +14,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 
+import pandas as pd
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -205,3 +207,31 @@ class ParseResult(BaseModel):
 def compute_file_sha256(file_bytes: bytes) -> str:
     """Return hex-encoded SHA-256 digest of *file_bytes* (spec §4.4)."""
     return hashlib.sha256(file_bytes).hexdigest()
+
+
+def is_empty_cell(val: Any) -> bool:
+    """Return True if a pandas/xlsx cell should be treated as empty.
+
+    Handles NaN, NaT, None, and empty-or-whitespace-only strings.
+    Shared by all parsers (Tally, Xero, Credit Period) to ensure consistent
+    empty-cell detection without per-parser divergence.
+    """
+    if val is None:
+        return True
+    try:
+        if pd.isna(val):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return isinstance(val, str) and not val.strip()
+
+
+def stringify_cell(val: Any) -> str | None:
+    """Coerce a pandas/xlsx cell to str | None for JSON-safe storage.
+
+    Returns None for empty cells (via is_empty_cell), str(val) otherwise.
+    Shared by all parsers so raw_row_json construction is consistent.
+    """
+    if is_empty_cell(val):
+        return None
+    return str(val)
