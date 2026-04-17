@@ -13,6 +13,7 @@ from sqlalchemy import engine_from_config, pool
 import app.db.models  # noqa: F401
 from app.config import get_settings
 from app.db.models import Base
+from app.db.session import _normalize_dsn
 
 config = context.config
 
@@ -25,7 +26,7 @@ if config.config_file_name is not None:
 _s = get_settings()
 config.set_main_option(
     "sqlalchemy.url",
-    _s.database_url_direct or _s.database_url,
+    _normalize_dsn(_s.database_url_direct or _s.database_url),
 )
 
 target_metadata = Base.metadata
