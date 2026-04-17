@@ -33,7 +33,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock* ./
@@ -57,7 +57,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     PORT=8000
 
-COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
 
 # Non-root user for runtime
 RUN groupadd -r app && useradd -r -g app app
@@ -75,6 +75,10 @@ COPY backend/ ./backend/
 
 # Frontend production bundle (served via FastAPI StaticFiles — spec §11)
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+# Install wget for HEALTHCHECK probe (python:3.12-slim strips it)
+RUN apt-get update && apt-get install -y --no-install-recommends wget \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN chown -R app:app /app
 USER app
