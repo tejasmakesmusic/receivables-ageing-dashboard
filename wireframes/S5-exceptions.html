@@ -21,7 +21,7 @@
       <span class="text-xs text-gray-500 mr-1">Entity:</span>
       <button class="px-3 py-1 rounded text-xs font-medium bg-indigo-600 text-white">IND</button>
       <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">UAE</button>
-      <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">Consolidated</button>
+      <!-- Consolidated omitted from nav: entity-bound workflow (D15). Use filter bar below to view both entities. -->
     </div>
   </div>
   <div class="flex items-center gap-4">
@@ -110,6 +110,16 @@
         </table>
       </div>
 
+      <!-- EXCEPTION / FOLLOW-UP RELATIONSHIP EXPLAINER (Fix 5) -->
+      <div class="bg-indigo-50 border border-indigo-200 rounded-lg px-5 py-3 mb-4">
+        <p class="text-xs text-indigo-800">
+          <strong>Exception tags</strong> capture WHY an invoice is off-pattern (Legal, Disputed, etc.) and persist across snapshots.
+          <strong>Follow-ups (S6)</strong> capture the chase history — date, channel, contact, next action.
+          Each ACTIVE exception tag should have at least one follow-up logged within the expected resolution window.
+          Use the "Log follow-up" links below to record activity; the full follow-up screen is at <a href="#" class="underline">S6 — Follow-ups</a>.
+        </p>
+      </div>
+
       <!-- PAGE TITLE -->
       <div class="mb-4">
         <h1 class="text-lg font-semibold text-gray-900">Exception Manager</h1>
@@ -151,11 +161,13 @@
       </div>
 
       <!-- FILTER BAR -->
-      <div class="flex gap-2 mb-4">
-        <select class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-400">
-          <option>All entities</option>
-          <option selected>IND</option>
-          <option>UAE</option>
+      <!-- Note: Entity filter here is a per-row filter (IND / UAE / both) — not a nav context switch.
+           Exception tagging is per-invoice/per-entity; cross-entity viewing is allowed for review. "Consolidated" is not a valid label here. -->
+      <div class="flex gap-2 mb-4 flex-wrap">
+        <select class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-400" title="Filter by entity — select IND, UAE, or leave blank for both">
+          <option value="">IND + UAE (all)</option>
+          <option value="IND" selected>IND only</option>
+          <option value="UAE">UAE only</option>
         </select>
         <select class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none">
           <option>All exception types</option>
@@ -201,6 +213,7 @@
                 <th class="px-3 py-3 text-left font-medium">Tagged by</th>
                 <th class="px-3 py-3 text-left font-medium">Tagged at</th>
                 <th class="px-3 py-3 text-left font-medium">Exp. resolution</th>
+                <th class="px-3 py-3 text-left font-medium">Last follow-up</th>
                 <th class="px-3 py-3 text-left font-medium">Status</th>
                 <th class="px-3 py-3 text-left font-medium">Actions</th>
               </tr>
@@ -218,6 +231,10 @@
                 <td class="px-3 py-3 text-gray-600">Analyst User</td>
                 <td class="px-3 py-3 text-gray-500">2026-04-10</td>
                 <td class="px-3 py-3 text-gray-600">2026-06-30</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-600 text-xs">2026-04-10 (EMAIL)</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3">
                   <div class="flex flex-col gap-1">
@@ -238,6 +255,10 @@
                 <td class="px-3 py-3 text-gray-600">Analyst User</td>
                 <td class="px-3 py-3 text-gray-500">2026-03-25</td>
                 <td class="px-3 py-3 text-gray-600">2026-05-15</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-500 italic text-xs">No follow-up logged</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
               </tr>
@@ -253,6 +274,10 @@
                 <td class="px-3 py-3 text-gray-600">Priya Menon</td>
                 <td class="px-3 py-3 text-gray-500">2026-04-08</td>
                 <td class="px-3 py-3 text-gray-600">2026-04-30</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-600 text-xs">2026-04-08 (WHATSAPP)</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
               </tr>
@@ -268,6 +293,10 @@
                 <td class="px-3 py-3 text-gray-600">Priya Menon</td>
                 <td class="px-3 py-3 text-gray-500">2026-04-11</td>
                 <td class="px-3 py-3 text-gray-600">2026-04-25</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-600 text-xs">2026-04-11 (CALL)</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
               </tr>
@@ -283,6 +312,10 @@
                 <td class="px-3 py-3 text-gray-600">Analyst User</td>
                 <td class="px-3 py-3 text-gray-500">2026-04-05</td>
                 <td class="px-3 py-3 text-gray-600">2026-04-20</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-600 text-xs">2026-04-05 (EMAIL)</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
               </tr>
@@ -298,6 +331,10 @@
                 <td class="px-3 py-3 text-gray-600">Analyst User</td>
                 <td class="px-3 py-3 text-gray-500">2026-04-07</td>
                 <td class="px-3 py-3 text-gray-600">2026-04-28</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-500 italic text-xs">No follow-up logged</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
               </tr>
@@ -313,6 +350,7 @@
                 <td class="px-3 py-3 text-gray-600">Analyst User</td>
                 <td class="px-3 py-3 text-gray-500">2026-03-28</td>
                 <td class="px-3 py-3 text-gray-500">—</td>
+                <td class="px-3 py-3 text-gray-400">—</td>
                 <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded">RESOLVED</span></td>
                 <td class="px-3 py-3 text-gray-400">—</td>
               </tr>
@@ -328,6 +366,7 @@
                 <td class="px-3 py-3 text-gray-600">Priya Menon</td>
                 <td class="px-3 py-3 text-gray-500">2026-03-20</td>
                 <td class="px-3 py-3 text-gray-500">—</td>
+                <td class="px-3 py-3 text-gray-400">—</td>
                 <td class="px-3 py-3">
                   <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">AUTO_RESOLVED</span>
                   <div class="text-gray-400 text-xs mt-0.5">Invoice settled on 2026-04-09</div>
@@ -346,6 +385,10 @@
                 <td class="px-3 py-3 text-gray-600">Analyst User</td>
                 <td class="px-3 py-3 text-gray-500">2026-04-12</td>
                 <td class="px-3 py-3 text-gray-600">2026-05-31</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-600 text-xs">2026-04-12 (MEETING)</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
               </tr>
@@ -361,13 +404,17 @@
                 <td class="px-3 py-3 text-gray-600">Analyst User</td>
                 <td class="px-3 py-3 text-gray-500">2026-04-14</td>
                 <td class="px-3 py-3 text-gray-600">2026-04-30</td>
+                <td class="px-3 py-3">
+                  <div class="text-gray-500 italic text-xs">No follow-up logged</div>
+                  <a href="./S6-followups.html" class="text-indigo-600 hover:underline text-xs">Log follow-up &rarr;</a>
+                </td>
                 <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
                 <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
               </tr>
 
               <!-- Implied more rows -->
               <tr class="bg-gray-50">
-                <td colspan="11" class="px-4 py-3 text-center text-gray-400 text-xs">… 13 more rows (adjust filters to narrow)</td>
+                <td colspan="12" class="px-4 py-3 text-center text-gray-400 text-xs">… 13 more rows (adjust filters to narrow)</td>
               </tr>
 
             </tbody>

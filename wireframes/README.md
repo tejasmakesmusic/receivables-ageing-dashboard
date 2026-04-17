@@ -14,7 +14,26 @@ Open each `.html` file directly in a browser. No build step, no server. All Tail
 | S2 | [S2-staging.html](S2-staging.html) | /staging/:snapshot_id | ANALYST, ADMIN |
 | D1 | [D1-dashboard.html](D1-dashboard.html) | /dashboard | ALL (non-PENDING) |
 | S5 | [S5-exceptions.html](S5-exceptions.html) | /exceptions | ANALYST, ADMIN |
-| A6 | [A6-reconciliation.html](A6-reconciliation.html) | /admin/reconciliation | ANALYST (read), ADMIN |
+| A6 | [A6-reconciliation.html](A6-reconciliation.html) | /admin/reconciliation | AR entry role pending spec clarification (see Open spec questions above) |
+
+## Open spec questions (flagged for Tejaswa before M6)
+
+### A6 reconciliation: who enters the Tally/Xero closing AR?
+
+Spec is internally contradictory:
+
+- **§2 D19** — "Analyst enters actual Tally/Xero closing AR per snapshot."
+- **§9 route matrix** — A6 is `ANALYST (read), ADMIN` (i.e. ADMIN writes).
+
+These cannot both be true. M2 wireframe A6 uses role-neutral copy for the
+AR-entry control pending clarification. M6 implementation blocked on this:
+
+- If D19 is authoritative: flip the route matrix to `ANALYST (write), ADMIN`.
+- If §9 route matrix is authoritative: amend D19 to `ADMIN enters closing AR`.
+
+No decision inferred here. Requires Tejaswa's call before M6 starts.
+
+---
 
 ## What each screen covers
 
@@ -36,7 +55,7 @@ Key things to look at during review:
 
 1. **S2 staging grid:** does the match-state UX (4 states, confirm/reject buttons, credit source badges) match what you'd expect analysts to use?
 2. **D1 Tally overdue tooltip:** the "Tally: X / Ours: Y days" column — is the tooltip pattern clear enough for day-1 trust?
-3. **A6 reconciliation formula:** the Delta tile shows the formula. Does "Dashboard AR + Exception total − Tally/Xero AR" read correctly for your mental model? (The formula comes from spec §13 consequence #6 — a write-off bucket reduces dashboard AR, so the delta should equal the exception total when Tally AR is gross.)
+3. **A6 reconciliation formula:** the Delta tile shows the formula: `Delta = Dashboard AR − (Exception bucket total + Tally/Xero closing AR)`. When MATCHED, delta ≈ 0 — Dashboard AR (gross, includes exception-tagged) = exception total + Tally AR (net). The MISMATCHED scenario is #3418 with Delta = −₹1.28 Cr.
 4. **S5 auto-resolve badge:** AUTO_RESOLVED rows are dimmed with an explanation. Confirm this is visible enough.
 5. **Role indicators:** every action button has a role tag or note. Flag any that are missing or wrong.
 
