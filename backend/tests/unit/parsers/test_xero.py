@@ -37,6 +37,9 @@ FIXTURE_PATH = (
 
 @pytest.fixture
 def xero_file_bytes() -> bytes:
+    # Per M2 plan open decision #2 — real fixtures are .gitignored; skip in
+    # envs (CI) that don't have them locally. Revisit with sanitized fixtures
+    # in M3 if CI coverage gap bites.
     if not FIXTURE_PATH.exists():
         pytest.skip(f"fixture not present: {FIXTURE_PATH}")
     return FIXTURE_PATH.read_bytes()
