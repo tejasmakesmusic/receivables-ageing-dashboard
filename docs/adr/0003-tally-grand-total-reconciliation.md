@@ -57,3 +57,52 @@ Amend spec §4.1 validation to reconcile party sub-totals against the grand tota
 - **Warning-only on the original invoice-sum-vs-grand-total check.** Weaker signal; doesn't distinguish genuine Tally netting from a parser bug.
 
 The chosen decision preserves the safety net while matching the real data shape.
+
+---
+
+## Addendum — 2026-04-17 (same day)
+
+**Status of original decision:** superseded (in part).
+
+The first amendment (above) assumed `sum(party_sub_total_pending) ≈ grand_total_pending` on a real Tally GrpBills export. The M2 Task 2 implementer ran that check against the real `GrpBills.xlsx` fixture and found it also fails:
+
+| Quantity | Amount |
+|---|---|
+| Sum of invoice `pending_amount` (291 invoice rows) | ~₹13.2 crore |
+| Sum of party sub-total rows | ~₹11.4 crore |
+| Grand total row | ~₹9.2 crore |
+
+So there are **two** independent netting layers in Tally's report, not one:
+
+1. **Party-level netting** — party sub-total nets unallocated credits (advance receipts, journal entries) against that party's invoice balances. `sum(invoice pending) - sum(party_subtotals) ≈ ₹1.8 crore`.
+2. **Group-level netting** — grand total nets further entries above the party level (inter-group adjustments, group-scope unallocated entries). `sum(party_subtotals) - grand_total ≈ ₹2.3 crore`.
+
+No sum-of-X == Y reconcile holds at the file level. The "hard reconcile" safety net is structurally unavailable from a Tally GrpBills report.
+
+### Re-decision
+
+Demote `GRAND_TOTAL_MISMATCH` from blocking error to non-blocking warning, and adopt **per-row classification completeness** as the primary safety net:
+
+- Every non-metadata, non-grand-total row in the `Sundry Debtors` sheet must be classified as exactly one of: `party_header`, `invoice_row`, `party_subtotal`, or `blank`.
+- Any row the parser cannot classify is emitted as `StagedInvoice(status=PARSE_ERROR, parse_error_reason=...)`. Analyst sees PARSE_ERROR rows in M3 staging; publish gate (§5) blocks publication until resolved.
+- This is a stronger, more direct check than any sum-reconcile: if the parser drops rows, classification would skip or misclassify them, and either outcome surfaces. A sum-reconcile was only ever an indirect proxy for this invariant.
+
+`GRAND_TOTAL_MISMATCH` remains as a **warning** so an analyst can see the party-subtotals-vs-grand-total gap (which is the group-level netting magnitude) and investigate if it ever looks structurally wrong (e.g. 10× the expected magnitude). It does not block publish.
+
+`UNALLOCATED_CREDITS_DELTA` is unchanged — always emitted, always non-blocking, surfaces book-level unallocated-credit exposure per snapshot.
+
+Spec §4.1 validation section updated in same commit as this addendum.
+
+### Why not test the parser against invoice count / party count ranges?
+
+Considered and rejected. Row count ranges would need per-entity calibration ("normal" count range) and would flag legitimate business changes (new clients onboarded, invoices settled in bulk). Classification completeness is objective and doesn't require calibration.
+
+### Downstream impact of the re-decision
+
+- **M3 ingestion:** unchanged. Publish gate already requires analyst to resolve PARSE_ERROR rows and acknowledge warnings (§5).
+- **M5 exceptions:** may want to pre-seed an "Unallocated credit" exception bucket to complement D9's set. Decide when M5 is scoped.
+- **M6 A6 reconciliation:** the `delta` between dashboard AR (gross per-invoice) and Tally closing AR (net) is now expected and explainable via `UNALLOCATED_CREDITS_DELTA` from the latest snapshot. Reconciliation screen should surface this delta directly.
+
+### Test consequences
+
+The `test_grand_total_mismatch_error_synthetic` test name retains "error" for historical clarity but asserts the mismatch appears in `result.warnings` (not `result.errors`) and that `result.is_valid` stays True. The test is still a meaningful parser-bug detector: a synthetic file with a ₹50 offset between party-subtotals-sum and grand-total still triggers the warning.

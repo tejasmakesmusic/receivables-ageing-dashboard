@@ -288,11 +288,15 @@ audit_log
 5. Drop `due_on` and `overdue_days` columns — we compute our own. Keep `opening_amount` in `raw_row_json` but do not use for ageing.
 6. Source currency = `INR` always (India entity).
 
-**Validation:** (amended 2026-04-17 — see ADR-0003; Tally's grand total row is net of party-level unallocated credits, so it cannot equal sum of invoice `pending_amount`.)
-- **Hard reconcile:** sum of party sub-total rows must equal the grand total row (tolerance ₹1). Mismatch here = `GRAND_TOTAL_MISMATCH` error; blocks `ParseResult.is_valid`.
-- **Informational warning (not blocking):** emit a warning with `code=UNALLOCATED_CREDITS_DELTA` whose `detail` carries `sum_of_invoice_pending`, `grand_total`, and `delta`. The delta is the book-level unallocated-credit exposure that Tally nets against party balances but which our per-invoice view treats as outstanding. Analyst needs to see it; it does not block publish.
-- Per-party sub-total vs invoice-sum mismatch → warning (already §4.1 rule 4). This correctly flags parties like ADEEP where unallocated credits reduce the party's net position below the sum of its invoice `pending_amount` rows.
-- Tally headers do not reliably carry an `as_of_date`. Parser leaves `ParseResult.as_of_date = None`; the caller (upload pipeline, M3) supplies `as_of_date` from the upload form. The "invoice_dates ≤ as_of_date" check therefore runs in M3, not in the parser.
+**Validation:** (amended 2026-04-17, re-amended same day — see ADR-0003 + its addendum. Empirically no sum-of-X == Y reconcile holds on real Tally GrpBills exports because Tally nets at **both** party and group levels.)
+
+- **Primary safety net — per-row classification completeness:** every non-metadata, non-grand-total row must be classified by the parser as exactly one of: `party_header`, `invoice_row`, `party_subtotal`, `blank`. Any row the parser cannot classify is emitted as a `StagedInvoice` with `status=PARSE_ERROR` and a non-empty `parse_error_reason`. Analyst sees these in M3 staging; publish gate (§5) blocks publication until they're resolved. This — not any sum-reconcile — is the real "parser dropped rows" detector.
+- **Warnings — non-blocking, for analyst review (`result.warnings`):**
+  - `SUBTOTAL_MISMATCH`: per-party sub-total ≠ sum of that party's invoice `pending_amount` rows within ₹1. Expected on parties with unallocated credits (e.g. advance receipts).
+  - `GRAND_TOTAL_MISMATCH`: sum of party sub-totals ≠ grand total row within ₹1. Expected on most real files because Tally applies group-level netting beyond party-level. Not blocking — file-level reconcile is structurally not available from Tally's report.
+  - `UNALLOCATED_CREDITS_DELTA`: sum of invoice `pending_amount` minus grand total. Always emitted for auditability; surfaces book-level unallocated-credit exposure.
+- **No `as_of_date` sniffing:** Tally headers do not reliably carry one. Parser leaves `ParseResult.as_of_date = None`; M3 upload pipeline supplies it from the upload form. The "invoice_dates ≤ as_of_date" check therefore runs in M3, not in the parser.
+- **`ParseResult.is_valid` semantics:** True iff `errors == []`. PARSE_ERROR *rows* (status on a `StagedInvoice`) do NOT flip `is_valid=False` — row-level issues are a staging concern, not a parse-time block. In practice the Tally parser's `errors` list stays empty on a clean file; all safety signals surface via warnings or per-row PARSE_ERROR status.
 
 ### 4.2 Xero — `Aged Receivables Detail.xlsx`
 
