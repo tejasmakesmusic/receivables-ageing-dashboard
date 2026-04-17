@@ -35,6 +35,9 @@ _VALID_RAW_ROW: dict[str, object] = {
     "pending_amount": "80000.00",
 }
 
+# A valid 64-char lowercase hex digest (sha256 of b"test").
+_VALID_SHA256 = compute_file_sha256(b"test")
+
 
 def _make_ok_invoice(**kwargs: object) -> StagedInvoice:
     defaults: dict[str, object] = {
@@ -233,7 +236,7 @@ def test_staged_credit_period_blank_name_raises() -> None:
 def test_parse_result_is_valid_no_errors() -> None:
     """is_valid is True when errors list is empty."""
     result = ParseResult(
-        file_sha256="abc123",
+        file_sha256=_VALID_SHA256,
         source_hint="TALLY",
         errors=[],
         warnings=[],
@@ -249,7 +252,7 @@ def test_parse_result_is_valid_with_warnings_no_errors() -> None:
         message="Sub-total for Party X differs from sum of invoices by ₹0.50",
     )
     result = ParseResult(
-        file_sha256="abc123",
+        file_sha256=_VALID_SHA256,
         source_hint="TALLY",
         errors=[],
         warnings=[warning],
@@ -272,7 +275,7 @@ def test_parse_result_is_valid_false_when_errors() -> None:
         detail={"extracted": "99999.00", "tally_grand": "100000.00"},
     )
     result = ParseResult(
-        file_sha256="deadbeef",
+        file_sha256=_VALID_SHA256,
         source_hint="TALLY",
         errors=[error],
     )
@@ -311,9 +314,8 @@ def test_compute_file_sha256_deterministic() -> None:
 def test_decimal_amount_survives_json_round_trip() -> None:
     """Decimal in StagedInvoice.amount must keep precision through JSON.
 
-    Pydantic v2 serialises Decimal as a string by default.  This test
-    asserts the serialised value is parseable back to the same Decimal
-    without floating-point loss.
+    The field_serializer pins serialisation to str — this test asserts the
+    JSON value is a string (not a JSON number) and round-trips byte-exact.
     """
     precise_amount = Decimal("123456789.99")
     inv = _make_ok_invoice(amount=precise_amount)
@@ -321,11 +323,26 @@ def test_decimal_amount_survives_json_round_trip() -> None:
     json_str = inv.model_dump_json()
     data = json.loads(json_str)
 
-    # Pydantic v2 serialises Decimal as a string — parse back and compare.
-    recovered = Decimal(str(data["amount"]))
+    # Must be a str in JSON, not a float/int — guards against precision loss.
+    assert isinstance(
+        data["amount"], str
+    ), f"Expected amount to be a JSON string, got {type(data['amount'])}"
+
+    # Parse back and compare — must be byte-exact.
+    recovered = Decimal(data["amount"])
     assert (
         recovered == precise_amount
     ), f"Precision lost: expected {precise_amount!r}, got {recovered!r}"
+
+
+def test_decimal_high_precision_amount_round_trips_byte_exact() -> None:
+    """High-precision Decimal must survive JSON round-trip without any loss."""
+    high_prec = Decimal("123456789.0000000001")
+    inv = _make_ok_invoice(amount=high_prec)
+
+    data = json.loads(inv.model_dump_json())
+    assert isinstance(data["amount"], str)
+    assert Decimal(data["amount"]) == high_prec
 
 
 def test_decimal_zero_amount_survives_json_round_trip() -> None:
@@ -333,6 +350,78 @@ def test_decimal_zero_amount_survives_json_round_trip() -> None:
     inv = _make_ok_invoice(amount=Decimal("0.00"))
     data = json.loads(inv.model_dump_json())
     assert Decimal(str(data["amount"])) == Decimal("0.00")
+
+
+# ---------------------------------------------------------------------------
+# 11. raw_row_json must be JSON-serializable (I-2)
+# ---------------------------------------------------------------------------
+
+
+def test_raw_row_json_with_string_values_validates() -> None:
+    """A raw_row_json with stringified date and decimal passes validation."""
+    inv = _make_ok_invoice(
+        raw_row_json={
+            "d": "2026-04-17",
+            "amount": "1000.00",
+            "note": "all strings",
+        }
+    )
+    assert inv.raw_row_json["d"] == "2026-04-17"
+
+
+def test_raw_row_json_with_date_object_raises() -> None:
+    """A raw_row_json containing a date object must raise ValidationError."""
+    with pytest.raises(ValidationError, match="raw_row_json must be JSON-serializable"):
+        _make_ok_invoice(raw_row_json={"d": date(2026, 4, 17)})
+
+
+def test_raw_row_json_with_decimal_object_raises() -> None:
+    """A raw_row_json containing a Decimal object must raise ValidationError."""
+    with pytest.raises(ValidationError, match="raw_row_json must be JSON-serializable"):
+        _make_ok_invoice(raw_row_json={"amount": Decimal("1000.00")})
+
+
+# ---------------------------------------------------------------------------
+# 12. ParseResult.file_sha256 must be a 64-char lowercase hex string (M-2)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_result_valid_sha256_passes() -> None:
+    """A correctly-formed 64-char lowercase hex digest is accepted."""
+    result = ParseResult(
+        file_sha256=_VALID_SHA256,
+        source_hint="TALLY",
+    )
+    assert result.file_sha256 == _VALID_SHA256
+
+
+def test_parse_result_short_sha256_raises() -> None:
+    """A sha256 shorter than 64 chars must raise ValidationError."""
+    with pytest.raises(ValidationError, match="file_sha256 must be a 64-char lowercase hex digest"):
+        ParseResult(
+            file_sha256="abc123",
+            source_hint="TALLY",
+        )
+
+
+def test_parse_result_uppercase_sha256_raises() -> None:
+    """Uppercase hex in sha256 must raise ValidationError."""
+    upper = _VALID_SHA256.upper()
+    with pytest.raises(ValidationError, match="file_sha256 must be a 64-char lowercase hex digest"):
+        ParseResult(
+            file_sha256=upper,
+            source_hint="TALLY",
+        )
+
+
+def test_parse_result_63_char_sha256_raises() -> None:
+    """A 63-char hex string (one char short) must raise ValidationError."""
+    short = _VALID_SHA256[:-1]  # drop last char → 63 chars
+    with pytest.raises(ValidationError, match="file_sha256 must be a 64-char lowercase hex digest"):
+        ParseResult(
+            file_sha256=short,
+            source_hint="TALLY",
+        )
 
 
 # ---------------------------------------------------------------------------

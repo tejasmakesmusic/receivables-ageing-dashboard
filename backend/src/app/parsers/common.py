@@ -8,12 +8,20 @@ No ``datetime.today()`` / ``datetime.now()`` anywhere.
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -38,9 +46,8 @@ class StagedInvoice(BaseModel):
     ``party_name_raw``, ``raw_row_json``, ``row_index``.
 
     ``raw_row_json`` must be JSON-serialisable — stringify date/Decimal/datetime
-    values via ``str()`` when constructing it inside each parser.  The model
-    itself accepts ``dict[str, Any]`` without enforcing serialisability so that
-    tests can pass plain dicts without ceremony.
+    values via ``str()`` when constructing it inside each parser.  Construction
+    raises ``ValidationError`` if any value is not JSON-serialisable.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -61,11 +68,24 @@ class StagedInvoice(BaseModel):
     # --- raw storage ---
     raw_row_json: dict[str, Any]
 
-    # --- Xero-only (Task 3); None for Tally / Credit Period ---
+    # --- populated by the Xero parser only; None for Tally and Credit Period ---
     xero_metadata: dict[str, Any] | None = None
 
     # --- error path ---
     parse_error_reason: str | None = None
+
+    @field_validator("raw_row_json")
+    @classmethod
+    def _raw_row_json_must_be_json_safe(cls, v: dict[str, Any]) -> dict[str, Any]:
+        try:
+            json.dumps(v)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"raw_row_json must be JSON-serializable: {e}") from e
+        return v
+
+    @field_serializer("amount")
+    def _ser_amount(self, v: Decimal | None) -> str | None:
+        return None if v is None else str(v)
 
     @model_validator(mode="after")
     def _check_ok_completeness_and_error_reason(self) -> StagedInvoice:
@@ -162,6 +182,14 @@ class ParseResult(BaseModel):
 
     file_sha256: str
     source_hint: Literal["TALLY", "XERO", "CREDIT_PERIOD"]
+
+    @field_validator("file_sha256")
+    @classmethod
+    def _file_sha256_must_be_hex64(cls, v: str) -> str:
+        _SHA256_HEX_LEN = 64  # noqa: N806
+        if len(v) != _SHA256_HEX_LEN or not all(c in "0123456789abcdef" for c in v):
+            raise ValueError("file_sha256 must be a 64-char lowercase hex digest")
+        return v
 
     @property
     def is_valid(self) -> bool:
