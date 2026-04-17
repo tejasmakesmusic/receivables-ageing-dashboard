@@ -7,13 +7,15 @@ a JS layer (M4 dashboard not yet built — spec D23).
 
 from __future__ import annotations
 
-import uuid
+import uuid  # noqa: TCH003 — uuid.UUID used at runtime in path param type hints
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from sqlalchemy import select
 from sqlalchemy.orm import (
     Session,  # noqa: TCH002 — needed at runtime for Annotated[Session, Depends(...)]
 )
@@ -26,7 +28,12 @@ from app.db.models.user import User
 
 log = get_logger(__name__)
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parents[2] / "templates"))
+_TEMPLATES = Jinja2Templates(
+    env=Environment(
+        loader=FileSystemLoader(str(Path(__file__).parents[2] / "templates")),
+        autoescape=select_autoescape(["html"]),
+    )
+)
 
 # Roles that an admin is allowed to assign via the approval form.
 _ASSIGNABLE_ROLES = {Role.ANALYST, Role.CFO, Role.ADMIN}
@@ -41,7 +48,7 @@ def list_users(
     _current_user: Annotated[User, Depends(require_role(Role.ADMIN))],
 ) -> HTMLResponse:
     """Render the user management page (admin only)."""
-    users = session.query(User).order_by(User.created_at.desc()).all()
+    users = list(session.scalars(select(User).order_by(User.created_at.desc())))
     return _TEMPLATES.TemplateResponse(
         request,
         "admin/users.html",
@@ -77,7 +84,6 @@ def approve_user(
     user.is_active = True
 
     audit = AuditLog(
-        id=uuid.uuid4(),
         action="role_change",
         entity_type="users",
         entity_id=user.id,
@@ -107,11 +113,16 @@ def deactivate_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if user.id == current_user.id:
+        raise HTTPException(status_code=422, detail="Cannot deactivate your own account")
+
+    if not user.is_active:
+        return RedirectResponse(url=_ADMIN_USERS_REDIRECT, status_code=303)
+
     before = {"role": user.role.value, "is_active": user.is_active}
     user.is_active = False
 
     audit = AuditLog(
-        id=uuid.uuid4(),
         action="user_deactivate",
         entity_type="users",
         entity_id=user.id,
@@ -141,11 +152,13 @@ def reactivate_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if user.is_active:
+        return RedirectResponse(url=_ADMIN_USERS_REDIRECT, status_code=303)
+
     before = {"role": user.role.value, "is_active": user.is_active}
     user.is_active = True
 
     audit = AuditLog(
-        id=uuid.uuid4(),
         action="user_reactivate",
         entity_type="users",
         entity_id=user.id,

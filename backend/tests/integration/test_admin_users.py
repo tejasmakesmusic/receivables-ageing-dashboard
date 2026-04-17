@@ -230,3 +230,72 @@ class TestApprovePendingRoleReturns422:
             follow_redirects=False,
         )
         assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Edge case guards — self-deactivation and no-op deactivation
+# ---------------------------------------------------------------------------
+
+
+class TestAdminEdgeCases:
+    def test_deactivate_self_returns_422(self, client: TestClient, db_session: Session) -> None:
+        """Admin cannot deactivate their own account."""
+        # Tejaswa is the seeded ADMIN
+        r = client.get(
+            "/auth/google/callback?stub_email=tejaswa.sharma@emb.global",
+            follow_redirects=False,
+        )
+        assert r.status_code == 302
+
+        from app.db.models.user import User
+
+        admin = db_session.query(User).filter_by(email="tejaswa.sharma@emb.global").first()
+        assert admin is not None
+
+        r = client.post(f"/admin/users/{admin.id}/deactivate", follow_redirects=False)
+        assert r.status_code == 422
+
+    def test_deactivate_already_inactive_is_noop(
+        self, client: TestClient, db_session: Session
+    ) -> None:
+        """Deactivating an already-inactive user skips audit log write."""
+        from app.db.models.audit_log import AuditLog
+        from app.db.models.user import User
+
+        email = "noop_deactivate@emb.global"
+        # Create pending user
+        client.get(f"/auth/google/callback?stub_email={email}", follow_redirects=False)
+        # Login as admin
+        client.get(
+            "/auth/google/callback?stub_email=tejaswa.sharma@emb.global",
+            follow_redirects=False,
+        )
+
+        user = db_session.query(User).filter_by(email=email).first()
+        assert user is not None
+
+        # Deactivate once
+        r = client.post(f"/admin/users/{user.id}/deactivate", follow_redirects=False)
+        assert r.status_code == 303
+
+        db_session.expire_all()
+        user = db_session.query(User).filter_by(email=email).first()
+        assert user.is_active is False
+
+        audit_count_1 = (
+            db_session.query(AuditLog)
+            .filter_by(action="user_deactivate", entity_id=user.id)
+            .count()
+        )
+
+        # Deactivate again — should be no-op
+        r = client.post(f"/admin/users/{user.id}/deactivate", follow_redirects=False)
+        assert r.status_code == 303
+
+        db_session.expire_all()
+        audit_count_2 = (
+            db_session.query(AuditLog)
+            .filter_by(action="user_deactivate", entity_id=user.id)
+            .count()
+        )
+        assert audit_count_2 == audit_count_1, "No-op deactivation must not write audit log"
