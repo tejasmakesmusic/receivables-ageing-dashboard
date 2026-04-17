@@ -247,7 +247,7 @@ def upgrade() -> None:
             name="source",
         ),
         sa.UniqueConstraint(
-            "canonical_id", "alias_text", name="uq_party_aliases_canonical_alias"
+            "alias_text", "canonical_id", name="uq_party_aliases_alias_canonical"
         ),
     )
     op.create_index(

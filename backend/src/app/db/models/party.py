@@ -86,9 +86,11 @@ class PartyCanonical(UUIDPrimaryKeyMixin, Base):
 class PartyAlias(UUIDPrimaryKeyMixin, Base):
     """Raw name → canonical mapping (spec §3 party_aliases).
 
-    Unique per (canonical_id, alias_text) — the same raw text cannot map
-    to the same canonical twice.  A raw text CAN map to multiple canonicals
-    (rare, but the schema does not forbid it; analyst resolves the conflict).
+    Unique per (alias_text, canonical_id) — column order matches spec §3
+    verbatim; leading-column on alias_text makes raw-name → canonical
+    lookups (the hot path during staging) index-friendly.  A raw text CAN
+    map to multiple canonicals (rare, but the schema does not forbid it;
+    analyst resolves the conflict).
     """
 
     __tablename__ = "party_aliases"
@@ -98,7 +100,7 @@ class PartyAlias(UUIDPrimaryKeyMixin, Base):
             "source IN ('TALLY', 'XERO', 'MANUAL')",
             name="source",
         ),
-        UniqueConstraint("canonical_id", "alias_text", name="uq_party_aliases_canonical_alias"),
+        UniqueConstraint("alias_text", "canonical_id", name="uq_party_aliases_alias_canonical"),
         Index("ix_party_aliases_alias_text", "alias_text"),
     )
 
