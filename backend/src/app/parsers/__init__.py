@@ -18,6 +18,7 @@ from app.parsers.common import (
     stringify_cell,
 )
 from app.parsers.tally import parse_tally_grpbills
+from app.parsers.xero import parse_xero_aged_receivables
 
 __all__ = [
     "ParseError",
@@ -28,5 +29,6 @@ __all__ = [
     "compute_file_sha256",
     "is_empty_cell",
     "parse_tally_grpbills",
+    "parse_xero_aged_receivables",
     "stringify_cell",
 ]
