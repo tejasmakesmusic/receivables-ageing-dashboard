@@ -107,6 +107,12 @@ class Snapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     warnings_acknowledged_json: Mapped[list[Any]] = mapped_column(
         JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
     )
+    # Append-only list of analyst override entries (M3 Task 4).
+    # Shape: [{row_index, action, payload, actor_user_id, ts}, ...]
+    # Latest-wins per row_index.  Never rewrite parse_result_json.
+    staging_overrides_json: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
+    )
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
