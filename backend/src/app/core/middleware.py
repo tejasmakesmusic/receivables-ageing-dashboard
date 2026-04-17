@@ -91,8 +91,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 # File upload: read CSRF token from X-CSRF-Token header instead of body
                 form_token = request.headers.get("X-CSRF-Token", "")
             else:
-                # Unknown content type on a state-changing request — reject
-                form_token = ""
+                # JSON and other content types: read CSRF token from X-CSRF-Token header.
+                # This covers PATCH/DELETE with application/json bodies.
+                form_token = request.headers.get("X-CSRF-Token", "")
 
             if not cookie_token or not secrets.compare_digest(cookie_token, str(form_token)):
                 return Response("CSRF validation failed", status_code=403)

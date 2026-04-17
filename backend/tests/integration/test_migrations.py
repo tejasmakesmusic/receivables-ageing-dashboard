@@ -34,7 +34,7 @@ def test_migration_files_parse() -> None:
     result = _alembic(["heads"])
     assert result.returncode == 0, result.stderr
     # Verify the latest migration is the head (update when a new migration lands).
-    # M3 Task 2 added 0004_snapshots_as_of_nullable as the new head.
+    # M3 Task 4 added 0005_snapshots_staging_overrides as the new head.
     assert (
-        "0004_snapshots_as_of_nullable" in result.stdout
+        "0005_snapshots_staging_overrides" in result.stdout
     ), f"Unexpected alembic heads output: {result.stdout!r}"
