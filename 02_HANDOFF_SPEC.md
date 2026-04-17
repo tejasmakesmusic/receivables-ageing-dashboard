@@ -288,9 +288,11 @@ audit_log
 5. Drop `due_on` and `overdue_days` columns — we compute our own. Keep `opening_amount` in `raw_row_json` but do not use for ageing.
 6. Source currency = `INR` always (India entity).
 
-**Validation:**
-- Total of extracted invoices must match Tally grand total row (bottom of sheet). Tolerance: ₹1. Fail upload if off by more.
-- All invoice_dates must be ≤ `as_of_date` (upload-header-derived).
+**Validation:** (amended 2026-04-17 — see ADR-0003; Tally's grand total row is net of party-level unallocated credits, so it cannot equal sum of invoice `pending_amount`.)
+- **Hard reconcile:** sum of party sub-total rows must equal the grand total row (tolerance ₹1). Mismatch here = `GRAND_TOTAL_MISMATCH` error; blocks `ParseResult.is_valid`.
+- **Informational warning (not blocking):** emit a warning with `code=UNALLOCATED_CREDITS_DELTA` whose `detail` carries `sum_of_invoice_pending`, `grand_total`, and `delta`. The delta is the book-level unallocated-credit exposure that Tally nets against party balances but which our per-invoice view treats as outstanding. Analyst needs to see it; it does not block publish.
+- Per-party sub-total vs invoice-sum mismatch → warning (already §4.1 rule 4). This correctly flags parties like ADEEP where unallocated credits reduce the party's net position below the sum of its invoice `pending_amount` rows.
+- Tally headers do not reliably carry an `as_of_date`. Parser leaves `ParseResult.as_of_date = None`; the caller (upload pipeline, M3) supplies `as_of_date` from the upload form. The "invoice_dates ≤ as_of_date" check therefore runs in M3, not in the parser.
 
 ### 4.2 Xero — `Aged Receivables Detail.xlsx`
 
