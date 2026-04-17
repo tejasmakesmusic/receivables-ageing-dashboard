@@ -111,6 +111,13 @@ ignore = [
 # inspecting the class namespace. Moving uuid/datetime under TYPE_CHECKING
 # breaks that resolution — they must be runtime imports in model files.
 "backend/src/app/db/models/*.py" = ["TCH003"]
+# pydantic v2 with `from __future__ import annotations` requires date/Decimal
+# at runtime in the module namespace — model_rebuild() would be needed otherwise.
+"backend/src/app/parsers/common.py" = ["TCH003"]
+# `date` is used in local type annotations at runtime (parsed_date: date | None)
+# and in the ParseResult.as_of_date field passed to pydantic — must be runtime.
+"backend/src/app/parsers/tally.py" = ["TCH003"]
+"backend/src/app/parsers/xero.py" = ["TCH003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
@@ -135,7 +142,7 @@ files = ["backend/src"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["apscheduler.*", "slowapi.*", "factory_boy.*", "sendgrid.*", "resend.*"]
+module = ["apscheduler.*", "slowapi.*", "factory_boy.*", "sendgrid.*", "resend.*", "openpyxl.*", "pandas.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

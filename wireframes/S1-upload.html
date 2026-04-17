@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>S1 — Upload | EMB Receivables</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'not-due': '#6b7280',
+            '0-30':   '#16a34a',
+            '31-60':  '#ca8a04',
+            '61-90':  '#ea580c',
+            '90plus': '#dc2626',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen text-sm">
+
+<!-- WIREFRAME BANNER -->
+<div class="bg-amber-100 border-b border-amber-300 text-amber-800 text-xs px-4 py-2 text-center font-medium">
+  WIREFRAME — not a live app. Milestone 2 gate artifact for M4 review. All data is synthetic.
+</div>
+
+<!-- TOP NAV -->
+<nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-6">
+    <span class="font-bold text-gray-800 text-base">EMB Receivables</span>
+    <div class="flex items-center gap-1">
+      <span class="text-xs text-gray-500 mr-1">Entity:</span>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-indigo-600 text-white">IND</button>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">UAE</button>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">Consolidated</button>
+    </div>
+  </div>
+  <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">TS</div>
+      <div class="text-xs">
+        <div class="font-medium text-gray-800">Analyst User</div>
+        <div class="text-gray-500">ADMIN · EMB</div>
+      </div>
+    </div>
+    <button class="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-2 py-1 rounded">Logout</button>
+  </div>
+</nav>
+
+<!-- NAV TABS -->
+<div class="bg-white border-b border-gray-200 px-6">
+  <div class="flex gap-0">
+    <a href="./D1-dashboard.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Dashboard</a>
+    <a href="./S1-upload.html" class="px-4 py-2.5 text-xs text-indigo-600 font-medium border-b-2 border-indigo-600">Upload</a>
+    <a href="./S2-staging.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Staging</a>
+    <a href="./S5-exceptions.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Exceptions</a>
+    <a href="./A6-reconciliation.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Reconciliation</a>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<main class="max-w-6xl mx-auto px-6 py-6">
+
+  <!-- PAGE TITLE -->
+  <div class="mb-5">
+    <h1 class="text-lg font-semibold text-gray-900">Upload Snapshot</h1>
+    <p class="text-xs text-gray-500 mt-0.5">Drop a Tally or Xero export to begin pre-flight. Snapshot is staged — not published — until you review and confirm.</p>
+  </div>
+
+  <!-- UPLOAD PANEL -->
+  <div class="grid grid-cols-5 gap-5 mb-6">
+
+    <!-- DROP ZONE -->
+    <div class="col-span-3 bg-white border border-gray-200 rounded-lg p-5">
+      <h2 class="text-sm font-medium text-gray-800 mb-4">1. Upload file</h2>
+
+      <!-- Drop target -->
+      <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 cursor-pointer mb-4">
+        <div class="text-3xl text-gray-400 mb-2">&#8593;</div>
+        <p class="text-sm font-medium text-gray-600">Drop XLSX here, or click to browse</p>
+        <p class="text-xs text-gray-400 mt-1">Accepts <code class="bg-gray-200 px-1 rounded">.xlsx</code> only · Max 50 MB</p>
+        <!-- Simulated "file selected" state below (commented out for default state) -->
+      </div>
+
+      <!-- Simulated staged state — shown after file selected -->
+      <div class="border border-green-200 bg-green-50 rounded-md px-4 py-3 flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <div class="text-green-600 text-lg">&#9989;</div>
+          <div>
+            <div class="text-xs font-medium text-green-800">GrpBills_Apr2026.xlsx</div>
+            <div class="text-xs text-green-600">2.1 MB · SHA-256: a3f9c2d1…</div>
+          </div>
+        </div>
+        <button class="text-xs text-gray-400 hover:text-red-500">&#x2715; Remove</button>
+      </div>
+
+      <!-- Entity selector -->
+      <div class="mb-4">
+        <label class="block text-xs font-medium text-gray-700 mb-1">Entity <span class="text-red-500">*</span></label>
+        <div class="flex gap-2">
+          <button class="flex-1 py-2 rounded border border-indigo-600 bg-indigo-50 text-indigo-700 text-xs font-medium">IND (Tally / INR)</button>
+          <button class="flex-1 py-2 rounded border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50">UAE (Xero / AED)</button>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Admin can upload for both entities.</p>
+      </div>
+
+      <!-- As-of date -->
+      <div class="mb-4">
+        <label class="block text-xs font-medium text-gray-700 mb-1">
+          As-of date <span class="text-red-500">*</span>
+          <span class="text-gray-400 font-normal ml-1">(Tally headers don't carry date — required. Xero sniffs it but you can override.)</span>
+        </label>
+        <input type="date" value="2026-04-15" class="w-full border border-gray-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-indigo-400" />
+      </div>
+
+      <!-- Source radio -->
+      <div class="mb-5">
+        <label class="block text-xs font-medium text-gray-700 mb-2">Source <span class="text-gray-400 font-normal">(auto-detected after parse; override if needed)</span></label>
+        <div class="flex gap-4">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="source" value="tally" checked class="accent-indigo-600" />
+            <span class="text-xs">Tally</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="source" value="xero" class="accent-indigo-600" />
+            <span class="text-xs">Xero</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="source" value="credit_period" class="accent-indigo-600" />
+            <span class="text-xs">Credit Period master</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Pre-flight button -->
+      <div class="flex items-center gap-3">
+        <button class="bg-indigo-600 text-white px-5 py-2 rounded text-xs font-medium hover:bg-indigo-700 flex items-center gap-2">
+          &#9654; Run Pre-flight Check
+        </button>
+        <span class="text-xs text-gray-400 border border-gray-200 rounded px-2 py-0.5">ANALYST or ADMIN</span>
+      </div>
+    </div>
+
+    <!-- PARSE REPORT PANEL (shown when snapshot is STAGED) -->
+    <div class="col-span-2">
+      <div class="bg-white border border-gray-200 rounded-lg p-5 h-full">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-gray-800">Parse report</h2>
+          <span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-medium">STAGED</span>
+        </div>
+        <p class="text-xs text-gray-400 mb-4">Snapshot #3419 · IND · 2026-04-15</p>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-3 gap-3 mb-4">
+          <div class="text-center border border-gray-100 rounded p-3 bg-gray-50">
+            <div class="text-xl font-bold text-gray-800">291</div>
+            <div class="text-xs text-gray-500">Invoices parsed</div>
+          </div>
+          <div class="text-center border border-red-100 rounded p-3 bg-red-50">
+            <div class="text-xl font-bold text-red-600">4</div>
+            <div class="text-xs text-red-500">PARSE_ERRORs</div>
+          </div>
+          <div class="text-center border border-yellow-100 rounded p-3 bg-yellow-50">
+            <div class="text-xl font-bold text-yellow-600">2</div>
+            <div class="text-xs text-yellow-500">Warnings</div>
+          </div>
+        </div>
+
+        <!-- Details -->
+        <div class="space-y-2 mb-4">
+          <div class="flex justify-between text-xs">
+            <span class="text-gray-500">Source confirmed</span>
+            <span class="font-medium text-gray-700">TALLY</span>
+          </div>
+          <div class="flex justify-between text-xs">
+            <span class="text-gray-500">Entity</span>
+            <span class="font-medium text-gray-700">IND · INR</span>
+          </div>
+          <div class="flex justify-between text-xs">
+            <span class="text-gray-500">As-of date</span>
+            <span class="font-medium text-gray-700">2026-04-15 (user-supplied)</span>
+          </div>
+          <div class="flex justify-between text-xs">
+            <span class="text-gray-500">File SHA-256</span>
+            <span class="font-mono text-gray-600">a3f9c2d1e7b8…</span>
+          </div>
+        </div>
+
+        <!-- Warnings -->
+        <div class="border border-yellow-200 bg-yellow-50 rounded p-3 mb-3">
+          <div class="text-xs font-medium text-yellow-800 mb-1">Warnings (non-blocking)</div>
+          <ul class="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+            <li>GRAND_TOTAL_MISMATCH: sum ₹18,72,41,200 vs reported ₹18,69,90,000 (expected — Tally netting)</li>
+            <li>UNALLOCATED_CREDITS_DELTA: ₹2,51,200 book-level credits</li>
+          </ul>
+        </div>
+
+        <!-- CTA -->
+        <a href="./S2-staging.html" class="block w-full text-center bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-2 rounded text-xs font-medium">
+          Review in Staging &rarr;
+        </a>
+      </div>
+    </div>
+
+  </div><!-- /upload panel grid -->
+
+  <!-- RECENT SNAPSHOTS TABLE -->
+  <div class="bg-white border border-gray-200 rounded-lg">
+    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-sm font-medium text-gray-800">Recent snapshots</h2>
+      <span class="text-xs text-gray-400">Last 30 days · both entities</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="bg-gray-50 text-gray-500 uppercase text-xs tracking-wide">
+            <th class="px-5 py-3 text-left font-medium">ID</th>
+            <th class="px-3 py-3 text-left font-medium">Entity</th>
+            <th class="px-3 py-3 text-left font-medium">As-of</th>
+            <th class="px-3 py-3 text-left font-medium">Source</th>
+            <th class="px-3 py-3 text-left font-medium">Status</th>
+            <th class="px-3 py-3 text-left font-medium">Uploaded by</th>
+            <th class="px-3 py-3 text-left font-medium">Uploaded at</th>
+            <th class="px-3 py-3 text-left font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+
+          <!-- STAGED row -->
+          <tr class="hover:bg-gray-50">
+            <td class="px-5 py-3 font-mono text-gray-600">#3419</td>
+            <td class="px-3 py-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">IND</span></td>
+            <td class="px-3 py-3 text-gray-700">2026-04-15</td>
+            <td class="px-3 py-3 text-gray-600">Tally</td>
+            <td class="px-3 py-3"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-medium">STAGED</span></td>
+            <td class="px-3 py-3 text-gray-600">Analyst User</td>
+            <td class="px-3 py-3 text-gray-500">2026-04-17 09:14</td>
+            <td class="px-3 py-3">
+              <a href="./S2-staging.html" class="text-indigo-600 hover:underline">View staging &rarr;</a>
+            </td>
+          </tr>
+
+          <!-- PUBLISHED row -->
+          <tr class="hover:bg-gray-50">
+            <td class="px-5 py-3 font-mono text-gray-600">#3418</td>
+            <td class="px-3 py-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">IND</span></td>
+            <td class="px-3 py-3 text-gray-700">2026-04-08</td>
+            <td class="px-3 py-3 text-gray-600">Tally</td>
+            <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">PUBLISHED</span></td>
+            <td class="px-3 py-3 text-gray-600">Priya Menon</td>
+            <td class="px-3 py-3 text-gray-500">2026-04-09 11:02</td>
+            <td class="px-3 py-3">
+              <a href="./D1-dashboard.html" class="text-indigo-600 hover:underline">View in dashboard &rarr;</a>
+            </td>
+          </tr>
+
+          <!-- PUBLISHED row (UAE) -->
+          <tr class="hover:bg-gray-50">
+            <td class="px-5 py-3 font-mono text-gray-600">#3417</td>
+            <td class="px-3 py-3"><span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">UAE</span></td>
+            <td class="px-3 py-3 text-gray-700">2026-04-08</td>
+            <td class="px-3 py-3 text-gray-600">Xero</td>
+            <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">PUBLISHED</span></td>
+            <td class="px-3 py-3 text-gray-600">Analyst User</td>
+            <td class="px-3 py-3 text-gray-500">2026-04-09 10:47</td>
+            <td class="px-3 py-3">
+              <a href="./D1-dashboard.html" class="text-indigo-600 hover:underline">View in dashboard &rarr;</a>
+            </td>
+          </tr>
+
+          <!-- PARSING row -->
+          <tr class="hover:bg-gray-50 bg-blue-50">
+            <td class="px-5 py-3 font-mono text-gray-600">#3416</td>
+            <td class="px-3 py-3"><span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">UAE</span></td>
+            <td class="px-3 py-3 text-gray-700">2026-04-01</td>
+            <td class="px-3 py-3 text-gray-600">Xero</td>
+            <td class="px-3 py-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium animate-pulse">PARSING</span></td>
+            <td class="px-3 py-3 text-gray-600">Priya Menon</td>
+            <td class="px-3 py-3 text-gray-500">2026-04-17 09:11</td>
+            <td class="px-3 py-3 text-gray-400">In progress…</td>
+          </tr>
+
+          <!-- DISCARDED row -->
+          <tr class="hover:bg-gray-50 opacity-60">
+            <td class="px-5 py-3 font-mono text-gray-600">#3415</td>
+            <td class="px-3 py-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">IND</span></td>
+            <td class="px-3 py-3 text-gray-700">2026-04-01</td>
+            <td class="px-3 py-3 text-gray-600">Tally</td>
+            <td class="px-3 py-3"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-medium">DISCARDED</span></td>
+            <td class="px-3 py-3 text-gray-600">Analyst User</td>
+            <td class="px-3 py-3 text-gray-500">2026-04-02 08:55</td>
+            <td class="px-3 py-3 text-gray-400">—</td>
+          </tr>
+
+          <!-- Another PUBLISHED row -->
+          <tr class="hover:bg-gray-50">
+            <td class="px-5 py-3 font-mono text-gray-600">#3414</td>
+            <td class="px-3 py-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">IND</span></td>
+            <td class="px-3 py-3 text-gray-700">2026-03-31</td>
+            <td class="px-3 py-3 text-gray-600">Tally</td>
+            <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">PUBLISHED</span></td>
+            <td class="px-3 py-3 text-gray-600">Priya Menon</td>
+            <td class="px-3 py-3 text-gray-500">2026-04-01 10:20</td>
+            <td class="px-3 py-3">
+              <a href="./D1-dashboard.html" class="text-indigo-600 hover:underline">View in dashboard &rarr;</a>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /recent snapshots -->
+
+</main>
+
+</body>
+</html>

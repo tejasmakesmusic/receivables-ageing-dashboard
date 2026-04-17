@@ -288,9 +288,16 @@ audit_log
 5. Drop `due_on` and `overdue_days` columns — we compute our own. Keep `opening_amount` in `raw_row_json` but do not use for ageing.
 6. Source currency = `INR` always (India entity).
 
-**Validation:**
-- Total of extracted invoices must match Tally grand total row (bottom of sheet). Tolerance: ₹1. Fail upload if off by more.
-- All invoice_dates must be ≤ `as_of_date` (upload-header-derived).
+**Validation:** (amended 2026-04-17, re-amended same day — see ADR-0003 + its addendum. Empirically no sum-of-X == Y reconcile holds on real Tally GrpBills exports because Tally nets at **both** party and group levels.)
+
+- **Primary safety net — per-row classification completeness:** every non-metadata, non-grand-total row must be classified by the parser as exactly one of: `party_header`, `invoice_row`, `party_subtotal`, `blank`. Any row the parser cannot classify is emitted as a `StagedInvoice` with `status=PARSE_ERROR` and a non-empty `parse_error_reason`. Analyst sees these in M3 staging; publish gate (§5) blocks publication until they're resolved. This — not any sum-reconcile — is the real "parser dropped rows" detector.
+- **Warnings — non-blocking, for analyst review (`result.warnings`):**
+  - `SUBTOTAL_MISMATCH`: per-party sub-total ≠ sum of that party's invoice `pending_amount` rows within ₹1. Expected on parties with unallocated credits (e.g. advance receipts).
+  - `GRAND_TOTAL_MISMATCH`: sum of party sub-totals ≠ grand total row within ₹1 — emitted when a grand total row is detected. Expected on most real files because Tally applies group-level netting beyond party-level. Not blocking — file-level reconcile is structurally not available from Tally's report.
+  - `UNALLOCATED_CREDITS_DELTA`: sum of invoice `pending_amount` minus grand total — emitted when a grand total row is detected. Always present on such files for auditability; surfaces book-level unallocated-credit exposure.
+  - `GRAND_TOTAL_ROW_NOT_DETECTED`: emitted when the parser cannot identify a grand total row (edge case — a file that lacks the bottom grand total line). Non-blocking; analyst decides whether the file is legitimate or truncated.
+- **No `as_of_date` sniffing:** Tally headers do not reliably carry one. Parser leaves `ParseResult.as_of_date = None`; M3 upload pipeline supplies it from the upload form. The "invoice_dates ≤ as_of_date" check therefore runs in M3, not in the parser.
+- **`ParseResult.is_valid` semantics:** True iff `errors == []`. PARSE_ERROR *rows* (status on a `StagedInvoice`) do NOT flip `is_valid=False` — row-level issues are a staging concern, not a parse-time block. In practice the Tally parser's `errors` list stays empty on a clean file; all safety signals surface via warnings or per-row PARSE_ERROR status.
 
 ### 4.2 Xero — `Aged Receivables Detail.xlsx`
 
@@ -300,18 +307,29 @@ audit_log
 - Row 5 = header row: `Contact Account Number | Primary Person | Phone | Email | Mobile | Contact Group | ... | Total | Outstanding Tax | PROJECT ID | SERVICE MONTH | Invoice Seen | Invoice Sent`
 - Data rows follow, interleaved with party sub-totals and grand total
 
-**Parser rules:**
-1. Sniff "As at DD Month YYYY" from row 2 → that's the `as_of_date`.
+**Parser rules:** (amended 2026-04-17 — see ADR-0004 for Xero grand-total behavior.)
+
+1. Sniff "As at DD Month YYYY" from row 2 → that's the `as_of_date`. Sniff failure → `AS_OF_DATE_SNIFF_FAILED` in `warnings` (non-blocking; caller can supply via upload form).
 2. Skip rows 0–5 metadata+header. Normalize headers from row 5.
 3. Rows where `Contact Account Number` is populated but other fields empty = **party header row**. Forward-fill party name.
-4. Rows where party name starts with literal `"Total "` = **sub-total or grand-total row**. SKIP.
-5. Invoice rows: extract invoice_date (col to confirm from real sample — likely `Invoice Date`), `Reference` → invoice_ref, `Due Date` (ignored for ageing), `Total` → amount, `Outstanding Tax` → stored but not used.
-6. Preserve UAE-specific columns into `xero_metadata` JSONB: `invoice_seen`, `invoice_sent`, `project_id`, `service_month`, `primary_person`, `email`.
+4. **Row-skip taxonomy:**
+   - `party_name_raw.startswith("Total ")` (with trailing space) → **party sub-total row**. SKIP emission.
+   - `party_name_raw.strip() == "Total"` (exact, no trailing content) → **grand total row**. Capture its values, do not emit as invoice.
+   - Trailer rows after the grand total (percentages, FX footnotes, blank separators) → SKIP silently.
+5. **Invoice rows:** extract:
+   - `invoice_date` ← column `Invoice Date` (confirm header text when parsing).
+   - `invoice_ref` ← column `Invoice Number` (this is the authoritative invoice identifier in Xero's export. The column Xero labels `Invoice Reference` contains the contact person's name — captured in `raw_row_json` only, never used as `invoice_ref`).
+   - `Due Date` → ignored for ageing.
+   - `amount` ← column `Total`.
+   - `Outstanding Tax` → stored in `raw_row_json`, not used for ageing.
+   - Rows with empty `Invoice Number` (credit notes / adjustments in Xero's export) → emit as `StagedInvoice(status=PARSE_ERROR, parse_error_reason="…no invoice number (credit note / adjustment)")`. Analyst resolves in M3 staging; candidate for M5 "Credit note pending" exception tag (D9).
+6. Preserve UAE-specific columns into `xero_metadata` JSONB: `invoice_seen`, `invoice_sent`, `project_id`, `service_month`, `primary_person`, `email`. All values stringified to `str | None`.
 7. Source currency = `AED` always (UAE entity).
 
 **Validation:**
-- Grand total must match sum of invoice rows. Tolerance: AED 1.
-- Warn if `Invoice Seen = "Not seen"` count >20% of rows (likely a data hygiene issue analyst should see).
+- **Grand total reconcile:** `sum(OK invoice Total)` vs grand total row's Total column within AED 1 → `GRAND_TOTAL_MISMATCH`. Emitted as **warning** (non-blocking), not error — Xero's "Aged Receivables Detail" grand total row reflects aged/overdue exposure rather than sum of invoice totals, so the two do not reliably match. See ADR-0004. Primary safety net is per-row classification completeness (same pattern as Tally per ADR-0003 addendum).
+- `INVOICE_SEEN_HIGH` warning when `Invoice Seen = "Not seen"` count > 20% of OK invoices (data-hygiene signal; non-blocking).
+- Unclassifiable row → emit as `StagedInvoice(status=PARSE_ERROR)`. Analyst sees in M3 staging; publish gate (§5) blocks until resolved.
 
 ### 4.3 Credit Period config — `Credit Period for Accounts - India & UAE.xlsx`
 
