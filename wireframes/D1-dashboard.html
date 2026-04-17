@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D1 — Dashboard | EMB Receivables</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen text-sm">
+
+<!-- WIREFRAME BANNER -->
+<div class="bg-amber-100 border-b border-amber-300 text-amber-800 text-xs px-4 py-2 text-center font-medium">
+  WIREFRAME — not a live app. Milestone 2 gate artifact for M4 review. All data is synthetic.
+</div>
+
+<!-- TOP NAV -->
+<nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-6">
+    <span class="font-bold text-gray-800 text-base">EMB Receivables</span>
+    <div class="flex items-center gap-1">
+      <span class="text-xs text-gray-500 mr-1">Entity:</span>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-indigo-600 text-white">IND</button>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">UAE</button>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">Consolidated</button>
+    </div>
+  </div>
+  <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">TS</div>
+      <div class="text-xs">
+        <div class="font-medium text-gray-800">Tejaswa Sharma</div>
+        <div class="text-gray-500">ADMIN · EMB Global</div>
+      </div>
+    </div>
+    <button class="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-2 py-1 rounded">Logout</button>
+  </div>
+</nav>
+
+<!-- NAV TABS -->
+<div class="bg-white border-b border-gray-200 px-6">
+  <div class="flex gap-0">
+    <a href="./D1-dashboard.html" class="px-4 py-2.5 text-xs text-indigo-600 font-medium border-b-2 border-indigo-600">Dashboard</a>
+    <a href="./S1-upload.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Upload</a>
+    <a href="./S2-staging.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Staging</a>
+    <a href="./S5-exceptions.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Exceptions</a>
+    <a href="./A6-reconciliation.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Reconciliation</a>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<main class="max-w-7xl mx-auto px-6 py-6">
+
+  <!-- Page header row -->
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-lg font-semibold text-gray-900">Dashboard — India (IND)</h1>
+      <p class="text-xs text-gray-500 mt-0.5">Data as of <strong>2026-04-15</strong> (Snapshot #3418 · Published 2026-04-09 11:02 by Priya Menon)</p>
+    </div>
+    <div class="text-xs text-gray-400 border border-gray-200 rounded px-3 py-1.5">
+      Currency: <strong>INR</strong>
+    </div>
+  </div>
+
+  <!-- KPI STRIP -->
+  <div class="grid grid-cols-5 gap-4 mb-6">
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-4">
+      <div class="text-xs text-gray-500 mb-1">Total outstanding</div>
+      <div class="text-2xl font-bold text-gray-900">₹18.72 Cr</div>
+      <div class="text-xs text-gray-400 mt-0.5">291 open invoices</div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-4">
+      <div class="text-xs text-gray-500 mb-1">% Overdue (0–30+ bucket)</div>
+      <div class="text-2xl font-bold text-orange-600">63.4%</div>
+      <div class="text-xs text-gray-400 mt-0.5">vs 58.1% last week</div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-4">
+      <div class="text-xs text-gray-500 mb-1">Parties with 90+ exposure</div>
+      <div class="text-2xl font-bold text-red-600">12</div>
+      <div class="text-xs text-gray-400 mt-0.5">₹8.41 Cr at risk</div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-4">
+      <div class="text-xs text-gray-500 mb-1">Last snapshot</div>
+      <div class="text-xl font-bold text-gray-700">Apr 15</div>
+      <div class="text-xs text-gray-400 mt-0.5">Snapshot #3418 · IND</div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-4">
+      <div class="text-xs text-gray-500 mb-1">FX rate (Consolidated)</div>
+      <div class="text-xl font-bold text-gray-700 flex items-center gap-1">
+        AED→INR 22.50
+        <span title="Converted at AED→INR 22.50 effective from 2026-04-01. Rate rows are immutable (D15) — FX pinned by invoice_date." class="text-gray-400 cursor-help text-xs">&#9432;</span>
+      </div>
+      <div class="text-xs text-gray-400 mt-0.5">Effective from 2026-04-01</div>
+    </div>
+  </div>
+
+  <!-- TWO COLUMN: Chart + Top parties -->
+  <div class="grid grid-cols-3 gap-5 mb-6">
+
+    <!-- AGEING BUCKETS CHART -->
+    <div class="col-span-1 bg-white border border-gray-200 rounded-lg p-5">
+      <h2 class="text-sm font-medium text-gray-800 mb-4">Ageing distribution (IND · INR)</h2>
+
+      <!-- Stacked horizontal bar -->
+      <div class="mb-3">
+        <div class="flex w-full h-8 rounded overflow-hidden text-xs font-medium">
+          <div class="bg-gray-300 flex items-center justify-center text-white" style="width:19%">NOT_DUE</div>
+          <div class="bg-green-500 flex items-center justify-center text-white" style="width:18%">0–30</div>
+          <div class="bg-yellow-400 flex items-center justify-center text-white" style="width:15%">31–60</div>
+          <div class="bg-orange-500 flex items-center justify-center text-white" style="width:17%">61–90</div>
+          <div class="bg-red-600 flex items-center justify-center text-white" style="width:31%">90+</div>
+        </div>
+      </div>
+
+      <!-- Legend with totals -->
+      <div class="space-y-2 mt-4">
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2"><span class="w-3 h-3 bg-gray-300 rounded-sm inline-block"></span>NOT_DUE</div>
+          <span class="text-gray-700 font-medium">₹3.55 Cr</span>
+          <span class="text-gray-400">19%</span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2"><span class="w-3 h-3 bg-green-500 rounded-sm inline-block"></span>0–30 days</div>
+          <span class="text-gray-700 font-medium">₹3.37 Cr</span>
+          <span class="text-gray-400">18%</span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2"><span class="w-3 h-3 bg-yellow-400 rounded-sm inline-block"></span>31–60 days</div>
+          <span class="text-gray-700 font-medium">₹2.81 Cr</span>
+          <span class="text-gray-400">15%</span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2"><span class="w-3 h-3 bg-orange-500 rounded-sm inline-block"></span>61–90 days</div>
+          <span class="text-gray-700 font-medium">₹3.18 Cr</span>
+          <span class="text-gray-400">17%</span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2"><span class="w-3 h-3 bg-red-600 rounded-sm inline-block"></span>90+ days</div>
+          <span class="text-gray-700 font-medium">₹5.81 Cr</span>
+          <span class="text-gray-400">31%</span>
+        </div>
+        <div class="border-t border-gray-100 pt-2 flex items-center justify-between text-xs font-semibold">
+          <span>Total</span>
+          <span>₹18.72 Cr</span>
+          <span>100%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOP 10 PARTIES BY OUTSTANDING -->
+    <div class="col-span-2 bg-white border border-gray-200 rounded-lg">
+      <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-sm font-medium text-gray-800">Top 10 parties by outstanding</h2>
+        <span class="text-xs text-gray-400">Click party name → drill-down</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="bg-gray-50 text-gray-500 uppercase text-xs tracking-wide border-b border-gray-200">
+              <th class="px-4 py-2.5 text-left font-medium">#</th>
+              <th class="px-3 py-2.5 text-left font-medium">Party</th>
+              <th class="px-3 py-2.5 text-right font-medium">Outstanding</th>
+              <th class="px-3 py-2.5 text-center font-medium">Invoices</th>
+              <th class="px-3 py-2.5 text-left font-medium">Worst bucket</th>
+              <th class="px-3 py-2.5 text-left font-medium">Last follow-up</th>
+              <th class="px-3 py-2.5 text-left font-medium">Tally/Our overdue</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">1</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">AlphaCorp Industries Ltd</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹2,84,50,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">8</td>
+              <td class="px-3 py-2.5"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">90_PLUS</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-10 (EMAIL)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc uses EMB credit period master. Tally's figure: 98 days. Ours: 112 days (30-day credit vs Tally's due_on)." class="text-gray-500 cursor-help">98 / <strong class="text-gray-800">112</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">2</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">BetaTraders Pvt Ltd</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹1,92,00,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">5</td>
+              <td class="px-3 py-2.5"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-medium">61_90</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-12 (CALL)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc uses EMB credit period master. Tally's figure: 72 days. Ours: 68 days." class="text-gray-500 cursor-help">72 / <strong class="text-gray-800">68</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">3</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">GammaTech Solutions Pvt Ltd</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹1,50,80,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">11</td>
+              <td class="px-3 py-2.5"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">90_PLUS</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-01 (WHATSAPP)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: 95 days. Tally: 91 days." class="text-gray-500 cursor-help">91 / <strong class="text-gray-800">95</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">4</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">Eta Pharma Exports Pvt Ltd</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹1,31,40,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">4</td>
+              <td class="px-3 py-2.5"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-medium">31_60</span></td>
+              <td class="px-3 py-2.5 text-gray-500 italic">No follow-up logged</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: 43 days. Tally: 38 days." class="text-gray-500 cursor-help">38 / <strong class="text-gray-800">43</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">5</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">Zeta Logistics Ltd</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹1,10,00,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">3</td>
+              <td class="px-3 py-2.5"><span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">NOT_DUE</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-14 (MEETING)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: -18 days (not due). Tally: -5 days." class="text-gray-500 cursor-help">-5 / <strong class="text-gray-800">-18</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">6</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">Theta Creative Works LLP</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹98,50,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">6</td>
+              <td class="px-3 py-2.5"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">0_30</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-08 (EMAIL)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: 12 days. Tally: 11 days." class="text-gray-500 cursor-help">11 / <strong class="text-gray-800">12</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">7</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">Iota Tech Services Ltd</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹85,00,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">9</td>
+              <td class="px-3 py-2.5"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">90_PLUS</span></td>
+              <td class="px-3 py-2.5 text-gray-500 italic">No follow-up logged</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: 102 days. Tally: 95 days." class="text-gray-500 cursor-help">95 / <strong class="text-gray-800">102</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">8</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">Kappa Media Group</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹72,00,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">4</td>
+              <td class="px-3 py-2.5"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-medium">61_90</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-05 (CALL)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: 75 days. Tally: 70 days." class="text-gray-500 cursor-help">70 / <strong class="text-gray-800">75</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">9</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">Lambda Events Pvt Ltd</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹61,20,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">7</td>
+              <td class="px-3 py-2.5"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-medium">31_60</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-11 (WHATSAPP)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: 45 days. Tally: 48 days." class="text-gray-500 cursor-help">48 / <strong class="text-gray-800">45</strong> days &#9432;</span>
+              </td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 text-gray-400">10</td>
+              <td class="px-3 py-2.5"><a href="#" class="text-indigo-600 hover:underline font-medium">Mu Digital Solutions</a></td>
+              <td class="px-3 py-2.5 text-right font-medium text-gray-800">₹48,00,000</td>
+              <td class="px-3 py-2.5 text-center text-gray-600">2</td>
+              <td class="px-3 py-2.5"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">0_30</span></td>
+              <td class="px-3 py-2.5 text-gray-600">2026-04-13 (EMAIL)</td>
+              <td class="px-3 py-2.5">
+                <span title="Our calc: 21 days. Tally: 22 days." class="text-gray-500 cursor-help">22 / <strong class="text-gray-800">21</strong> days &#9432;</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /2-col -->
+
+  <!-- TREND SPARKLINE + RECENT EXCEPTIONS + DEFAULT CREDIT CALL-OUT -->
+  <div class="grid grid-cols-3 gap-5 mb-6">
+
+    <!-- TREND SPARKLINE -->
+    <div class="col-span-1 bg-white border border-gray-200 rounded-lg p-5">
+      <h2 class="text-sm font-medium text-gray-800 mb-3">8-week AR trend (IND)</h2>
+      <!-- SVG sparkline (synthetic) -->
+      <svg viewBox="0 0 300 120" class="w-full" style="height:120px">
+        <!-- Grid lines -->
+        <line x1="0" y1="30" x2="300" y2="30" stroke="#f3f4f6" stroke-width="1"/>
+        <line x1="0" y1="60" x2="300" y2="60" stroke="#f3f4f6" stroke-width="1"/>
+        <line x1="0" y1="90" x2="300" y2="90" stroke="#f3f4f6" stroke-width="1"/>
+        <!-- Total AR line (gray) -->
+        <polyline points="10,85 50,80 90,75 130,72 170,68 210,65 250,63 290,60" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round"/>
+        <!-- 90+ bucket line (red) -->
+        <polyline points="10,100 50,98 90,95 130,92 170,88 210,85 250,82 290,78" fill="none" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,2" stroke-linejoin="round"/>
+        <!-- Labels -->
+        <text x="10" y="115" font-size="8" fill="#9ca3af">Feb 24</text>
+        <text x="80" y="115" font-size="8" fill="#9ca3af">Mar 10</text>
+        <text x="160" y="115" font-size="8" fill="#9ca3af">Mar 24</text>
+        <text x="250" y="115" font-size="8" fill="#9ca3af">Apr 15</text>
+      </svg>
+      <div class="flex gap-4 text-xs mt-2">
+        <div class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-indigo-500 rounded"></span>Total AR</div>
+        <div class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-red-500 rounded border-dashed"></span>90+ bucket</div>
+      </div>
+      <div class="mt-3 text-xs text-gray-400">Trend builds from first snapshot (Feb 24, 2026). Week-over-week ageing mix shown below chart.</div>
+
+      <!-- Ageing mix week-over-week simplified -->
+      <div class="mt-3 grid grid-cols-4 text-center text-xs gap-1">
+        <div class="bg-gray-50 rounded p-1.5">
+          <div class="text-gray-400 text-xs">W-4</div>
+          <div class="text-gray-600">₹17.2Cr</div>
+        </div>
+        <div class="bg-gray-50 rounded p-1.5">
+          <div class="text-gray-400 text-xs">W-3</div>
+          <div class="text-gray-600">₹17.8Cr</div>
+        </div>
+        <div class="bg-gray-50 rounded p-1.5">
+          <div class="text-gray-400 text-xs">W-2</div>
+          <div class="text-gray-600">₹18.4Cr</div>
+        </div>
+        <div class="bg-indigo-50 rounded p-1.5">
+          <div class="text-indigo-400 text-xs">Now</div>
+          <div class="text-indigo-700 font-medium">₹18.7Cr</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RECENT EXCEPTIONS PANEL -->
+    <div class="col-span-2 bg-white border border-gray-200 rounded-lg">
+      <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-sm font-medium text-gray-800">Recent exceptions</h2>
+        <a href="./S5-exceptions.html" class="text-xs text-indigo-600 hover:underline">Manage all &rarr;</a>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="bg-gray-50 text-gray-500 uppercase text-xs tracking-wide border-b border-gray-200">
+              <th class="px-4 py-2.5 text-left font-medium">Invoice</th>
+              <th class="px-3 py-2.5 text-left font-medium">Party</th>
+              <th class="px-3 py-2.5 text-left font-medium">Exception type</th>
+              <th class="px-3 py-2.5 text-left font-medium">Tagged by</th>
+              <th class="px-3 py-2.5 text-left font-medium">Tagged at</th>
+              <th class="px-3 py-2.5 text-left font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 font-mono text-gray-600">INV-5101</td>
+              <td class="px-3 py-2.5 text-gray-700">AlphaCorp Industries Ltd</td>
+              <td class="px-3 py-2.5"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs">LEGAL</span></td>
+              <td class="px-3 py-2.5 text-gray-600">Tejaswa Sharma</td>
+              <td class="px-3 py-2.5 text-gray-500">2026-04-10</td>
+              <td class="px-3 py-2.5"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 font-mono text-gray-600">INV-5110</td>
+              <td class="px-3 py-2.5 text-gray-700">GammaTech Solutions</td>
+              <td class="px-3 py-2.5"><span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">DISPUTED</span></td>
+              <td class="px-3 py-2.5 text-gray-600">Priya Menon</td>
+              <td class="px-3 py-2.5 text-gray-500">2026-04-08</td>
+              <td class="px-3 py-2.5"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 font-mono text-gray-600">INV-5118</td>
+              <td class="px-3 py-2.5 text-gray-700">DeltaFin Mgmt Services</td>
+              <td class="px-3 py-2.5"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs">CN_PENDING</span></td>
+              <td class="px-3 py-2.5 text-gray-600">Tejaswa Sharma</td>
+              <td class="px-3 py-2.5 text-gray-500">2026-04-05</td>
+              <td class="px-3 py-2.5"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 font-mono text-gray-600">INV-4988</td>
+              <td class="px-3 py-2.5 text-gray-700">Sigma Corp Ltd</td>
+              <td class="px-3 py-2.5"><span class="bg-gray-200 text-gray-700 px-2 py-0.5 rounded text-xs">WRITTEN_OFF</span></td>
+              <td class="px-3 py-2.5 text-gray-600">Tejaswa Sharma</td>
+              <td class="px-3 py-2.5 text-gray-500">2026-03-28</td>
+              <td class="px-3 py-2.5"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded">RESOLVED</span></td>
+            </tr>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2.5 font-mono text-gray-600">INV-5052</td>
+              <td class="px-3 py-2.5 text-gray-700">Eta Pharma Exports</td>
+              <td class="px-3 py-2.5"><span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">DISPUTED</span></td>
+              <td class="px-3 py-2.5 text-gray-600">Priya Menon</td>
+              <td class="px-3 py-2.5 text-gray-500">2026-03-20</td>
+              <td class="px-3 py-2.5"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">AUTO_RESOLVED</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /3-col trend + exceptions -->
+
+  <!-- DEFAULT CREDIT PERIOD CALL-OUT -->
+  <div class="bg-amber-50 border border-amber-200 rounded-lg px-5 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-amber-500 text-xl">&#9432;</span>
+      <div>
+        <div class="text-sm font-medium text-amber-800">34 parties using entity default credit period</div>
+        <div class="text-xs text-amber-600 mt-0.5">These parties have no party-specific credit config. Ageing uses entity default (30 days for IND). Review and add specific configs where applicable.</div>
+      </div>
+    </div>
+    <a href="#" class="flex-shrink-0 text-xs text-amber-700 border border-amber-300 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded font-medium">
+      Review credit config &rarr;
+    </a>
+  </div>
+
+</main>
+
+</body>
+</html>

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>S5 — Exception Manager | EMB Receivables</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen text-sm">
+
+<!-- WIREFRAME BANNER -->
+<div class="bg-amber-100 border-b border-amber-300 text-amber-800 text-xs px-4 py-2 text-center font-medium">
+  WIREFRAME — not a live app. Milestone 2 gate artifact for M4 review. All data is synthetic.
+</div>
+
+<!-- TOP NAV -->
+<nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-6">
+    <span class="font-bold text-gray-800 text-base">EMB Receivables</span>
+    <div class="flex items-center gap-1">
+      <span class="text-xs text-gray-500 mr-1">Entity:</span>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-indigo-600 text-white">IND</button>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">UAE</button>
+      <button class="px-3 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">Consolidated</button>
+    </div>
+  </div>
+  <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">TS</div>
+      <div class="text-xs">
+        <div class="font-medium text-gray-800">Tejaswa Sharma</div>
+        <div class="text-gray-500">ADMIN · EMB Global</div>
+      </div>
+    </div>
+    <button class="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-2 py-1 rounded">Logout</button>
+  </div>
+</nav>
+
+<!-- NAV TABS -->
+<div class="bg-white border-b border-gray-200 px-6">
+  <div class="flex gap-0">
+    <a href="./D1-dashboard.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Dashboard</a>
+    <a href="./S1-upload.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Upload</a>
+    <a href="./S2-staging.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Staging</a>
+    <a href="./S5-exceptions.html" class="px-4 py-2.5 text-xs text-indigo-600 font-medium border-b-2 border-indigo-600">Exceptions</a>
+    <a href="./A6-reconciliation.html" class="px-4 py-2.5 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent">Reconciliation</a>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<main class="max-w-7xl mx-auto px-6 py-6">
+
+  <div class="flex items-start gap-5">
+    <!-- LEFT: Main area -->
+    <div class="flex-1 min-w-0">
+
+      <!-- MATERIAL-CHANGE REVIEW BANNER -->
+      <div class="bg-orange-50 border border-orange-300 rounded-lg px-5 py-3 mb-5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-orange-500 text-xl">&#9888;</span>
+          <div>
+            <div class="text-sm font-medium text-orange-800">3 exceptions flagged for review — invoice amount changed &gt;5% since tagged</div>
+            <div class="text-xs text-orange-600 mt-0.5">Per spec consequence #2: exceptions on materially-changed invoices require analyst review. They remain ACTIVE until you confirm or resolve.</div>
+          </div>
+        </div>
+        <button onclick="document.getElementById('material-change-panel').classList.toggle('hidden')" class="flex-shrink-0 text-xs text-orange-700 border border-orange-300 bg-orange-100 hover:bg-orange-200 px-3 py-1.5 rounded font-medium">
+          Show affected &darr;
+        </button>
+      </div>
+
+      <!-- Material-change details (collapsed by default, expandable) -->
+      <div id="material-change-panel" class="hidden bg-orange-50 border border-orange-200 rounded-lg px-5 py-3 mb-5">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="text-gray-500 border-b border-orange-100 uppercase tracking-wide">
+              <th class="py-2 text-left font-medium">Invoice</th>
+              <th class="py-2 text-left font-medium">Party</th>
+              <th class="py-2 text-right font-medium">Original amount</th>
+              <th class="py-2 text-right font-medium">Current amount</th>
+              <th class="py-2 text-right font-medium">Change %</th>
+              <th class="py-2 text-left font-medium">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-orange-100">
+            <tr>
+              <td class="py-1.5 font-mono text-gray-600">INV-5101</td>
+              <td class="py-1.5 text-gray-700">AlphaCorp Industries Ltd</td>
+              <td class="py-1.5 text-right">₹8,45,000</td>
+              <td class="py-1.5 text-right text-orange-700 font-medium">₹8,92,000</td>
+              <td class="py-1.5 text-right text-orange-700">+5.6%</td>
+              <td class="py-1.5"><button class="text-indigo-600 hover:underline">Review exception</button></td>
+            </tr>
+            <tr>
+              <td class="py-1.5 font-mono text-gray-600">INV-5052</td>
+              <td class="py-1.5 text-gray-700">Eta Pharma Exports</td>
+              <td class="py-1.5 text-right">₹12,00,000</td>
+              <td class="py-1.5 text-right text-orange-700 font-medium">₹12,90,000</td>
+              <td class="py-1.5 text-right text-orange-700">+7.5%</td>
+              <td class="py-1.5"><button class="text-indigo-600 hover:underline">Review exception</button></td>
+            </tr>
+            <tr>
+              <td class="py-1.5 font-mono text-gray-600">INV-5200</td>
+              <td class="py-1.5 text-gray-700">Nu Services Group</td>
+              <td class="py-1.5 text-right">₹5,00,000</td>
+              <td class="py-1.5 text-right text-orange-700 font-medium">₹5,30,000</td>
+              <td class="py-1.5 text-right text-orange-700">+6.0%</td>
+              <td class="py-1.5"><button class="text-indigo-600 hover:underline">Review exception</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- PAGE TITLE -->
+      <div class="mb-4">
+        <h1 class="text-lg font-semibold text-gray-900">Exception Manager</h1>
+        <p class="text-xs text-gray-500 mt-0.5">Tag invoices with exception buckets. Tags persist across snapshots and auto-resolve on settlement.</p>
+      </div>
+
+      <!-- EXCEPTION TYPE SUMMARY CARDS -->
+      <div class="grid grid-cols-6 gap-3 mb-5">
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+          <div class="text-xs text-red-500 font-medium mb-1">Legal / Litigation</div>
+          <div class="text-xl font-bold text-red-700">5</div>
+          <div class="text-xs text-red-400 mt-0.5">₹3.21 Cr</div>
+        </div>
+        <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
+          <div class="text-xs text-purple-500 font-medium mb-1">Disputed by client</div>
+          <div class="text-xl font-bold text-purple-700">8</div>
+          <div class="text-xs text-purple-400 mt-0.5">₹1.84 Cr</div>
+        </div>
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+          <div class="text-xs text-yellow-600 font-medium mb-1">Credit note pending</div>
+          <div class="text-xl font-bold text-yellow-700">4</div>
+          <div class="text-xs text-yellow-500 mt-0.5">₹72 L</div>
+        </div>
+        <div class="bg-gray-100 border border-gray-300 rounded-lg p-3 text-center">
+          <div class="text-xs text-gray-500 font-medium mb-1">Written-off</div>
+          <div class="text-xl font-bold text-gray-700">3</div>
+          <div class="text-xs text-gray-400 mt-0.5">₹45 L</div>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+          <div class="text-xs text-blue-500 font-medium mb-1">On-hold (admin)</div>
+          <div class="text-xl font-bold text-blue-700">2</div>
+          <div class="text-xs text-blue-400 mt-0.5">₹28 L</div>
+        </div>
+        <div class="bg-teal-50 border border-teal-200 rounded-lg p-3 text-center">
+          <div class="text-xs text-teal-500 font-medium mb-1">Under negotiation</div>
+          <div class="text-xl font-bold text-teal-700">1</div>
+          <div class="text-xs text-teal-400 mt-0.5">₹14 L</div>
+        </div>
+      </div>
+
+      <!-- FILTER BAR -->
+      <div class="flex gap-2 mb-4">
+        <select class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-400">
+          <option>All entities</option>
+          <option selected>IND</option>
+          <option>UAE</option>
+        </select>
+        <select class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none">
+          <option>All exception types</option>
+          <option>LEGAL</option>
+          <option>DISPUTED</option>
+          <option>CN_PENDING</option>
+          <option>WRITTEN_OFF</option>
+          <option>On-hold (admin)</option>
+        </select>
+        <select class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none">
+          <option>All statuses</option>
+          <option>ACTIVE</option>
+          <option>RESOLVED</option>
+          <option>AUTO_RESOLVED</option>
+        </select>
+        <select class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none">
+          <option>All users</option>
+          <option>Tejaswa Sharma</option>
+          <option>Priya Menon</option>
+        </select>
+        <input type="date" class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none" title="From date" />
+        <input type="date" class="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none" title="To date" />
+        <button class="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700">Apply</button>
+        <button class="text-xs text-gray-500 border border-gray-200 px-3 py-1.5 rounded hover:bg-gray-50">Reset</button>
+      </div>
+
+      <!-- EXCEPTION DETAIL TABLE -->
+      <div class="bg-white border border-gray-200 rounded-lg">
+        <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 class="text-sm font-medium text-gray-800">Exception details (23 total)</h2>
+          <span class="text-xs text-gray-400">reason is mandatory (schema: TEXT NOT NULL)</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="bg-gray-50 text-gray-500 uppercase text-xs tracking-wide border-b border-gray-200">
+                <th class="px-4 py-3 text-left font-medium">Invoice ref</th>
+                <th class="px-3 py-3 text-left font-medium">Party</th>
+                <th class="px-3 py-3 text-right font-medium">Amount</th>
+                <th class="px-3 py-3 text-left font-medium">Age bucket</th>
+                <th class="px-3 py-3 text-left font-medium">Exception type</th>
+                <th class="px-3 py-3 text-left font-medium w-56">Reason</th>
+                <th class="px-3 py-3 text-left font-medium">Tagged by</th>
+                <th class="px-3 py-3 text-left font-medium">Tagged at</th>
+                <th class="px-3 py-3 text-left font-medium">Exp. resolution</th>
+                <th class="px-3 py-3 text-left font-medium">Status</th>
+                <th class="px-3 py-3 text-left font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+
+              <!-- Row 1: LEGAL ACTIVE — material change flag -->
+              <tr class="hover:bg-red-50 bg-red-50/20">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5101 <span class="text-orange-500" title="Amount changed >5% since tagging">&#9888;</span></td>
+                <td class="px-3 py-3 text-gray-700">AlphaCorp Industries Ltd</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹8,92,000</td>
+                <td class="px-3 py-3"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded">90_PLUS</span></td>
+                <td class="px-3 py-3"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">LEGAL</span></td>
+                <td class="px-3 py-3 text-gray-600 w-56">Matter referred to legal. Counsel engaged 2026-04-08. Awaiting court date.</td>
+                <td class="px-3 py-3 text-gray-600">Tejaswa Sharma</td>
+                <td class="px-3 py-3 text-gray-500">2026-04-10</td>
+                <td class="px-3 py-3 text-gray-600">2026-06-30</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3">
+                  <div class="flex flex-col gap-1">
+                    <button class="text-indigo-600 hover:underline text-left">Resolve</button>
+                    <button class="text-gray-400 hover:text-gray-600 text-left">Edit</button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Row 2: LEGAL ACTIVE -->
+              <tr class="hover:bg-red-50/10">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5088</td>
+                <td class="px-3 py-3 text-gray-700">Iota Tech Services Ltd</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹15,00,000</td>
+                <td class="px-3 py-3"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded">90_PLUS</span></td>
+                <td class="px-3 py-3"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">LEGAL</span></td>
+                <td class="px-3 py-3 text-gray-600">Sent legal notice 2026-03-20. 30-day window expires 2026-04-20.</td>
+                <td class="px-3 py-3 text-gray-600">Tejaswa Sharma</td>
+                <td class="px-3 py-3 text-gray-500">2026-03-25</td>
+                <td class="px-3 py-3 text-gray-600">2026-05-15</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
+              </tr>
+
+              <!-- Row 3: DISPUTED ACTIVE -->
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5110</td>
+                <td class="px-3 py-3 text-gray-700">GammaTech Solutions Pvt Ltd</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹12,80,000</td>
+                <td class="px-3 py-3"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded">90_PLUS</span></td>
+                <td class="px-3 py-3"><span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">DISPUTED</span></td>
+                <td class="px-3 py-3 text-gray-600">Client claims scope not delivered per SOW. Internal review ongoing.</td>
+                <td class="px-3 py-3 text-gray-600">Priya Menon</td>
+                <td class="px-3 py-3 text-gray-500">2026-04-08</td>
+                <td class="px-3 py-3 text-gray-600">2026-04-30</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
+              </tr>
+
+              <!-- Row 4: DISPUTED ACTIVE -->
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5145</td>
+                <td class="px-3 py-3 text-gray-700">Eta Pharma Exports Pvt Ltd</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹9,90,000</td>
+                <td class="px-3 py-3"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">31_60</span></td>
+                <td class="px-3 py-3"><span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">DISPUTED</span></td>
+                <td class="px-3 py-3 text-gray-600">Rate card mismatch for Mar batch. Awaiting revised PO from client.</td>
+                <td class="px-3 py-3 text-gray-600">Priya Menon</td>
+                <td class="px-3 py-3 text-gray-500">2026-04-11</td>
+                <td class="px-3 py-3 text-gray-600">2026-04-25</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
+              </tr>
+
+              <!-- Row 5: CN_PENDING ACTIVE -->
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5118</td>
+                <td class="px-3 py-3 text-gray-700">DeltaFin Mgmt Services</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹6,50,000</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">61_90</span></td>
+                <td class="px-3 py-3"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-medium">CN_PENDING</span></td>
+                <td class="px-3 py-3 text-gray-600">Credit note for cancelled line items being raised. Finance to process by Apr 20.</td>
+                <td class="px-3 py-3 text-gray-600">Tejaswa Sharma</td>
+                <td class="px-3 py-3 text-gray-500">2026-04-05</td>
+                <td class="px-3 py-3 text-gray-600">2026-04-20</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
+              </tr>
+
+              <!-- Row 6: CN_PENDING ACTIVE -->
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5162</td>
+                <td class="px-3 py-3 text-gray-700">Kappa Media Group</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹4,20,000</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">61_90</span></td>
+                <td class="px-3 py-3"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-medium">CN_PENDING</span></td>
+                <td class="px-3 py-3 text-gray-600">Partial CN for ₹1.2L approved. Full CN pending CMO sign-off.</td>
+                <td class="px-3 py-3 text-gray-600">Tejaswa Sharma</td>
+                <td class="px-3 py-3 text-gray-500">2026-04-07</td>
+                <td class="px-3 py-3 text-gray-600">2026-04-28</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
+              </tr>
+
+              <!-- Row 7: WRITTEN_OFF RESOLVED -->
+              <tr class="hover:bg-gray-50 opacity-70">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-4988</td>
+                <td class="px-3 py-3 text-gray-700">Sigma Corp Ltd</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹3,20,000</td>
+                <td class="px-3 py-3"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded">90_PLUS</span></td>
+                <td class="px-3 py-3"><span class="bg-gray-200 text-gray-700 px-2 py-0.5 rounded font-medium">WRITTEN_OFF</span></td>
+                <td class="px-3 py-3 text-gray-600">Approved write-off by CFO 2026-03-28. Reconciled against Tally.</td>
+                <td class="px-3 py-3 text-gray-600">Tejaswa Sharma</td>
+                <td class="px-3 py-3 text-gray-500">2026-03-28</td>
+                <td class="px-3 py-3 text-gray-500">—</td>
+                <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded">RESOLVED</span></td>
+                <td class="px-3 py-3 text-gray-400">—</td>
+              </tr>
+
+              <!-- Row 8: AUTO_RESOLVED -->
+              <tr class="hover:bg-gray-50 opacity-70">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5052</td>
+                <td class="px-3 py-3 text-gray-700">Eta Pharma Exports</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹12,90,000</td>
+                <td class="px-3 py-3"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded">SETTLED</span></td>
+                <td class="px-3 py-3"><span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">DISPUTED</span></td>
+                <td class="px-3 py-3 text-gray-600">Client dispute resolved via partial payment. Remainder waived.</td>
+                <td class="px-3 py-3 text-gray-600">Priya Menon</td>
+                <td class="px-3 py-3 text-gray-500">2026-03-20</td>
+                <td class="px-3 py-3 text-gray-500">—</td>
+                <td class="px-3 py-3">
+                  <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">AUTO_RESOLVED</span>
+                  <div class="text-gray-400 text-xs mt-0.5">Invoice settled on 2026-04-09</div>
+                </td>
+                <td class="px-3 py-3 text-gray-400">—</td>
+              </tr>
+
+              <!-- Row 9: Admin-added type ACTIVE -->
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5177</td>
+                <td class="px-3 py-3 text-gray-700">Xi Services Pvt Ltd</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹8,00,000</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">61_90</span></td>
+                <td class="px-3 py-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">ON_HOLD</span><div class="text-gray-400 text-xs">admin-added</div></td>
+                <td class="px-3 py-3 text-gray-600">Client undergoing internal restructuring. Collection paused by agreement till May 2026.</td>
+                <td class="px-3 py-3 text-gray-600">Tejaswa Sharma</td>
+                <td class="px-3 py-3 text-gray-500">2026-04-12</td>
+                <td class="px-3 py-3 text-gray-600">2026-05-31</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
+              </tr>
+
+              <!-- Row 10: Admin-added under negotiation ACTIVE -->
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-gray-600">INV-5189</td>
+                <td class="px-3 py-3 text-gray-700">Omicron Media Ltd</td>
+                <td class="px-3 py-3 text-right text-gray-800">₹5,50,000</td>
+                <td class="px-3 py-3"><span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">31_60</span></td>
+                <td class="px-3 py-3"><span class="bg-teal-100 text-teal-700 px-2 py-0.5 rounded font-medium">UNDER_NEG</span><div class="text-gray-400 text-xs">admin-added</div></td>
+                <td class="px-3 py-3 text-gray-600">Under renegotiation — client requested revised payment schedule. CEO-level discussion.</td>
+                <td class="px-3 py-3 text-gray-600">Tejaswa Sharma</td>
+                <td class="px-3 py-3 text-gray-500">2026-04-14</td>
+                <td class="px-3 py-3 text-gray-600">2026-04-30</td>
+                <td class="px-3 py-3"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">ACTIVE</span></td>
+                <td class="px-3 py-3"><button class="text-indigo-600 hover:underline">Resolve</button></td>
+              </tr>
+
+              <!-- Implied more rows -->
+              <tr class="bg-gray-50">
+                <td colspan="11" class="px-4 py-3 text-center text-gray-400 text-xs">… 13 more rows (adjust filters to narrow)</td>
+              </tr>
+
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /left main area -->
+
+    <!-- RIGHT: Tag invoice side panel (shown open for one row) -->
+    <div class="w-72 flex-shrink-0">
+      <div class="bg-white border border-indigo-200 rounded-lg p-5 sticky top-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-gray-800">Tag invoice</h2>
+          <button class="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+        </div>
+        <div class="text-xs text-gray-500 mb-4 bg-gray-50 rounded p-2">
+          <div><span class="text-gray-400">Invoice:</span> <strong>INV-5088</strong></div>
+          <div><span class="text-gray-400">Party:</span> Iota Tech Services Ltd</div>
+          <div><span class="text-gray-400">Amount:</span> ₹15,00,000</div>
+          <div><span class="text-gray-400">Bucket:</span> <span class="text-red-600">90_PLUS</span></div>
+        </div>
+
+        <div class="space-y-3">
+          <!-- Exception type -->
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Exception type <span class="text-red-500">*</span></label>
+            <select class="w-full text-xs border border-gray-300 rounded px-2 py-2 focus:outline-none focus:border-indigo-400">
+              <option>Select type…</option>
+              <option selected>LEGAL — Legal / litigation</option>
+              <option>DISPUTED — Disputed by client</option>
+              <option>CN_PENDING — Credit note pending</option>
+              <option>WRITTEN_OFF — Written-off</option>
+              <option>ON_HOLD — On-hold (admin)</option>
+              <option>UNDER_NEG — Under negotiation</option>
+            </select>
+          </div>
+
+          <!-- Reason (mandatory) -->
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">
+              Reason <span class="text-red-500">*</span>
+              <span class="text-gray-400 font-normal">(required — stored as TEXT NOT NULL)</span>
+            </label>
+            <textarea rows="4" placeholder="Describe the reason for this exception…" class="w-full text-xs border border-gray-300 rounded px-2 py-2 resize-none focus:outline-none focus:border-indigo-400">Sent legal notice 2026-03-20. 30-day window expires 2026-04-20.</textarea>
+          </div>
+
+          <!-- Expected resolution -->
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Expected resolution date</label>
+            <input type="date" value="2026-05-15" class="w-full text-xs border border-gray-300 rounded px-2 py-2 focus:outline-none focus:border-indigo-400" />
+          </div>
+
+          <!-- Submit -->
+          <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium py-2 rounded">
+            Save exception tag
+          </button>
+          <p class="text-xs text-gray-400 text-center">ANALYST or ADMIN only</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /flex layout -->
+
+</main>
+
+</body>
+</html>
