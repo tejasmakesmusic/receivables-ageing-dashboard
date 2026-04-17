@@ -33,11 +33,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen || uv sync
+RUN uv sync --frozen
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONPATH="/app/backend/src:${PYTHONPATH}"
 
@@ -57,7 +57,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     PORT=8000
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
 
 # Non-root user for runtime
 RUN groupadd -r app && useradd -r -g app app
@@ -80,6 +80,9 @@ RUN chown -R app:app /app
 USER app
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:${PORT:-8000}/health || exit 1
 
 # Railway sets $PORT; respect it.
 CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
