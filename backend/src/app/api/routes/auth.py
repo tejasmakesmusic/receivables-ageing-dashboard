@@ -20,7 +20,7 @@ import json
 import secrets
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import urlencode
 
 import httpx
@@ -33,6 +33,9 @@ from sqlalchemy.orm import (
 
 from app.api.deps import db_session, get_current_user
 from app.config import get_settings
+
+if TYPE_CHECKING:
+    from app.config import Settings
 from app.core.logging import get_logger
 from app.core.rbac import Role
 from app.core.session import SessionData, clear_session_cookie, create_session_cookie
@@ -49,7 +52,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-async def _exchange_code(code: str, settings) -> dict:  # type: ignore[type-arg]
+async def _exchange_code(code: str, settings: Settings) -> dict[str, Any]:
     """POST to Google's token endpoint, return the JSON payload."""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -63,10 +66,11 @@ async def _exchange_code(code: str, settings) -> dict:  # type: ignore[type-arg]
             },
         )
         resp.raise_for_status()
-        return resp.json()  # type: ignore[no-any-return]
+        payload: dict[str, Any] = resp.json()
+        return payload
 
 
-def _decode_id_token_payload(id_token: str) -> dict:  # type: ignore[type-arg]
+def _decode_id_token_payload(id_token: str) -> dict[str, Any]:
     """Decode JWT payload without signature verification (M1 only).
 
     TODO(M2): verify signature against Google's public JWKS endpoint

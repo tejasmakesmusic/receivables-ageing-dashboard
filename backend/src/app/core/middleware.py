@@ -23,7 +23,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import structlog
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
 from app.core.logging import get_logger
@@ -35,7 +35,7 @@ log = get_logger(__name__)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = str(uuid.uuid4())
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
@@ -64,7 +64,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     _EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/",)  # prefix match
     _EXEMPT_EXACT: frozenset[str] = frozenset({"/health"})  # exact match
 
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         from app.config import get_settings
 
         settings = get_settings()

@@ -27,7 +27,7 @@ class FxRateImmutableError(RuntimeError):
 
 
 @event.listens_for(Session, "before_flush")
-def _block_fx_rate_update(session: Session, flush_context, instances) -> None:
+def _block_fx_rate_update(session: Session, flush_context: object, instances: object) -> None:
     for obj in session.dirty:
         if isinstance(obj, FxRate) and session.is_modified(obj, include_collections=False):
             raise FxRateImmutableError(
