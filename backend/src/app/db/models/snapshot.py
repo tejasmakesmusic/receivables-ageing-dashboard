@@ -132,6 +132,12 @@ class Snapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # §13 #2 — per-publish JSONB log of invoices whose amount changed >5% while an
+    # ACTIVE exception tag exists.  Shape: [{invoice_id, prior_amount, new_amount,
+    # delta_pct}, ...].  Populated during publish; empty on initial insert.
+    material_change_flags_json: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
+    )
 
     # Relationships
     entity: Mapped[Entity] = relationship("Entity", foreign_keys=[entity_id], lazy="select")
