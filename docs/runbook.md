@@ -18,3 +18,88 @@ sparse. Sections to fill in:
 
 See also `02_HANDOFF_SPEC.md` §11 (non-functional requirements) and
 §13 (consequences 9–16 — deployment-specific).
+
+---
+
+## Partitioning invoice_snapshots
+
+`invoice_snapshots` is partitioned `BY RANGE (as_of_date)` using quarterly
+partitions created per the naming convention:
+
+    invoice_snapshots_<YYYY>_q<N>
+
+where `N = 1` (Jan-Mar), `2` (Apr-Jun), `3` (Jul-Sep), `4` (Oct-Dec).
+
+Two partitions (2026-Q1, 2026-Q2) are seeded by migration `0003_m3_ingestion`.
+Before the first upload whose `as_of_date` falls into a **new** quarter, you
+must create the partition manually (or via a maintenance cron in M6).
+
+### DDL template
+
+```sql
+-- Replace YYYY, QN, start_date (inclusive), end_date (exclusive).
+CREATE TABLE invoice_snapshots_YYYY_qN
+    PARTITION OF invoice_snapshots
+    FOR VALUES FROM ('YYYY-MM-DD') TO ('YYYY-MM-DD');
+```
+
+### Examples
+
+```sql
+-- Q3 2026: 2026-07-01 to 2026-09-30 (upper exclusive → 2026-10-01)
+CREATE TABLE invoice_snapshots_2026_q3
+    PARTITION OF invoice_snapshots
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+
+-- Q4 2026: 2026-10-01 to 2026-12-31 (upper exclusive → 2027-01-01)
+CREATE TABLE invoice_snapshots_2026_q4
+    PARTITION OF invoice_snapshots
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+
+-- Q1 2027:
+CREATE TABLE invoice_snapshots_2027_q1
+    PARTITION OF invoice_snapshots
+    FOR VALUES FROM ('2027-01-01') TO ('2027-04-01');
+```
+
+### Ownership
+
+Partition creation is operational work, not application code. Until the
+M6 cron is in place (expected ~2026-06), **Tejaswa (project owner)** must
+manually create the next quarterly partition by the 25th of the month
+BEFORE the new quarter begins.
+
+Calendar reminders to set:
+- **2026-06-25** → create 2026-Q3 partition (covers 2026-07-01 to 2026-10-01)
+- **2026-09-25** → create 2026-Q4 partition (covers 2026-10-01 to 2027-01-01)
+- **2026-12-25** → create 2027-Q1 partition
+
+### What happens if you forget
+
+Postgres raises `no partition of relation "invoice_snapshots" found for row`
+on the first INSERT with an `as_of_date` outside all defined partition
+ranges.  If an INSERT arrives for an `as_of_date` outside all existing partition ranges, Postgres raises an error; the request fails with HTTP 500 until the partition is created. M3 Task 2 (`POST /snapshots`) will add a pre-flight check to surface this as an HTTP 422 with a clear message instead of a mid-transaction 500.  Create the partition and
+retry the upload.
+
+Follow-up: M3 Task 2 acceptance criteria includes "reject snapshot upload when no partition exists for the supplied as_of_date; return 422 with code=MISSING_PARTITION".
+
+### Quarter boundary dates
+
+| Quarter | FROM (inclusive) | TO (exclusive) |
+|---------|-----------------|----------------|
+| Q1      | YYYY-01-01      | YYYY-04-01     |
+| Q2      | YYYY-04-01      | YYYY-07-01     |
+| Q3      | YYYY-07-01      | YYYY-10-01     |
+| Q4      | YYYY-10-01      | YYYY+1-01-01   |
+
+### Dropping old partitions
+
+Partitions can be detached and archived independently once the data is
+beyond the retention window:
+
+```sql
+-- Detach (keeps the table as a standalone, no FK constraints broken)
+ALTER TABLE invoice_snapshots DETACH PARTITION invoice_snapshots_2026_q1;
+-- Archive / backup the detached table, then drop:
+DROP TABLE invoice_snapshots_2026_q1;
+```

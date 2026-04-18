@@ -30,10 +30,15 @@ def _alembic(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.integration
 def test_migration_files_parse() -> None:
-    """alembic heads must succeed — proves every versions/*.py is importable."""
+    """alembic heads must succeed — proves every versions/*.py is importable.
+
+    Does NOT pin a specific head revision id — that would need updating
+    every time a migration lands. Linear history is enforced by the
+    "exactly one head" check below.
+    """
     result = _alembic(["heads"])
     assert result.returncode == 0, result.stderr
-    # Verify the latest migration is the head (update when a new migration lands).
+    head_lines = [ln for ln in result.stdout.strip().splitlines() if ln.strip()]
     assert (
-        "0002_seed_bootstrap_admin" in result.stdout
-    ), f"Unexpected alembic heads output: {result.stdout!r}"
+        len(head_lines) == 1
+    ), f"Expected linear migration history (exactly one head), got: {result.stdout!r}"

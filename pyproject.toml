@@ -118,6 +118,8 @@ ignore = [
 # and in the ParseResult.as_of_date field passed to pydantic — must be runtime.
 "backend/src/app/parsers/tally.py" = ["TCH003"]
 "backend/src/app/parsers/xero.py" = ["TCH003"]
+# uuid.UUID is used at runtime in pydantic field types and function signatures.
+"backend/src/app/services/alias_resolver.py" = ["TCH003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
@@ -162,4 +164,6 @@ markers = [
   "unit: fast isolated tests (no DB, no network)",
   "integration: require Postgres",
   "parser: parser tests against real sample files",
+  "serial: must not run concurrently with other DB-mutating tests (e.g. downgrade/upgrade round-trips)",
+  "slow: performance tests skipped in CI by default",
 ]
