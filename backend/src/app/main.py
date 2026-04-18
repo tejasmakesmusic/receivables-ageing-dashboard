@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.api.deps import db_session
 from app.api.routes.admin import router as admin_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.config import router as config_router
 from app.api.routes.snapshots import router as snapshots_router
 from app.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -50,6 +51,7 @@ app.add_middleware(RequestIDMiddleware)  # outer — added last, runs first
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(snapshots_router, prefix="/snapshots", tags=["snapshots"])
+app.include_router(config_router, prefix="/config", tags=["config"])
 
 
 @app.get("/health", tags=["meta"])

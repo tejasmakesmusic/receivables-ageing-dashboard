@@ -25,6 +25,7 @@ from app.core.rbac import Role
 from app.db.models.user import (
     User,  # noqa: TCH001 — needed at runtime for Annotated[User, Depends(...)]
 )
+from app.schemas.discard import DiscardRequest, DiscardResponse
 from app.schemas.publish import PublishRequest, PublishResponse
 from app.schemas.snapshot import SnapshotCreateResponse
 from app.schemas.staging import (
@@ -34,6 +35,7 @@ from app.schemas.staging import (
     WarningsAckRequest,
     WarningsAckResponse,
 )
+from app.services.discard_service import discard_snapshot
 from app.services.publish_service import publish_snapshot
 from app.services.snapshot_service import upload_snapshot
 from app.services.staging_service import (
@@ -303,4 +305,48 @@ def publish_snapshot_route(
         body=body or PublishRequest(),
         current_user=current_user,
         request_ip=request_ip,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /snapshots/{snapshot_id}/discard
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{snapshot_id}/discard",
+    response_model=DiscardResponse,
+    status_code=200,
+    summary="Discard a staged snapshot — terminal transition, cannot be undone",
+    tags=["snapshots"],
+)
+def discard_snapshot_route(
+    snapshot_id: uuid.UUID,
+    body: DiscardRequest | None = None,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_allowed)] = ...,  # type: ignore[assignment]
+) -> DiscardResponse:
+    """Transition a STAGED snapshot to DISCARDED (terminal state).
+
+    Only STAGED snapshots can be discarded. DISCARDED is final — there is no
+    un-discard path. A new file must be uploaded to replace a discarded snapshot.
+
+    RBAC:
+    - ANALYST: allowed if entity_id_scope matches snapshot entity.
+    - ADMIN: allowed for any entity.
+    - CFO, PENDING: 403.
+
+    Returns:
+        200 with DiscardResponse on success.
+
+    Raises:
+        403: Insufficient role or entity scope.
+        404: Snapshot not found.
+        409: Snapshot is not in STAGED status (already published or discarded).
+    """
+    return discard_snapshot(
+        db=session,
+        snapshot_id=snapshot_id,
+        body=body or DiscardRequest(),
+        current_user=current_user,
     )
