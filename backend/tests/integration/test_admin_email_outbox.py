@@ -66,12 +66,10 @@ def _admin_id(db_session: Session) -> uuid.UUID:
 
 def _seed_outbox(
     db_session: Session,
-    status: str = "PENDING",
-    rule_type: str = "OVERDUE_ALERT",
-    recipient_email: str = "client@example.com",
+    status: str = "QUEUED",
+    rule_type: str = "PUBLISH_NOTIF",
 ) -> uuid.UUID:
     entry = EmailOutbox(
-        recipient_email=recipient_email,
         subject="Test subject",
         body_html="<p>Test</p>",
         status=status,
@@ -89,7 +87,7 @@ def _seed_outbox(
 
 def test_get_email_outbox_200_admin(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    _seed_outbox(db_session, status="PENDING")
+    _seed_outbox(db_session, status="QUEUED")
 
     resp = client.get("/admin/email-outbox")
     assert resp.status_code == 200
@@ -106,24 +104,24 @@ def test_get_email_outbox_403_analyst(client: TestClient, db_session: Session) -
 
 def test_get_email_outbox_filter_by_status(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    _seed_outbox(db_session, status="PENDING")
-    _seed_outbox(db_session, status="SENT")
+    _seed_outbox(db_session, status="QUEUED")
+    _seed_outbox(db_session, status="SENT")  # SENT is a valid status
 
-    resp = client.get("/admin/email-outbox?status=PENDING")
+    resp = client.get("/admin/email-outbox?status=QUEUED")
     assert resp.status_code == 200
     items = resp.json()["items"]
-    assert all(i["status"] == "PENDING" for i in items)
+    assert all(i["status"] == "QUEUED" for i in items)
 
 
 def test_get_email_outbox_filter_by_rule_type(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    _seed_outbox(db_session, rule_type="OVERDUE_ALERT")
-    _seed_outbox(db_session, rule_type="RECONCILIATION_REMINDER")
+    _seed_outbox(db_session, rule_type="PUBLISH_NOTIF")
+    _seed_outbox(db_session, rule_type="DAILY_DIGEST")
 
-    resp = client.get("/admin/email-outbox?rule_type=OVERDUE_ALERT")
+    resp = client.get("/admin/email-outbox?rule_type=PUBLISH_NOTIF")
     assert resp.status_code == 200
     items = resp.json()["items"]
-    assert all(i["rule_type"] == "OVERDUE_ALERT" for i in items)
+    assert all(i["rule_type"] == "PUBLISH_NOTIF" for i in items)
 
 
 def test_get_email_outbox_row_fields(client: TestClient, db_session: Session) -> None:
@@ -135,7 +133,7 @@ def test_get_email_outbox_row_fields(client: TestClient, db_session: Session) ->
     items = resp.json()["items"]
     assert len(items) >= 1
     row = items[0]
-    for field in ("id", "recipient_email", "subject", "status", "rule_type", "created_at"):
+    for field in ("id", "subject", "status", "rule_type", "enqueued_at"):
         assert field in row, f"Missing field: {field}"
 
 
@@ -144,9 +142,9 @@ def test_get_email_outbox_row_fields(client: TestClient, db_session: Session) ->
 # ---------------------------------------------------------------------------
 
 
-def test_mark_sent_200_pending_email(client: TestClient, db_session: Session) -> None:
+def test_mark_sent_200_queued_email(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    eid = _seed_outbox(db_session, status="PENDING")
+    eid = _seed_outbox(db_session, status="QUEUED")
 
     resp = client.post(
         f"/admin/email-outbox/{eid}/mark-sent",
@@ -169,7 +167,7 @@ def test_mark_sent_409_already_sent(client: TestClient, db_session: Session) -> 
         headers=_headers(client),
     )
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "EMAIL_ALREADY_SENT"
+    assert resp.json()["detail"]["code"] == "ALREADY_SENT"
 
 
 def test_mark_sent_404_unknown(client: TestClient, db_session: Session) -> None:
@@ -184,7 +182,7 @@ def test_mark_sent_404_unknown(client: TestClient, db_session: Session) -> None:
 
 def test_mark_sent_403_analyst(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global")
-    eid = _seed_outbox(db_session, status="PENDING")
+    eid = _seed_outbox(db_session, status="QUEUED")
     resp = client.post(
         f"/admin/email-outbox/{eid}/mark-sent",
         json={},
@@ -197,7 +195,7 @@ def test_mark_sent_writes_audit_log(client: TestClient, db_session: Session) -> 
     _login_as_admin(client)
     from app.db.models.audit_log import AuditLog
 
-    eid = _seed_outbox(db_session, status="PENDING")
+    eid = _seed_outbox(db_session, status="QUEUED")
     before = db_session.query(AuditLog).filter(
         AuditLog.action == "email_outbox.mark_sent"
     ).count()

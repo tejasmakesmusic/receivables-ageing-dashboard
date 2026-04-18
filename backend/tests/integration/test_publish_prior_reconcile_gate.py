@@ -98,7 +98,8 @@ def _build_published_snapshot_with_invoice(
         entity_id=entity_id,
         as_of_date=as_of_date,
         status="PUBLISHED",
-        source="TALLY",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
         uploaded_by=admin,
     )
     db_session.add(snapshot)
@@ -114,6 +115,9 @@ def _build_published_snapshot_with_invoice(
         entity_id=entity_id,
         canonical_id=canonical.id,
         first_seen_snapshot_id=snapshot.id,
+        credit_days_applied=30,
+        credit_days_source="MANUAL",
+        raw_row_json={},
     )
     db_session.add(invoice)
     db_session.flush()
@@ -272,7 +276,6 @@ def test_gate_passes_when_no_prior_published_snapshot(
     xlsx = _make_tally_xlsx(
         party_name=party_name,
         inv_ref="GATE-FIRST-001",
-        as_of_date="2026-03-31",  # type: ignore[arg-type]
     )
     upload_resp = _upload(client, xlsx, entity_code="IND", as_of_date="2026-03-31")
     assert upload_resp.status_code == 201, upload_resp.json()

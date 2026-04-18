@@ -22,6 +22,7 @@ from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.exception_tag import ExceptionTag
 from app.db.models.invoice import Invoice
 from app.db.models.party import PartyCanonical
+from app.db.models.snapshot import Snapshot
 from app.db.models.user import User
 
 if TYPE_CHECKING:
@@ -97,15 +98,23 @@ def _entity_id(db_session: Session, code: str) -> uuid.UUID:
     return e.id
 
 
-def _get_bucket_id(db_session: Session, code: str = "DISPUTE") -> uuid.UUID:
+def _get_bucket_id(db_session: Session, code: str = "DISPUTED") -> uuid.UUID:
     bt = db_session.scalar(
         select(ExceptionBucketType).where(
             ExceptionBucketType.code == code,
-            ExceptionBucketType.is_active.is_(True),
+            ExceptionBucketType.active.is_(True),
         )
     )
     assert bt is not None, f"ExceptionBucketType '{code}' not seeded or inactive"
     return bt.id
+
+
+def _get_bucket_code(db_session: Session, code: str = "DISPUTED") -> str:
+    bt = db_session.scalar(
+        select(ExceptionBucketType).where(ExceptionBucketType.code == code)
+    )
+    assert bt is not None, f"ExceptionBucketType '{code}' not seeded"
+    return bt.code
 
 
 def _make_open_invoice(
@@ -115,11 +124,22 @@ def _make_open_invoice(
     amount: float = 5000.0,
     invoice_date: date = date(2026, 1, 15),
 ) -> uuid.UUID:
-    """Insert a minimal OPEN invoice directly (no snapshot needed for exception tests)."""
+    """Insert a minimal OPEN invoice directly."""
     admin = _admin_id(db_session)
     entity_id = _entity_id(db_session, entity_code)
 
-    canonical = PartyCanonical(entity_id=entity_id, name="TestParty", created_by=admin)
+    snap = Snapshot(
+        entity_id=entity_id,
+        as_of_date=date(2026, 1, 31),
+        status="PUBLISHED",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
+        uploaded_by=admin,
+    )
+    db_session.add(snap)
+    db_session.flush()
+
+    canonical = PartyCanonical(entity_id=entity_id, name=f"TestParty-{ref}", created_by=admin)
     db_session.add(canonical)
     db_session.flush()
 
@@ -132,6 +152,10 @@ def _make_open_invoice(
         status="OPEN",
         entity_id=entity_id,
         canonical_id=canonical.id,
+        first_seen_snapshot_id=snap.id,
+        credit_days_applied=30,
+        credit_days_source="MANUAL",
+        raw_row_json={},
     )
     db_session.add(invoice)
     db_session.flush()
@@ -145,7 +169,19 @@ def _make_settled_invoice(
 ) -> uuid.UUID:
     admin = _admin_id(db_session)
     entity_id = _entity_id(db_session, entity_code)
-    canonical = PartyCanonical(entity_id=entity_id, name="SettledParty", created_by=admin)
+
+    snap = Snapshot(
+        entity_id=entity_id,
+        as_of_date=date(2026, 1, 31),
+        status="PUBLISHED",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
+        uploaded_by=admin,
+    )
+    db_session.add(snap)
+    db_session.flush()
+
+    canonical = PartyCanonical(entity_id=entity_id, name=f"SettledParty-{ref}", created_by=admin)
     db_session.add(canonical)
     db_session.flush()
     invoice = Invoice(
@@ -157,6 +193,10 @@ def _make_settled_invoice(
         status="SETTLED",
         entity_id=entity_id,
         canonical_id=canonical.id,
+        first_seen_snapshot_id=snap.id,
+        credit_days_applied=30,
+        credit_days_source="MANUAL",
+        raw_row_json={},
     )
     db_session.add(invoice)
     db_session.flush()
@@ -166,11 +206,11 @@ def _make_settled_invoice(
 def _post_exception(
     client: TestClient,
     invoice_id: uuid.UUID,
-    bucket_type_id: uuid.UUID,
+    bucket_type_code: str,
     reason: str = "Customer dispute",
     expected_resolution_date: str | None = None,
 ) -> Any:
-    body: dict[str, Any] = {"bucket_type_id": str(bucket_type_id), "reason": reason}
+    body: dict[str, Any] = {"bucket_type_code": bucket_type_code, "reason": reason}
     if expected_resolution_date:
         body["expected_resolution_date"] = expected_resolution_date
     return client.post(
@@ -188,14 +228,14 @@ def _post_exception(
 def test_create_exception_201_on_open_invoice(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A01")
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
-    resp = _post_exception(client, invoice_id, bucket_id)
+    resp = _post_exception(client, invoice_id, bucket_code)
     assert resp.status_code == 201, resp.json()
     body = resp.json()
     assert body["invoice_id"] == str(invoice_id)
     assert body["status"] == "ACTIVE"
-    assert body["bucket_type_code"] == "DISPUTE"
+    assert body["bucket_type_code"] == "DISPUTED"
 
 
 def test_create_exception_with_expected_resolution_date(
@@ -203,10 +243,10 @@ def test_create_exception_with_expected_resolution_date(
 ) -> None:
     _login_as_admin(client)
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A02")
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
     resp = _post_exception(
-        client, invoice_id, bucket_id, expected_resolution_date="2026-04-30"
+        client, invoice_id, bucket_code, expected_resolution_date="2026-04-30"
     )
     assert resp.status_code == 201, resp.json()
     assert resp.json()["expected_resolution_date"] == "2026-04-30"
@@ -217,10 +257,10 @@ def test_create_exception_409_on_settled_invoice(
 ) -> None:
     _login_as_admin(client)
     invoice_id = _make_settled_invoice(db_session, ref="INV-EX-A03")
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
-    resp = _post_exception(client, invoice_id, bucket_id)
-    assert resp.status_code == 409
+    resp = _post_exception(client, invoice_id, bucket_code)
+    assert resp.status_code == 422
     assert resp.json()["detail"]["code"] == "INVOICE_NOT_OPEN"
 
 
@@ -229,9 +269,9 @@ def test_create_exception_requires_non_empty_reason(
 ) -> None:
     _login_as_admin(client)
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A04")
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
-    resp = _post_exception(client, invoice_id, bucket_id, reason="   ")
+    resp = _post_exception(client, invoice_id, bucket_code, reason="   ")
     assert resp.status_code == 422
 
 
@@ -239,10 +279,10 @@ def test_create_exception_404_on_unknown_invoice(
     client: TestClient, db_session: Session
 ) -> None:
     _login_as_admin(client)
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
     fake_id = uuid.uuid4()
 
-    resp = _post_exception(client, fake_id, bucket_id)
+    resp = _post_exception(client, fake_id, bucket_code)
     assert resp.status_code == 404
 
 
@@ -254,17 +294,15 @@ def test_create_exception_400_inactive_bucket(
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A05")
 
     # Create an inactive bucket
-    admin = _admin_id(db_session)
     inactive_bt = ExceptionBucketType(
         code="INACTIVE_TEST",
         name="Inactive",
-        is_active=False,
-        created_by=admin,
+        active=False,
     )
     db_session.add(inactive_bt)
     db_session.flush()
 
-    resp = _post_exception(client, invoice_id, inactive_bt.id)
+    resp = _post_exception(client, invoice_id, inactive_bt.code)
     assert resp.status_code == 400
     assert resp.json()["detail"]["code"] == "BUCKET_TYPE_INACTIVE"
 
@@ -272,18 +310,18 @@ def test_create_exception_400_inactive_bucket(
 def test_create_exception_analyst_can_create(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code=None)
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A06")
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
-    resp = _post_exception(client, invoice_id, bucket_id)
+    resp = _post_exception(client, invoice_id, bucket_code)
     assert resp.status_code == 201, resp.json()
 
 
 def test_create_exception_cfo_forbidden(client: TestClient, db_session: Session) -> None:
     _login_as_cfo(client, db_session, "cfo@emb.global")
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A07")
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
-    resp = _post_exception(client, invoice_id, bucket_id)
+    resp = _post_exception(client, invoice_id, bucket_code)
     assert resp.status_code == 403
 
 
@@ -293,9 +331,9 @@ def test_create_exception_analyst_out_of_scope_403(
     """Analyst scoped to UAE cannot tag IND invoices."""
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code="UAE")
     invoice_id = _make_open_invoice(db_session, entity_code="IND", ref="INV-EX-A08")
-    bucket_id = _get_bucket_id(db_session, "DISPUTE")
+    bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
-    resp = _post_exception(client, invoice_id, bucket_id)
+    resp = _post_exception(client, invoice_id, bucket_code)
     assert resp.status_code == 403
 
 
@@ -307,7 +345,7 @@ def test_create_exception_analyst_out_of_scope_403(
 def _create_active_tag(
     db_session: Session,
     invoice_id: uuid.UUID,
-    bucket_code: str = "DISPUTE",
+    bucket_code: str = "DISPUTED",
 ) -> uuid.UUID:
     admin = _admin_id(db_session)
     bucket_id = _get_bucket_id(db_session, bucket_code)
@@ -359,7 +397,7 @@ def test_resolve_already_resolved_409(client: TestClient, db_session: Session) -
         headers=_headers(client),
     )
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "EXCEPTION_NOT_ACTIVE"
+    assert resp.json()["detail"]["code"] == "EXCEPTION_ALREADY_RESOLVED"
 
 
 def test_update_note_200(client: TestClient, db_session: Session) -> None:
@@ -369,11 +407,11 @@ def test_update_note_200(client: TestClient, db_session: Session) -> None:
 
     resp = client.patch(
         f"/exceptions/{tag_id}",
-        json={"action": "UPDATE_NOTE", "resolution_note": "Updated note"},
+        json={"action": "UPDATE_NOTE", "note": "Updated note"},
         headers=_headers(client),
     )
     assert resp.status_code == 200, resp.json()
-    assert resp.json()["resolution_note"] == "Updated note"
+    assert resp.json()["note"] == "Updated note"
     assert resp.json()["status"] == "ACTIVE"
 
 
@@ -426,7 +464,7 @@ def test_patch_exception_cfo_forbidden(client: TestClient, db_session: Session) 
 def test_list_exceptions_200(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-L01")
-    _create_active_tag(db_session, invoice_id, "DISPUTE")
+    _create_active_tag(db_session, invoice_id, "DISPUTED")
 
     resp = client.get("/exceptions")
     assert resp.status_code == 200, resp.json()
@@ -439,7 +477,7 @@ def test_list_exceptions_200(client: TestClient, db_session: Session) -> None:
 def test_list_exceptions_filter_by_status(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-L02")
-    _create_active_tag(db_session, invoice_id, "DISPUTE")
+    _create_active_tag(db_session, invoice_id, "DISPUTED")
 
     resp = client.get("/exceptions?status=ACTIVE")
     assert resp.status_code == 200

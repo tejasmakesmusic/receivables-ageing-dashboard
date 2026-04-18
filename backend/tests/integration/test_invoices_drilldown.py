@@ -107,6 +107,19 @@ def _make_invoice(
 ) -> uuid.UUID:
     admin = _admin_id(db_session)
     entity_id = _entity_id(db_session, entity_code)
+
+    # Always create a base snapshot so first_seen_snapshot_id is non-null.
+    snap = Snapshot(
+        entity_id=entity_id,
+        as_of_date=date(2026, 3, 31),
+        status="PUBLISHED",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
+        uploaded_by=admin,
+    )
+    db_session.add(snap)
+    db_session.flush()
+
     canonical = PartyCanonical(entity_id=entity_id, name=f"Party-{ref}", created_by=admin)
     db_session.add(canonical)
     db_session.flush()
@@ -120,22 +133,15 @@ def _make_invoice(
         status=status,
         entity_id=entity_id,
         canonical_id=canonical.id,
+        first_seen_snapshot_id=snap.id,
+        credit_days_applied=30,
         credit_days_source=credit_days_source,
+        raw_row_json={},
     )
     db_session.add(invoice)
     db_session.flush()
 
     if with_snapshot:
-        snap = Snapshot(
-            entity_id=entity_id,
-            as_of_date=date(2026, 3, 31),
-            status="PUBLISHED",
-            source="TALLY",
-            uploaded_by=admin,
-        )
-        db_session.add(snap)
-        db_session.flush()
-        invoice.first_seen_snapshot_id = snap.id
         inv_snap = InvoiceSnapshot(
             snapshot_id=snap.id,
             invoice_id=invoice.id,
@@ -153,7 +159,7 @@ def _make_invoice(
 def _add_active_exception(db_session: Session, invoice_id: uuid.UUID) -> uuid.UUID:
     admin = _admin_id(db_session)
     bt = db_session.scalar(
-        select(ExceptionBucketType).where(ExceptionBucketType.is_active.is_(True))
+        select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True))
     )
     assert bt is not None
     tag = ExceptionTag(

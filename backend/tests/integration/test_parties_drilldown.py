@@ -113,7 +113,8 @@ def _make_canonical_with_invoices(
         entity_id=entity_id,
         as_of_date=date(2026, 3, 31),
         status="PUBLISHED",
-        source="TALLY",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
         uploaded_by=admin,
     )
     db_session.add(snap)
@@ -130,6 +131,9 @@ def _make_canonical_with_invoices(
             entity_id=entity_id,
             canonical_id=canonical.id,
             first_seen_snapshot_id=snap.id,
+            credit_days_applied=30,
+            credit_days_source="MANUAL",
+            raw_row_json={},
         )
         db_session.add(inv)
         db_session.flush()

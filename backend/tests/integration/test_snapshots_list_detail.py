@@ -99,7 +99,8 @@ def _make_snapshot(
         entity_id=entity_id,
         as_of_date=as_of_date,
         status=status,
-        source="TALLY",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
         uploaded_by=admin,
     )
     db_session.add(snap)
@@ -150,7 +151,7 @@ def test_list_snapshots_filter_by_entity(client: TestClient, db_session: Session
 def test_list_snapshots_filter_by_status(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     _make_snapshot(db_session, status="PUBLISHED", as_of_date=date(2026, 2, 28))
-    _make_snapshot(db_session, status="PENDING", as_of_date=date(2026, 2, 28))
+    _make_snapshot(db_session, status="STAGED", as_of_date=date(2026, 3, 15))
 
     resp = client.get("/snapshots?status=PUBLISHED")
     assert resp.status_code == 200
@@ -192,7 +193,7 @@ def test_list_snapshots_row_fields(client: TestClient, db_session: Session) -> N
     items = resp.json()["items"]
     assert len(items) >= 1
     row = items[0]
-    for field in ("id", "entity_code", "as_of_date", "status", "source"):
+    for field in ("id", "entity_code", "as_of_date", "status", "source_hint"):
         assert field in row, f"Missing field: {field}"
 
 
@@ -209,7 +210,7 @@ def test_get_snapshot_detail_200(client: TestClient, db_session: Session) -> Non
     assert resp.status_code == 200
     body = resp.json()
     assert body["id"] == str(snap_id)
-    assert body["status"] in ("PUBLISHED", "PENDING", "DISCARDED")
+    assert body["status"] in ("PUBLISHED", "STAGED", "DISCARDED")
 
 
 def test_get_snapshot_detail_404_unknown(client: TestClient, db_session: Session) -> None:

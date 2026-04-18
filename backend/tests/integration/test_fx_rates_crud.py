@@ -73,7 +73,7 @@ def _post_rate(
     from_ccy: str = "AED",
     to_ccy: str = "INR",
     rate: float = 22.5,
-    effective_from: str = "2026-01-01",
+    valid_from: str = "2026-01-01",
     source: str = "MANUAL",
 ) -> Any:
     return client.post(
@@ -82,7 +82,7 @@ def _post_rate(
             "from_ccy": from_ccy,
             "to_ccy": to_ccy,
             "rate": str(rate),
-            "effective_from": effective_from,
+            "valid_from": valid_from,
             "source": source,
         },
         headers=_headers(client),
@@ -96,34 +96,34 @@ def _post_rate(
 
 def test_post_fx_rate_201_admin(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    resp = _post_rate(client, effective_from="2026-01-01")
+    resp = _post_rate(client, valid_from="2026-01-01")
     assert resp.status_code == 201, resp.json()
     body = resp.json()
     assert body["from_ccy"] == "AED"
     assert body["to_ccy"] == "INR"
     assert Decimal(str(body["rate"])) == Decimal("22.5")
-    assert body["effective_from"] == "2026-01-01"
+    assert body["valid_from"] == "2026-01-01"
     assert body["id"] is not None
 
 
 def test_post_fx_rate_duplicate_409(client: TestClient, db_session: Session) -> None:
-    """Same (from_ccy, to_ccy, effective_from) → 409."""
+    """Same (from_ccy, to_ccy, valid_from) → 409."""
     _login_as_admin(client)
-    _post_rate(client, from_ccy="AED", to_ccy="INR", effective_from="2026-02-01")
-    resp = _post_rate(client, from_ccy="AED", to_ccy="INR", effective_from="2026-02-01")
+    _post_rate(client, from_ccy="AED", to_ccy="INR", valid_from="2026-02-01")
+    resp = _post_rate(client, from_ccy="AED", to_ccy="INR", valid_from="2026-02-01")
     assert resp.status_code == 409
     assert resp.json()["detail"]["code"] == "FX_RATE_DUPLICATE"
 
 
 def test_post_fx_rate_analyst_403(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global")
-    resp = _post_rate(client, effective_from="2026-03-01")
+    resp = _post_rate(client, valid_from="2026-03-01")
     assert resp.status_code == 403
 
 
 def test_post_fx_rate_cfo_403(client: TestClient, db_session: Session) -> None:
     _login_as_cfo(client, db_session, "cfo@emb.global")
-    resp = _post_rate(client, effective_from="2026-03-01")
+    resp = _post_rate(client, valid_from="2026-03-01")
     assert resp.status_code == 403
 
 
@@ -131,7 +131,7 @@ def test_post_fx_rate_rate_must_be_positive(client: TestClient, db_session: Sess
     _login_as_admin(client)
     resp = client.post(
         "/config/fx-rates",
-        json={"from_ccy": "AED", "to_ccy": "INR", "rate": "-1", "effective_from": "2026-01-01"},
+        json={"from_ccy": "AED", "to_ccy": "INR", "rate": "-1", "valid_from": "2026-01-01"},
         headers=_headers(client),
     )
     assert resp.status_code == 422
@@ -141,7 +141,7 @@ def test_post_fx_rate_ccy_must_be_3_chars(client: TestClient, db_session: Sessio
     _login_as_admin(client)
     resp = client.post(
         "/config/fx-rates",
-        json={"from_ccy": "AE", "to_ccy": "INR", "rate": "22.5", "effective_from": "2026-01-01"},
+        json={"from_ccy": "AE", "to_ccy": "INR", "rate": "22.5", "valid_from": "2026-01-01"},
         headers=_headers(client),
     )
     assert resp.status_code == 422
@@ -154,7 +154,7 @@ def test_post_fx_rate_writes_audit_log(client: TestClient, db_session: Session) 
     before_count = db_session.query(AuditLog).filter(
         AuditLog.action == "fx_rate.create"
     ).count()
-    _post_rate(client, from_ccy="AED", to_ccy="INR", effective_from="2026-05-01")
+    _post_rate(client, from_ccy="AED", to_ccy="INR", valid_from="2026-05-01")
     after_count = db_session.query(AuditLog).filter(
         AuditLog.action == "fx_rate.create"
     ).count()
@@ -168,12 +168,12 @@ def test_post_fx_rate_writes_audit_log(client: TestClient, db_session: Session) 
 
 def _seed_rate(
     client: TestClient,
-    effective_from: str,
+    valid_from: str,
     from_ccy: str = "AED",
     to_ccy: str = "INR",
     rate: float = 22.5,
 ) -> None:
-    _post_rate(client, from_ccy=from_ccy, to_ccy=to_ccy, rate=rate, effective_from=effective_from)
+    _post_rate(client, from_ccy=from_ccy, to_ccy=to_ccy, rate=rate, valid_from=valid_from)
 
 
 def test_get_fx_rates_200_admin(client: TestClient, db_session: Session) -> None:
@@ -226,7 +226,7 @@ def test_get_fx_rates_filter_by_to_ccy(client: TestClient, db_session: Session) 
 
 def test_patch_fx_rate_405(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    resp = _post_rate(client, effective_from="2026-04-01")
+    resp = _post_rate(client, valid_from="2026-04-01")
     assert resp.status_code == 201
     rate_id = resp.json()["id"]
 
@@ -240,7 +240,7 @@ def test_patch_fx_rate_405(client: TestClient, db_session: Session) -> None:
 
 def test_delete_fx_rate_405(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    resp = _post_rate(client, effective_from="2026-04-02")
+    resp = _post_rate(client, valid_from="2026-04-02")
     assert resp.status_code == 201
     rate_id = resp.json()["id"]
 

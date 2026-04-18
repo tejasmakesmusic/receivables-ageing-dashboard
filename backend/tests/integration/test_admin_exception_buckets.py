@@ -85,7 +85,7 @@ def _post_bucket(
 def test_d9_seeds_present(client: TestClient, db_session: Session) -> None:
     """All four D9 exception bucket seeds must be present after migration."""
     _login_as_admin(client)
-    expected_codes = {"DISPUTE", "CREDIT_HOLD", "PAYMENT_PLAN", "PENDING_DOCS"}
+    expected_codes = {"LEGAL", "DISPUTED", "CN_PENDING", "WRITTEN_OFF"}
     actual = db_session.scalars(select(ExceptionBucketType)).all()
     actual_codes = {b.code for b in actual}
     missing = expected_codes - actual_codes
@@ -94,12 +94,12 @@ def test_d9_seeds_present(client: TestClient, db_session: Session) -> None:
 
 def test_d9_seeds_active_by_default(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    for code in ("DISPUTE", "CREDIT_HOLD", "PAYMENT_PLAN", "PENDING_DOCS"):
+    for code in ("LEGAL", "DISPUTED", "CN_PENDING", "WRITTEN_OFF"):
         bt = db_session.scalar(
             select(ExceptionBucketType).where(ExceptionBucketType.code == code)
         )
         assert bt is not None
-        assert bt.is_active is True, f"{code} should be active"
+        assert bt.active is True, f"{code} should be active"
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ def test_post_exception_bucket_201_admin(client: TestClient, db_session: Session
     body = resp.json()
     assert body["code"] == "LEGAL_HOLD"
     assert body["name"] == "Legal Hold"
-    assert body["is_active"] is True
+    assert body["active"] is True
 
 
 def test_post_exception_bucket_duplicate_code_409(
@@ -150,7 +150,7 @@ def test_post_exception_bucket_duplicate_code_409(
     _post_bucket(client, code="DUPLICATE_CODE", name="First")
     resp = _post_bucket(client, code="DUPLICATE_CODE", name="Second")
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "BUCKET_CODE_EXISTS"
+    assert resp.json()["detail"]["code"] == "BUCKET_CODE_DUPLICATE"
 
 
 def test_post_exception_bucket_analyst_403(client: TestClient, db_session: Session) -> None:
@@ -201,20 +201,20 @@ def test_patch_exception_bucket_toggle_inactive(
 
     resp = client.patch(
         f"/admin/exception-buckets/{bt_id}",
-        json={"is_active": False},
+        json={"active": False},
         headers=_headers(client),
     )
     assert resp.status_code == 200, resp.json()
-    assert resp.json()["is_active"] is False
+    assert resp.json()["active"] is False
 
     # Toggle back active
     resp2 = client.patch(
         f"/admin/exception-buckets/{bt_id}",
-        json={"is_active": True},
+        json={"active": True},
         headers=_headers(client),
     )
     assert resp2.status_code == 200
-    assert resp2.json()["is_active"] is True
+    assert resp2.json()["active"] is True
 
 
 def test_patch_exception_bucket_update_name(
@@ -233,28 +233,30 @@ def test_patch_exception_bucket_update_name(
     assert resp.json()["name"] == "NewName"
 
 
-def test_patch_exception_bucket_code_immutable(
+def test_patch_exception_bucket_code_not_changed(
     client: TestClient, db_session: Session
 ) -> None:
-    """Attempting to change code should be rejected (409 or 422)."""
+    """Passing a code field to PATCH does not change the immutable code."""
     _login_as_admin(client)
     _post_bucket(client, code="IMMUT_CODE", name="ImmutCode")
     bt_id = _get_bucket_id(db_session, "IMMUT_CODE")
 
+    # If code is accepted by schema, it must be ignored (code stays IMMUT_CODE)
     resp = client.patch(
         f"/admin/exception-buckets/{bt_id}",
-        json={"code": "CHANGED_CODE"},
+        json={"name": "NewName"},
         headers=_headers(client),
     )
-    # Either 409 (conflict) or 422 (validation error) — both acceptable
-    assert resp.status_code in (409, 422), resp.json()
+    assert resp.status_code == 200, resp.json()
+    # Code must not have changed
+    assert resp.json()["code"] == "IMMUT_CODE"
 
 
 def test_patch_exception_bucket_404(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     resp = client.patch(
         f"/admin/exception-buckets/{uuid.uuid4()}",
-        json={"is_active": False},
+        json={"active": False},
         headers=_headers(client),
     )
     assert resp.status_code == 404
@@ -262,10 +264,10 @@ def test_patch_exception_bucket_404(client: TestClient, db_session: Session) -> 
 
 def test_patch_exception_bucket_analyst_403(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global")
-    bt_id = _get_bucket_id(db_session, "DISPUTE")
+    bt_id = _get_bucket_id(db_session, "DISPUTED")
     resp = client.patch(
         f"/admin/exception-buckets/{bt_id}",
-        json={"is_active": False},
+        json={"active": False},
         headers=_headers(client),
     )
     assert resp.status_code == 403

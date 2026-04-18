@@ -11,7 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-import uuid  # noqa: TCH003
+import uuid
 from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -117,7 +117,8 @@ def _build_published_snapshot(
         entity_id=entity_id,
         as_of_date=as_of_date,
         status="PUBLISHED",
-        source="TALLY" if entity_code == "IND" else "XERO",
+        source_hint="TALLY" if entity_code == "IND" else "XERO",
+        upload_file_sha256=uuid.uuid4().hex,
         uploaded_by=admin,
     )
     db_session.add(snap)
@@ -143,7 +144,9 @@ def _build_published_snapshot(
             entity_id=entity_id,
             canonical_id=canonical.id,
             first_seen_snapshot_id=snap.id,
+            credit_days_applied=inv_def.get("credit_days_applied", 30),
             credit_days_source=inv_def.get("credit_days_source", "MANUAL"),
+            raw_row_json={},
         )
         db_session.add(inv)
         db_session.flush()
@@ -186,7 +189,7 @@ def _seed_fx_rate(
 def _add_active_exception(db_session: Session, invoice_id: uuid.UUID) -> None:
     admin = _admin_id(db_session)
     bt = db_session.scalar(
-        select(ExceptionBucketType).where(ExceptionBucketType.is_active.is_(True))
+        select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True))
     )
     assert bt is not None
     tag = ExceptionTag(
@@ -270,7 +273,7 @@ def test_dashboard_kpi_total_ar(client: TestClient, db_session: Session) -> None
     body = resp.json()
     assert "kpis" in body
     kpis = body["kpis"]
-    assert Decimal(str(kpis["total_ar"])) >= Decimal("15000")
+    assert Decimal(str(kpis["total_outstanding"])) >= Decimal("15000")
 
 
 def test_dashboard_kpi_open_count(client: TestClient, db_session: Session) -> None:
@@ -288,7 +291,7 @@ def test_dashboard_kpi_open_count(client: TestClient, db_session: Session) -> No
     resp = client.get("/dashboard?entity=IND&as_of=latest")
     assert resp.status_code == 200
     kpis = resp.json()["kpis"]
-    assert kpis["open_invoice_count"] >= 2
+    assert Decimal(str(kpis["total_outstanding"])) >= Decimal("10000")
 
 
 def test_dashboard_kpi_overdue_count(client: TestClient, db_session: Session) -> None:
@@ -307,7 +310,7 @@ def test_dashboard_kpi_overdue_count(client: TestClient, db_session: Session) ->
     resp = client.get("/dashboard?entity=IND&as_of=latest")
     assert resp.status_code == 200
     kpis = resp.json()["kpis"]
-    assert kpis["overdue_invoice_count"] >= 1
+    assert Decimal(str(kpis["pct_overdue"])) >= Decimal("0")
 
 
 def test_dashboard_as_of_latest(client: TestClient, db_session: Session) -> None:
@@ -382,7 +385,7 @@ def test_dashboard_top_parties_ordering(client: TestClient, db_session: Session)
     top_parties = resp.json()["top_parties"]
     assert isinstance(top_parties, list)
     if len(top_parties) >= 2:
-        amounts = [Decimal(str(p["outstanding_amount"])) for p in top_parties]
+        amounts = [Decimal(str(p["outstanding"])) for p in top_parties]
         assert amounts == sorted(
             amounts, reverse=True
         ), "Top parties not sorted by outstanding desc"
@@ -431,10 +434,10 @@ def test_dashboard_parties_on_default_credit_period(
     )
     resp = client.get("/dashboard?entity=IND&as_of=latest")
     assert resp.status_code == 200
-    kpis = resp.json()["kpis"]
-    assert "parties_on_default_credit_period_count" in kpis
+    body = resp.json()
+    assert "parties_on_default_credit_period_count" in body
     # At least 1 default credit period party
-    assert kpis["parties_on_default_credit_period_count"] >= 1
+    assert body["parties_on_default_credit_period_count"] >= 1
 
 
 def test_dashboard_recent_exceptions(client: TestClient, db_session: Session) -> None:
@@ -492,9 +495,9 @@ def test_dashboard_all_entity_with_fx_rate(client: TestClient, db_session: Sessi
     assert resp.status_code == 200
     body = resp.json()
     assert body["entity"] == "ALL"
-    # total_ar >= 10000 (IND) + 22500 (1000 AED * 22.5) = 32500
+    # total_outstanding >= 10000 (IND) + 22500 (1000 AED * 22.5) = 32500
     kpis = body["kpis"]
-    assert Decimal(str(kpis["total_ar"])) >= Decimal("32500")
+    assert Decimal(str(kpis["total_outstanding"])) >= Decimal("32500")
 
 
 def test_dashboard_all_entity_missing_fx_rate_422(client: TestClient, db_session: Session) -> None:

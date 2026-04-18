@@ -117,7 +117,8 @@ def _build_published_snapshot(
         entity_id=entity_id,
         as_of_date=as_of_date,
         status="PUBLISHED",
-        source="TALLY",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
         uploaded_by=admin,
     )
     db_session.add(snapshot)
@@ -133,6 +134,9 @@ def _build_published_snapshot(
         entity_id=entity_id,
         canonical_id=canonical.id,
         first_seen_snapshot_id=snapshot.id,
+        credit_days_applied=30,
+        credit_days_source="MANUAL",
+        raw_row_json={},
     )
     db_session.add(invoice)
     db_session.flush()
@@ -164,7 +168,7 @@ def _add_active_exception(
 
     bucket = db_session.scalar(
         select(ExceptionBucketType).where(
-            ExceptionBucketType.is_active.is_(True)
+            ExceptionBucketType.active.is_(True)
         )
     )
     assert bucket is not None
@@ -214,7 +218,7 @@ def test_get_reconciliation_409_non_published_snapshot(
     _login_as_admin(client)
     entity_id = _entity_id(db_session)
     admin = _admin_id(db_session)
-    snap = Snapshot(entity_id=entity_id, as_of_date=date(2026, 3, 31), status="PENDING", source="TALLY", uploaded_by=admin)
+    snap = Snapshot(entity_id=entity_id, as_of_date=date(2026, 3, 31), status="STAGED", source_hint="TALLY", upload_file_sha256=uuid.uuid4().hex, uploaded_by=admin)
     db_session.add(snap)
     db_session.flush()
 
@@ -397,7 +401,7 @@ def test_post_reconciliation_409_non_published(
     _login_as_admin(client)
     entity_id = _entity_id(db_session)
     admin = _admin_id(db_session)
-    snap = Snapshot(entity_id=entity_id, as_of_date=date(2026, 3, 31), status="PENDING", source="TALLY", uploaded_by=admin)
+    snap = Snapshot(entity_id=entity_id, as_of_date=date(2026, 3, 31), status="STAGED", source_hint="TALLY", upload_file_sha256=uuid.uuid4().hex, uploaded_by=admin)
     db_session.add(snap)
     db_session.flush()
 

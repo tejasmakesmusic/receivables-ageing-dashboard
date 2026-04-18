@@ -11,7 +11,7 @@ Endpoints:
 
 from __future__ import annotations
 
-import uuid  # noqa: TCH003
+import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from app.core.rbac import Role
 from app.db.models.entity import Entity
 from app.db.models.invoice import Invoice
 from app.db.models.party import PartyCanonical
+from app.db.models.snapshot import Snapshot
 from app.db.models.user import User
 
 if TYPE_CHECKING:
@@ -86,6 +87,18 @@ def _make_invoice_and_canonical(db_session: Session) -> tuple[uuid.UUID, uuid.UU
     """Create minimal canonical party + invoice. Returns (invoice_id, canonical_id)."""
     admin = _admin_id(db_session)
     entity_id = _entity_id(db_session)
+
+    snap = Snapshot(
+        entity_id=entity_id,
+        as_of_date=__import__("datetime").date(2026, 1, 31),
+        status="PUBLISHED",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
+        uploaded_by=admin,
+    )
+    db_session.add(snap)
+    db_session.flush()
+
     canonical = PartyCanonical(entity_id=entity_id, name="FollowUpParty", created_by=admin)
     db_session.add(canonical)
     db_session.flush()
@@ -98,6 +111,10 @@ def _make_invoice_and_canonical(db_session: Session) -> tuple[uuid.UUID, uuid.UU
         status="OPEN",
         entity_id=entity_id,
         canonical_id=canonical.id,
+        first_seen_snapshot_id=snap.id,
+        credit_days_applied=30,
+        credit_days_source="MANUAL",
+        raw_row_json={},
     )
     db_session.add(invoice)
     db_session.flush()

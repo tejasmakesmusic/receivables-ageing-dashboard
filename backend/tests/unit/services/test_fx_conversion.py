@@ -45,13 +45,14 @@ def _seed_rate(
     to_ccy: str,
     rate: Decimal,
     effective_from: date,
+    effective_to: date | None = None,
 ) -> None:
     fx = FxRate(
         from_ccy=from_ccy,
         to_ccy=to_ccy,
         rate=rate,
         effective_from=effective_from,
-        effective_to=None,
+        effective_to=effective_to,
         source="MANUAL",
         created_by=_admin_id(db_session),
     )
@@ -72,7 +73,7 @@ def test_lookup_rate_returns_rate_for_exact_date(db_session: Session) -> None:
 
 def test_lookup_rate_pins_by_invoice_date_not_today(db_session: Session) -> None:
     """Rate on 2026-01-01 applies to invoice_date 2026-01-15, not a newer rate."""
-    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1))
+    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 1, 31))
     _seed_rate(db_session, "AED", "INR", Decimal("23.00"), date(2026, 2, 1))
     # Invoice dated 2026-01-15 → must use the 2026-01-01 rate
     result = lookup_rate("AED", "INR", date(2026, 1, 15), db_session)
@@ -82,8 +83,8 @@ def test_lookup_rate_pins_by_invoice_date_not_today(db_session: Session) -> None
 def test_lookup_rate_uses_most_recent_rate_on_or_before_invoice_date(
     db_session: Session,
 ) -> None:
-    _seed_rate(db_session, "AED", "INR", Decimal("21.00"), date(2025, 6, 1))
-    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1))
+    _seed_rate(db_session, "AED", "INR", Decimal("21.00"), date(2025, 6, 1), effective_to=date(2025, 12, 31))
+    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 3, 31))
     _seed_rate(db_session, "AED", "INR", Decimal("24.00"), date(2026, 4, 1))
     # Invoice dated exactly on the 2026-01-01 boundary
     result = lookup_rate("AED", "INR", date(2026, 1, 1), db_session)
@@ -169,47 +170,37 @@ def test_convert_to_inr_decimal_precision(db_session: Session) -> None:
 
 
 def test_build_rate_cache_returns_rates_by_date(db_session: Session) -> None:
-    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1))
+    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 1, 31))
     _seed_rate(db_session, "AED", "INR", Decimal("23.00"), date(2026, 2, 1))
 
-    # Mock invoice objects with invoice_date attribute
-    class _FakeInvoice:
-        def __init__(self, d: date) -> None:
-            self.invoice_date = d
-
-    invoices = [_FakeInvoice(date(2026, 1, 15)), _FakeInvoice(date(2026, 2, 15))]
+    # build_rate_cache expects list of dicts with 'invoice_date' key
+    invoices = [
+        {"invoice_date": date(2026, 1, 15)},
+        {"invoice_date": date(2026, 2, 15)},
+    ]
     cache = build_rate_cache(invoices, "AED", db_session)
-    assert cache[date(2026, 1, 15)] == Decimal("22.50")
-    assert cache[date(2026, 2, 15)] == Decimal("23.00")
+    assert cache[("AED", "INR", date(2026, 1, 15))] == Decimal("22.50")
+    assert cache[("AED", "INR", date(2026, 2, 15))] == Decimal("23.00")
 
 
 def test_build_rate_cache_deduplicates_dates(db_session: Session) -> None:
     _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1))
 
-    class _FakeInvoice:
-        def __init__(self, d: date) -> None:
-            self.invoice_date = d
-
-    # Three invoices, two on same date
+    # Three dicts, two on same date
     invoices = [
-        _FakeInvoice(date(2026, 1, 15)),
-        _FakeInvoice(date(2026, 1, 15)),
-        _FakeInvoice(date(2026, 1, 20)),
+        {"invoice_date": date(2026, 1, 15)},
+        {"invoice_date": date(2026, 1, 15)},
+        {"invoice_date": date(2026, 1, 20)},
     ]
     cache = build_rate_cache(invoices, "AED", db_session)
     # Must not error; both unique dates get looked up
-    assert date(2026, 1, 15) in cache
-    assert date(2026, 1, 20) in cache
+    assert ("AED", "INR", date(2026, 1, 15)) in cache
+    assert ("AED", "INR", date(2026, 1, 20)) in cache
 
 
 def test_build_rate_cache_inr_returns_empty(db_session: Session) -> None:
     """For INR source currency, no lookup needed; cache should be empty or trivial."""
-
-    class _FakeInvoice:
-        def __init__(self, d: date) -> None:
-            self.invoice_date = d
-
-    invoices = [_FakeInvoice(date(2026, 1, 15))]
-    # Should not raise even if no rates exist
+    invoices = [{"invoice_date": date(2026, 1, 15)}]
+    # Should not raise even if no rates exist; returns empty dict for INR
     cache = build_rate_cache(invoices, "INR", db_session)
     assert isinstance(cache, dict)
