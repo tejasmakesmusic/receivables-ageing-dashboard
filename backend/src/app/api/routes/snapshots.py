@@ -25,6 +25,7 @@ from app.core.rbac import Role
 from app.db.models.user import (
     User,  # noqa: TCH001 — needed at runtime for Annotated[User, Depends(...)]
 )
+from app.schemas.publish import PublishRequest, PublishResponse
 from app.schemas.snapshot import SnapshotCreateResponse
 from app.schemas.staging import (
     StagingPatchRequest,
@@ -33,6 +34,7 @@ from app.schemas.staging import (
     WarningsAckRequest,
     WarningsAckResponse,
 )
+from app.services.publish_service import publish_snapshot
 from app.services.snapshot_service import upload_snapshot
 from app.services.staging_service import (
     ack_warnings,
@@ -248,4 +250,57 @@ def ack_snapshot_warnings(
         snapshot_id=snapshot_id,
         codes=body.codes,
         current_user=current_user,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /snapshots/{snapshot_id}/publish
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{snapshot_id}/publish",
+    response_model=PublishResponse,
+    status_code=200,
+    summary="Publish a staged snapshot — upsert invoices into canonical table",
+    tags=["snapshots"],
+)
+def publish_snapshot_route(
+    snapshot_id: uuid.UUID,
+    request: Request,
+    body: PublishRequest | None = None,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_allowed)] = ...,  # type: ignore[assignment]
+) -> PublishResponse:
+    """Transition a STAGED snapshot to PUBLISHED.
+
+    Upserts all OK invoice rows into the canonical ``invoices`` table,
+    writes ``invoice_snapshots`` rows with ageing computed via
+    ``compute_ageing(as_of_date=snapshot.as_of_date)``, settles absent
+    invoices, cascades exception_tags to AUTO_RESOLVED, flags material
+    amount changes, and enqueues a PUBLISH_NOTIF email.
+
+    RBAC:
+    - ANALYST: allowed if entity_id_scope matches snapshot entity.
+    - ADMIN: allowed for any entity. Sets published_as='OVERRIDE' if
+      the snapshot was uploaded by a different user.
+    - CFO, PENDING: 403.
+
+    Returns:
+        200 with PublishResponse on success.
+
+    Raises:
+        403: Insufficient role or entity scope.
+        404: Snapshot not found.
+        409: Snapshot is not in STAGED status.
+        422: Publish gate not satisfied, CREDIT_PERIOD source, or
+             missing canonical / credit_days resolution.
+    """
+    request_ip = request.client.host if request.client else "unknown"
+    return publish_snapshot(
+        db=session,
+        snapshot_id=snapshot_id,
+        body=body or PublishRequest(),
+        current_user=current_user,
+        request_ip=request_ip,
     )

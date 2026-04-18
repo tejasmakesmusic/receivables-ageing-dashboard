@@ -588,9 +588,9 @@ def test_m3_migration_heads_is_linear() -> None:
     assert result.returncode == 0, result.stderr
     # `alembic heads` prints one line per head; a linear history has exactly one.
     head_lines = [ln for ln in result.stdout.strip().splitlines() if ln.strip()]
-    assert len(head_lines) == 1, (
-        f"Expected exactly one M3 migration head (linear history), got: {result.stdout!r}"
-    )
+    assert (
+        len(head_lines) == 1
+    ), f"Expected exactly one M3 migration head (linear history), got: {result.stdout!r}"
 
 
 @pytest.mark.serial  # must not run concurrently with other DB-mutating tests; see docstring
