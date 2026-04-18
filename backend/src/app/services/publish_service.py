@@ -42,6 +42,7 @@ from app.db.models.entity import Entity
 from app.db.models.exception_tag import ExceptionTag
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
+from app.db.models.reconciliation_entry import ReconciliationEntry
 from app.db.models.snapshot import Snapshot
 from app.schemas.publish import (
     CreditPeriodPublishNotImplementedError,
@@ -249,6 +250,46 @@ def publish_snapshot(  # noqa: PLR0912, PLR0915
                 "detail": "Only STAGED snapshots can be published.",
             },
         )
+
+    # -----------------------------------------------------------------------
+    # Step 2b: Prior-snapshot reconciliation gate (spec §13 #6, Group H)
+    # If a prior PUBLISHED snapshot exists for this entity with an earlier
+    # as_of_date AND its reconciliation_entry.status != MATCHED → 422.
+    # This check runs before the expensive publish flow.
+    # -----------------------------------------------------------------------
+    if snapshot.as_of_date is not None:
+        prior_snapshot = db.scalar(
+            select(Snapshot)
+            .where(
+                Snapshot.entity_id == snapshot.entity_id,
+                Snapshot.status == "PUBLISHED",
+                Snapshot.as_of_date < snapshot.as_of_date,
+            )
+            .order_by(Snapshot.as_of_date.desc())
+            .limit(1)
+        )
+        if prior_snapshot is not None:
+            prior_recon = db.scalar(
+                select(ReconciliationEntry).where(
+                    ReconciliationEntry.snapshot_id == prior_snapshot.id
+                )
+            )
+            prior_status = prior_recon.status if prior_recon else "UNRECONCILED"
+            if prior_status != "MATCHED":
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "PRIOR_SNAPSHOT_UNRECONCILED",
+                        "prior_snapshot_id": str(prior_snapshot.id),
+                        "prior_snapshot_as_of_date": prior_snapshot.as_of_date.isoformat(),
+                        "prior_status": prior_status,
+                        "detail": (
+                            "The previous published snapshot must be reconciled (status=MATCHED) "
+                            "before a new snapshot can be published. "
+                            "Use POST /snapshots/{id}/reconciliation to enter the closing AR."
+                        ),
+                    },
+                )
 
     # -----------------------------------------------------------------------
     # Step 3: RBAC + entity scope — compute published_as

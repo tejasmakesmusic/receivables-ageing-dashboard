@@ -12,6 +12,11 @@ from app.api.deps import db_session
 from app.api.routes.admin import router as admin_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.config import router as config_router
+from app.api.routes.dashboard import router as dashboard_router
+from app.api.routes.exceptions import router as exceptions_router
+from app.api.routes.follow_ups import router as follow_ups_router
+from app.api.routes.invoices import router as invoices_router
+from app.api.routes.parties import router as parties_router
 from app.api.routes.snapshots import router as snapshots_router
 from app.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -52,6 +57,13 @@ app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(snapshots_router, prefix="/snapshots", tags=["snapshots"])
 app.include_router(config_router, prefix="/config", tags=["config"])
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(invoices_router, prefix="/invoices", tags=["invoices"])
+app.include_router(parties_router, prefix="/parties", tags=["parties"])
+# Exception routes have mixed prefixes (/invoices/:id/exceptions and /exceptions)
+# so the router is registered at root with its own prefixes inline
+app.include_router(exceptions_router, tags=["exceptions"])
+app.include_router(follow_ups_router, prefix="/follow-ups", tags=["follow-ups"])
 
 
 @app.get("/health", tags=["meta"])
