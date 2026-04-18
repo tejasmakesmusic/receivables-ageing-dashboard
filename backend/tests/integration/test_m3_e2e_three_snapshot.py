@@ -41,12 +41,63 @@ from app.db.models.exception_tag import ExceptionTag
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
 from app.db.models.party import PartyAlias, PartyCanonical
+from app.db.models.reconciliation_entry import ReconciliationEntry
 from app.db.models.snapshot import Snapshot
 from app.db.models.user import User
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
     from sqlalchemy.orm import Session
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation helper (satisfies §13 #6 gate between publishes)
+# ---------------------------------------------------------------------------
+
+
+def _reconcile_snapshot_directly(
+    db_session: Session,
+    snapshot_id: str,
+) -> None:
+    """Insert a MATCHED ReconciliationEntry row directly via db_session.
+
+    Satisfies the §13 #6 gate that blocks the next publish until the prior
+    published snapshot is MATCHED.  We bypass the HTTP API here to avoid
+    per-test session re-login overhead.
+
+    delta=0 → abs(delta)=0 ≤ ₹100 tolerance → MATCHED.
+    """
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    admin = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
+    assert admin is not None
+
+    existing = db_session.scalar(
+        select(ReconciliationEntry).where(ReconciliationEntry.snapshot_id == uuid.UUID(snapshot_id))
+    )
+    if existing is not None:
+        existing.tally_xero_closing_ar = Decimal("0.00")
+        existing.delta = Decimal("0.00")
+        existing.status = "MATCHED"
+        existing.entered_by = admin.id
+        existing.notes = "test-helper auto-reconcile"
+    else:
+        db_session.add(
+            ReconciliationEntry(
+                snapshot_id=uuid.UUID(snapshot_id),
+                dashboard_ar=Decimal("0.00"),
+                exception_bucket_total=Decimal("0.00"),
+                exception_bucket_breakdown={},
+                tally_xero_closing_ar=Decimal("0.00"),
+                delta=Decimal("0.00"),
+                status="MATCHED",
+                entered_by=admin.id,
+                notes="test-helper auto-reconcile",
+            )
+        )
+    db_session.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +355,9 @@ def test_comprehensive_three_snapshot_e2e(  # noqa: PLR0915
     assert r1_result["invoices_settled"] == 0
     assert r1_result["invoice_snapshots_written"] == 3
 
+    # Satisfy §13 #6 gate before snapshot 2
+    _reconcile_snapshot_directly(db_session, s1_id)
+
     # Audit: publish row created for s1
     audit_pub_s1 = db_session.scalar(
         select(AuditLog).where(
@@ -363,6 +417,9 @@ def test_comprehensive_three_snapshot_e2e(  # noqa: PLR0915
     pub2 = _publish(client, s2_id)
     assert pub2.status_code == 200, pub2.json()
     r2_result = pub2.json()["result"]
+
+    # Satisfy §13 #6 gate before snapshot 3
+    _reconcile_snapshot_directly(db_session, s2_id)
 
     # INV-E2E-C settled (absent from snapshot 2)
     assert r2_result["invoices_settled"] == 1
