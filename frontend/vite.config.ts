@@ -3,6 +3,8 @@ import path from "node:path";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
+const BACKEND = "http://localhost:8000";
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -13,12 +15,17 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Proxy /api and /auth to FastAPI backend during local dev so we don't
-    // hit CORS. In production, FastAPI serves the built SPA via StaticFiles.
     proxy: {
-      "/api": "http://localhost:8000",
-      "/auth": "http://localhost:8000",
-      "/health": "http://localhost:8000",
+      "/auth": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/snapshots": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/dashboard": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/parties": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/invoices": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/exceptions": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/follow-ups": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/config": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/admin": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
+      "/health": { target: BACKEND, changeOrigin: true, cookieDomainRewrite: "" },
     },
   },
   build: {

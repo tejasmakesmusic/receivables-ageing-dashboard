@@ -46,6 +46,60 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
+# Reconciliation helper (satisfies §13 #6 gate between publishes)
+# ---------------------------------------------------------------------------
+
+
+def _reconcile_snapshot_directly(
+    db_session: Session,
+    snapshot_id: str,
+) -> None:
+    """Insert a MATCHED ReconciliationEntry row directly via db_session.
+
+    Used in multi-snapshot tests to satisfy the §13 #6 gate that blocks the
+    next publish until the prior published snapshot is MATCHED.  We bypass the
+    HTTP API here because setting up an ADMIN session just for reconciliation in
+    every test would be heavier than required and the gate only cares about the
+    DB row status, not the route that created it.
+
+    delta = dashboard_ar + exception_bucket_total - tally_xero_closing_ar (D19)
+    Setting all three to 0.00 → delta = 0 → MATCHED (well within ₹100 tolerance).
+    """
+    from sqlalchemy import select
+
+    from app.db.models.reconciliation_entry import ReconciliationEntry
+
+    admin = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
+    assert admin is not None
+
+    # Upsert: if an entry exists already, update it; otherwise insert.
+    existing = db_session.scalar(
+        select(ReconciliationEntry).where(ReconciliationEntry.snapshot_id == uuid.UUID(snapshot_id))
+    )
+    if existing is not None:
+        existing.tally_xero_closing_ar = Decimal("0.00")
+        existing.delta = Decimal("0.00")
+        existing.status = "MATCHED"
+        existing.entered_by = admin.id
+        existing.notes = "test-helper auto-reconcile"
+    else:
+        db_session.add(
+            ReconciliationEntry(
+                snapshot_id=uuid.UUID(snapshot_id),
+                dashboard_ar=Decimal("0.00"),
+                exception_bucket_total=Decimal("0.00"),
+                exception_bucket_breakdown={},
+                tally_xero_closing_ar=Decimal("0.00"),
+                delta=Decimal("0.00"),
+                status="MATCHED",
+                entered_by=admin.id,
+                notes="test-helper auto-reconcile",
+            )
+        )
+    db_session.flush()
+
+
+# ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
 
@@ -780,6 +834,9 @@ def test_three_snapshot_upsert_insert_update_settle(
     assert r1_body["invoices_settled"] == 0
     assert r1_body["invoice_snapshots_written"] == 3
 
+    # Satisfy §13 #6 gate: prior snapshot must be MATCHED before next publish
+    _reconcile_snapshot_directly(db_session, s1_id)
+
     # --- Snapshot 2: update INV-A, keep INV-B; omit INV-C → SETTLED ---
     xlsx2 = _make_tally_xlsx(
         data_rows=[
@@ -805,6 +862,9 @@ def test_three_snapshot_upsert_insert_update_settle(
     assert r2_body["invoices_inserted"] == 0
     assert r2_body["invoices_updated"] == 2
     assert r2_body["invoices_settled"] == 1
+
+    # Satisfy §13 #6 gate before snapshot 3
+    _reconcile_snapshot_directly(db_session, s2_id)
 
     # Verify INV-C is SETTLED with settled_snapshot_id = s2
     inv_c = db_session.scalar(select(Invoice).where(Invoice.invoice_ref == "INV-C"))
@@ -871,6 +931,7 @@ def test_settled_invoice_reopens_if_reappears_in_new_snapshot(
     _ack_all_warnings(client, db_session, s1_id)
     p1 = _publish(client, s1_id)
     assert p1.status_code == 200
+    _reconcile_snapshot_directly(db_session, s1_id)
 
     # Snapshot 2: empty — settles INV-REOPEN
     xlsx2 = _make_tally_xlsx(
@@ -890,6 +951,7 @@ def test_settled_invoice_reopens_if_reappears_in_new_snapshot(
     _ack_all_warnings(client, db_session, s2_id)
     p2 = _publish(client, s2_id)
     assert p2.status_code == 200
+    _reconcile_snapshot_directly(db_session, s2_id)
 
     inv = db_session.scalar(select(Invoice).where(Invoice.invoice_ref == "INV-REOPEN"))
     assert inv is not None
@@ -948,6 +1010,7 @@ def test_exception_auto_resolved_on_settled_cascade(
     _ack_all_warnings(client, db_session, s1_id)
     p1 = _publish(client, s1_id)
     assert p1.status_code == 200
+    _reconcile_snapshot_directly(db_session, s1_id)
 
     # Fetch the invoice and add an ACTIVE exception tag
     inv = db_session.scalar(select(Invoice).where(Invoice.invoice_ref == "INV-EXC"))
@@ -1019,6 +1082,7 @@ def test_material_change_flagged_when_amount_delta_gt_5_percent_on_active_except
     _ack_all_warnings(client, db_session, s1_id)
     p1 = _publish(client, s1_id)
     assert p1.status_code == 200
+    _reconcile_snapshot_directly(db_session, s1_id)
 
     # Add ACTIVE exception tag on INV-MAT
     inv = db_session.scalar(select(Invoice).where(Invoice.invoice_ref == "INV-MAT"))
@@ -1140,6 +1204,7 @@ def test_settled_invoices_do_not_get_invoice_snapshot_row_this_publish(
     p1 = _publish(client, s1_id)
     assert p1.status_code == 200
     assert p1.json()["result"]["invoice_snapshots_written"] == 2
+    _reconcile_snapshot_directly(db_session, s1_id)
 
     # Snap 2: only INV-SNAP1 → INV-SNAP2 settled
     xlsx2 = _make_tally_xlsx(

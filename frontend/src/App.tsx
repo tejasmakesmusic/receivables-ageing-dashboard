@@ -1,92 +1,79 @@
-import { Route, Routes, Link } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { Shell } from "@/components/Shell";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
-// Placeholder routes for every screen in spec §9. RBAC gates and real
-// components land in Milestones 3–6. Wireframes come in M2 and live under
-// /wireframes/ as static HTML+Tailwind before any of these are built out.
+import { LoginPage } from "@/pages/LoginPage";
+import { PendingPage } from "@/pages/PendingPage";
+import { NotFoundPage } from "@/pages/NotFoundPage";
 
-function Home() {
-  return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-2xl font-semibold">Receivables Ageing Dashboard — Phase 1</h1>
-      <p className="mt-2 text-slate-600">
-        Scaffold only. Feature implementation starts at Milestone 1.
-      </p>
-      <nav className="mt-6 grid grid-cols-2 gap-2 text-sm">
-        {routeIndex.map(([path, label]) => (
-          <Link key={path} to={path} className="text-blue-600 hover:underline">
-            {label}
-          </Link>
-        ))}
-      </nav>
-    </main>
-  );
+import { S1UploadPage } from "@/pages/S1UploadPage";
+import { S2StagingPage } from "@/pages/S2StagingPage";
+import { D1DashboardPage } from "@/pages/D1DashboardPage";
+import { S5ExceptionsPage } from "@/pages/S5ExceptionsPage";
+import { A6ReconciliationPage } from "@/pages/A6ReconciliationPage";
+import { S3CreditPeriodPage } from "@/pages/S3CreditPeriodPage";
+import { S4AliasesPage } from "@/pages/S4AliasesPage";
+import { A3ExceptionBucketsPage } from "@/pages/A3ExceptionBucketsPage";
+import { A4FxRatesPage } from "@/pages/A4FxRatesPage";
+import { A5AuditLogPage } from "@/pages/A5AuditLogPage";
+import { A2EmailOutboxPage } from "@/pages/A2EmailOutboxPage";
+import { D2PartyDetailPage } from "@/pages/D2PartyDetailPage";
+import { D3InvoiceDetailPage } from "@/pages/D3InvoiceDetailPage";
+import { S6FollowUpsPage } from "@/pages/S6FollowUpsPage";
+
+function AdminUsersRedirect() {
+  // M1 users page lives at /admin/users on the Jinja side.
+  // We redirect from React's route to the server-rendered page.
+  window.location.href = "/admin/users";
+  return null;
 }
-
-function Stub({ code, title }: { code: string; title: string }) {
-  return (
-    <main className="mx-auto max-w-3xl p-8">
-      <div className="text-xs font-mono text-slate-500">{code}</div>
-      <h1 className="mt-1 text-xl font-semibold">{title}</h1>
-      <p className="mt-2 text-slate-600">Placeholder. Implementation pending.</p>
-      <Link to="/" className="mt-6 inline-block text-sm text-blue-600 hover:underline">
-        ← Home
-      </Link>
-    </main>
-  );
-}
-
-const routeIndex: [string, string][] = [
-  ["/upload", "S1 · Upload"],
-  ["/staging", "S2 · Staging"],
-  ["/config/credit-period", "S3 · Credit period"],
-  ["/config/aliases", "S4 · Aliases"],
-  ["/exceptions", "S5 · Exceptions"],
-  ["/follow-ups", "S6 · Follow-ups"],
-  ["/dashboard", "D1 · Dashboard"],
-  ["/party", "D2 · Party drill-down"],
-  ["/invoice", "D3 · Invoice drill-down"],
-  ["/admin/users", "A1 · Users"],
-  ["/admin/emails", "A2 · Emails"],
-  ["/admin/exception-buckets", "A3 · Exception buckets"],
-  ["/admin/fx-rates", "A4 · FX rates"],
-  ["/admin/audit-log", "A5 · Audit log"],
-  ["/admin/reconciliation", "A6 · Reconciliation"],
-  ["/pending", "— · Pending approval"],
-];
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/upload" element={<Stub code="S1" title="Upload" />} />
-      <Route path="/staging" element={<Stub code="S2" title="Staging review" />} />
-      <Route path="/staging/:snapshotId" element={<Stub code="S2" title="Staging review" />} />
+      {/* Public routes */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/pending" element={<PendingPage />} />
+
+      {/* Authenticated shell — all non-PENDING roles */}
       <Route
-        path="/config/credit-period"
-        element={<Stub code="S3" title="Credit period master" />}
-      />
-      <Route path="/config/aliases" element={<Stub code="S4" title="Party aliases" />} />
-      <Route path="/exceptions" element={<Stub code="S5" title="Exceptions" />} />
-      <Route path="/follow-ups" element={<Stub code="S6" title="Follow-ups" />} />
-      <Route path="/dashboard" element={<Stub code="D1" title="Dashboard" />} />
-      <Route path="/party" element={<Stub code="D2" title="Party drill-down" />} />
-      <Route path="/party/:id" element={<Stub code="D2" title="Party drill-down" />} />
-      <Route path="/invoice" element={<Stub code="D3" title="Invoice drill-down" />} />
-      <Route path="/invoice/:id" element={<Stub code="D3" title="Invoice drill-down" />} />
-      <Route path="/admin/users" element={<Stub code="A1" title="Users + PENDING approvals" />} />
-      <Route path="/admin/emails" element={<Stub code="A2" title="Email rules" />} />
-      <Route
-        path="/admin/exception-buckets"
-        element={<Stub code="A3" title="Exception buckets" />}
-      />
-      <Route path="/admin/fx-rates" element={<Stub code="A4" title="FX rates" />} />
-      <Route path="/admin/audit-log" element={<Stub code="A5" title="Audit log" />} />
-      <Route
-        path="/admin/reconciliation"
-        element={<Stub code="A6" title="Reconciliation" />}
-      />
-      <Route path="/pending" element={<Stub code="—" title="Awaiting role assignment" />} />
-      <Route path="*" element={<Stub code="404" title="Not found" />} />
+        element={
+          <ProtectedRoute allowedRoles={["ANALYST", "CFO", "ADMIN"]}>
+            <Shell />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+        {/* Dashboard — all authenticated roles */}
+        <Route path="/dashboard" element={<D1DashboardPage />} />
+
+        {/* Stubs — all authenticated */}
+        <Route path="/party/:canonical_id" element={<D2PartyDetailPage />} />
+        <Route path="/invoice/:invoice_id" element={<D3InvoiceDetailPage />} />
+
+        {/* ANALYST + ADMIN routes */}
+        <Route element={<ProtectedRoute allowedRoles={["ANALYST", "ADMIN"]} />}>
+          <Route path="/upload" element={<S1UploadPage />} />
+          <Route path="/staging/:snapshot_id" element={<S2StagingPage />} />
+          <Route path="/exceptions" element={<S5ExceptionsPage />} />
+          <Route path="/follow-ups" element={<S6FollowUpsPage />} />
+          <Route path="/config/credit-period" element={<S3CreditPeriodPage />} />
+          <Route path="/config/aliases" element={<S4AliasesPage />} />
+        </Route>
+
+        {/* ADMIN-only routes */}
+        <Route element={<ProtectedRoute allowedRoles={["ADMIN"]} />}>
+          <Route path="/admin/exception-buckets" element={<A3ExceptionBucketsPage />} />
+          <Route path="/admin/fx-rates" element={<A4FxRatesPage />} />
+          <Route path="/admin/audit-log" element={<A5AuditLogPage />} />
+          <Route path="/admin/emails" element={<A2EmailOutboxPage />} />
+          <Route path="/admin/reconciliation" element={<A6ReconciliationPage />} />
+          <Route path="/admin/users" element={<AdminUsersRedirect />} />
+        </Route>
+
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
     </Routes>
   );
 }

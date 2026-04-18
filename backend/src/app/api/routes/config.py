@@ -1,4 +1,4 @@
-"""Config routes — /config/credit-period and /config/aliases CRUD (M3 Task 6).
+"""Config routes — /config/credit-period, /config/aliases, /config/fx-rates CRUD.
 
 RBAC summary:
   GET  credit-period:  ANALYST (own entity), ADMIN, CFO. PENDING → 403.
@@ -9,8 +9,10 @@ RBAC summary:
   POST aliases:        ANALYST (own entity), ADMIN. CFO/PENDING → 403.
   PATCH aliases:       ADMIN only. Everyone else → 403.
   DELETE aliases:      ADMIN only. Everyone else → 403.
+  GET  fx-rates:       All non-PENDING read.
+  POST fx-rates:       ADMIN only. Immutable rows per D15.
 
-All business logic delegated to config_service.
+All business logic delegated to config_service / fx_rate_service.
 """
 
 from __future__ import annotations
@@ -18,13 +20,16 @@ from __future__ import annotations
 import uuid  # noqa: TCH003 — used at runtime in path/query parameter type annotations
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, select
 from sqlalchemy.orm import (
     Session,  # noqa: TCH002 — needed at runtime for Annotated[Session, Depends(...)]
 )
 
 from app.api.deps import db_session, require_role
 from app.core.rbac import Role
+from app.db.models.audit_log import AuditLog
+from app.db.models.fx_rate import FxRate, FxRateSource
 from app.db.models.user import (
     User,  # noqa: TCH001 — needed at runtime for Annotated[User, Depends(...)]
 )
@@ -38,6 +43,7 @@ from app.schemas.config import (
     CreditPeriodPatchRequest,
     CreditPeriodRow,
 )
+from app.schemas.fx_rate import FxRateCreateRequest, FxRateListResponse, FxRateRow
 from app.services.config_service import (
     create_alias,
     create_credit_period,
@@ -283,3 +289,181 @@ def delete_alias_route(
     """
     delete_alias(db=session, alias_id=alias_id, current_user=current_user)
     return Response(status_code=204)
+
+
+# ===========================================================================
+# FX rates (M6 A4)
+# ===========================================================================
+
+
+@router.get(
+    "/fx-rates",
+    response_model=FxRateListResponse,
+    status_code=200,
+    summary="List FX rates (A4)",
+    tags=["config"],
+)
+def get_fx_rates(
+    from_ccy: Annotated[
+        str | None, Query(description="Filter by source currency, e.g. AED")
+    ] = None,
+    to_ccy: Annotated[str | None, Query(description="Filter by target currency, e.g. INR")] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_read_allowed)] = ...,  # type: ignore[assignment]
+) -> FxRateListResponse:
+    """List FX rates. All non-PENDING can read. Immutable per D15.
+
+    Returns:
+        200 with FxRateListResponse.
+    """
+    query = select(FxRate)
+    if from_ccy:
+        query = query.where(FxRate.from_ccy == from_ccy.upper())
+    if to_ccy:
+        query = query.where(FxRate.to_ccy == to_ccy.upper())
+
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = session.scalars(
+        query.order_by(FxRate.effective_from.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+
+    items = [
+        FxRateRow(
+            id=r.id,
+            from_ccy=r.from_ccy,
+            to_ccy=r.to_ccy,
+            rate=r.rate,
+            valid_from=r.effective_from,
+            source=r.source.value if hasattr(r.source, "value") else str(r.source),
+            created_at=r.created_at,
+            created_by_email=(r.creator.email if r.creator else None),
+        )
+        for r in rows
+    ]
+
+    return FxRateListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.post(
+    "/fx-rates",
+    response_model=FxRateRow,
+    status_code=201,
+    summary="Create a new immutable FX rate (ADMIN only, A4)",
+    tags=["config"],
+)
+def create_fx_rate(
+    body: FxRateCreateRequest,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_admin_only)] = ...,  # type: ignore[assignment]
+) -> FxRateRow:
+    """Create a new FX rate row. ADMIN only. Immutable per D15.
+
+    valid_to is always NULL — no PATCH or DELETE is exposed.
+    Raises 409 if a rate with the same (from_ccy, to_ccy, effective_from) exists.
+
+    Returns:
+        201 with FxRateRow.
+    """
+    import structlog
+
+    log = structlog.get_logger(__name__)
+
+    # Check for duplicate (unique on from_ccy, to_ccy, effective_from)
+    existing = session.scalar(
+        select(FxRate).where(
+            FxRate.from_ccy == body.from_ccy,
+            FxRate.to_ccy == body.to_ccy,
+            FxRate.effective_from == body.valid_from,
+        )
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "FX_RATE_DUPLICATE",
+                "detail": (
+                    f"A rate for {body.from_ccy}→{body.to_ccy} "
+                    f"effective {body.valid_from} already exists."
+                ),
+            },
+        )
+
+    new_rate = FxRate(
+        from_ccy=body.from_ccy,
+        to_ccy=body.to_ccy,
+        rate=body.rate,
+        effective_from=body.valid_from,
+        effective_to=None,  # always NULL per D15
+        source=FxRateSource.MANUAL,
+        created_by=current_user.id,
+    )
+    session.add(new_rate)
+    session.flush()
+
+    audit = AuditLog(
+        action="fx_rate.create",
+        entity_type="fx_rates",
+        entity_id=new_rate.id,
+        actor_user_id=current_user.id,
+        before=None,
+        after={
+            "from_ccy": body.from_ccy,
+            "to_ccy": body.to_ccy,
+            "rate": str(body.rate),
+            "effective_from": body.valid_from.isoformat(),
+        },
+    )
+    session.add(audit)
+    session.commit()
+
+    log.info(
+        "config.fx_rate_create",
+        from_ccy=body.from_ccy,
+        to_ccy=body.to_ccy,
+        effective_from=body.valid_from.isoformat(),
+    )
+
+    return FxRateRow(
+        id=new_rate.id,
+        from_ccy=new_rate.from_ccy,
+        to_ccy=new_rate.to_ccy,
+        rate=new_rate.rate,
+        valid_from=new_rate.effective_from,
+        source=new_rate.source.value,
+        created_at=new_rate.created_at,
+        created_by_email=current_user.email,
+    )
+
+
+@router.patch(
+    "/fx-rates/{rate_id}",
+    status_code=405,
+    summary="FX rate PATCH not supported — immutable per D15",
+    tags=["config"],
+)
+def patch_fx_rate(rate_id: uuid.UUID) -> Response:
+    """FX rates are immutable per D15. PATCH is not supported."""
+    return Response(
+        content='{"detail": "FX rates are immutable (spec D15). Create a new row."}',
+        status_code=405,
+        media_type="application/json",
+        headers={"Allow": "GET, POST"},
+    )
+
+
+@router.delete(
+    "/fx-rates/{rate_id}",
+    status_code=405,
+    summary="FX rate DELETE not supported — immutable per D15",
+    tags=["config"],
+)
+def delete_fx_rate(rate_id: uuid.UUID) -> Response:
+    """FX rates are immutable per D15. DELETE is not supported."""
+    return Response(
+        content='{"detail": "FX rates are immutable (spec D15). Create a new row."}',
+        status_code=405,
+        media_type="application/json",
+        headers={"Allow": "GET, POST"},
+    )
