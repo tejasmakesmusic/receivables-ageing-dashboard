@@ -945,7 +945,7 @@ def ack_warnings(
 # ---------------------------------------------------------------------------
 
 
-def bulk_create_canonicals_for_unmapped(
+def bulk_create_canonicals_for_unmapped(  # noqa: PLR0912, PLR0915
     db: Session,
     snapshot_id: uuid.UUID,
     current_user: User,

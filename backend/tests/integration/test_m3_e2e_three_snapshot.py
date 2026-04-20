@@ -299,7 +299,7 @@ def _discard(client: TestClient, snapshot_id: str) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def test_comprehensive_three_snapshot_e2e(  # noqa: PLR0915
+def test_comprehensive_three_snapshot_e2e(
     client: TestClient, db_session: Session
 ) -> None:
     """Full E2E: upload→stage→publish × 3 snapshots.

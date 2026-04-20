@@ -17,14 +17,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from httpx import Response
-
 from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
 from app.db.models.user import User
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
+    from httpx import Response
     from sqlalchemy.orm import Session
 
 

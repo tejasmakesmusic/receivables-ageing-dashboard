@@ -12,8 +12,7 @@ Seeds 3 snapshots:
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -97,7 +96,7 @@ def _add_reconciliation_entry(
         delta=delta,
         status=status,
         entered_by=admin,
-        entered_at=datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc),
+        entered_at=datetime(2026, 4, 1, 10, 0, 0, tzinfo=UTC),
     )
     db_session.add(entry)
     db_session.flush()

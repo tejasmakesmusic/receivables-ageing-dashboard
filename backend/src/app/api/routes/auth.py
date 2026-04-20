@@ -299,6 +299,7 @@ async def google_callback(  # noqa: PLR0911
 @router.get("/logout")
 def logout() -> RedirectResponse:
     """Clear the session cookie and redirect to /."""
+    settings = get_settings()
     response = RedirectResponse(url=settings.frontend_url, status_code=302)
     clear_session_cookie(response)
     return response

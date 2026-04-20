@@ -6,7 +6,7 @@ the build_rate_cache helper. Uses in-process DB via db_session fixture.
 
 from __future__ import annotations
 
-import uuid  # noqa: TCH003
+import uuid
 from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import UTC, date, datetime  # noqa: TCH003 — used at runtime in function signatures
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import openpyxl
