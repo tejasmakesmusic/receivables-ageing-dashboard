@@ -33,7 +33,7 @@ This spec covers all four classes in a single coordinated pass so the frontend r
 - Visual rebrand or design-system overhaul. All new components reuse the 9 existing UI primitives (`Button`, `Badge`, `Card`, `Input`, `Textarea`, `Select`, `Skeleton`, `Modal`, `Pagination`).
 - New `wireframes/*.html` files for the 7 non-wireframed pages. The inline mockups in §6 are authoritative; if a future round of stakeholder review requires HTML wireframes, that is a separate task.
 - Backfilling features beyond what the spec or wireframes already imply. No speculative additions.
-- Backend behaviour changes beyond the minimum read-side aggregates and one ADMIN-only canonical-merge mutation needed to surface data the design requires.
+- Backend behaviour changes beyond the minimum read-side aggregates, one ADMIN-only canonical-merge mutation, and the `exception_notes` table introduced in §7.8 — needed to surface data the design requires.
 
 ## 4. Bug fixes
 
@@ -230,6 +230,31 @@ Four improvements:
 
 **Backend:** add `GET /admin/audit-log/actions` returning `[{action: str, count: int}]`; `GET /admin/audit-log/actors` returning `[{actor_email: str, count: int}]`. Existing `GET /admin/audit-log` stays; extend with `actions[]`, `actors[]`, `from_date`, `to_date` query params if not already supported.
 
+### 7.8 Exception notes UX (S5 + D2)
+
+Today the `exception_tags` table has `reason` (required) + `note` (optional) + `resolution_note` (set on AUTO_RESOLVED). Once a tag is created, the headline is effectively frozen and there is no chronological discussion thread for long-running exceptions. Three improvements:
+
+**1. Edit existing exception headline.** New endpoint `PATCH /exceptions/:id` accepting `{reason?, note?, expected_resolution_date?}`. ANALYST/ADMIN entity-scoped; CFO 403; PENDING 403. Audit log row written with before/after JSON. UI: pencil icon on each exception row in S5 detail table opens an edit modal pre-filled with current values. Validation: `reason` cannot be blanked.
+
+**2. Threaded notes.** New `exception_notes` table for chronological discussion entries that accumulate without overwriting the original headline. Columns:
+- `id: UUID PK`
+- `exception_tag_id: UUID NOT NULL` (FK `exception_tags.id`, `ON DELETE CASCADE`)
+- `body: TEXT NOT NULL` (length-validated 1–5000 chars at API layer)
+- `author_user_id: UUID NOT NULL` (FK `users.id`)
+- `created_at: TIMESTAMPTZ NOT NULL DEFAULT now()`
+
+No `updated_at` — notes are immutable once posted; corrections are new notes (preserves audit clarity).
+
+New endpoints:
+- `GET /exceptions/:id/notes` — list, oldest-first. ANALYST/CFO/ADMIN entity-scoped read.
+- `POST /exceptions/:id/notes` — create. ANALYST/ADMIN entity-scoped write. Body: `{body: str}`. Returns the created note. Audit-log row written.
+
+UI on S5: clicking an exception row opens a side panel. Top: headline (reason + note + expected_resolution + status) with pencil-edit affordance. Middle: vertical thread of notes (author email + relative timestamp + body, oldest at top, newest at bottom). Bottom: `Textarea` + "Add note" button (disabled if blank, max 5000 chars).
+
+**3. Surface notes in D2 Party Detail Exceptions tab.** Each row in D2's Exceptions tab (§7.1) shows the headline plus a notes-count chip ("3 notes"). Clicking the chip expands an inline thread of all notes for that exception (read-only at this entry point — to add a note, user clicks through to S5).
+
+**Migration:** new Alembic migration `0009_exception_notes.py`. Reversible. Down-migration drops the table.
+
 ## 8. Schema and API additions (consolidated)
 
 ### 8.1 Pydantic schema additions
@@ -239,6 +264,10 @@ Four improvements:
 | `ExceptionListRow` | `outstanding_amount` | `Decimal` | S5 bucket cards (§6.4 #12) |
 | `SnapshotListRow` | `uploaded_by_email` | `str` | S1, Workspace |
 | `SnapshotListRow` | `outstanding_total` | `Decimal \| None` | Workspace (§5.5) |
+| `ExceptionNoteRow` | new schema | `{id, body, author_email, created_at}` | S5 thread + D2 inline expand (§7.8) |
+| `ExceptionTagRow` | `notes_count` | `int` | D2 chip + S5 list (§7.8) |
+| `ExceptionUpdateRequest` | new schema | `{reason?, note?, expected_resolution_date?}` | PATCH /exceptions/:id (§7.8) |
+| `ExceptionNoteCreateRequest` | new schema | `{body: str}` (1–5000 chars) | POST /exceptions/:id/notes (§7.8) |
 
 ### 8.2 New endpoints
 
@@ -250,6 +279,9 @@ Four improvements:
 | `POST` | `/admin/canonicals/merge` | ADMIN | S4 merge action (§7.3) |
 | `GET` | `/admin/audit-log/actions` | ADMIN | A5 action dropdown (§7.7) |
 | `GET` | `/admin/audit-log/actors` | ADMIN | A5 actor dropdown (§7.7) |
+| `PATCH` | `/exceptions/:id` | ANALYST/ADMIN entity-scoped | Edit exception headline (§7.8) |
+| `GET` | `/exceptions/:id/notes` | ANALYST/CFO/ADMIN entity-scoped | List notes thread (§7.8) |
+| `POST` | `/exceptions/:id/notes` | ANALYST/ADMIN entity-scoped | Add note to thread (§7.8) |
 
 ### 8.3 Existing endpoints to extend (filter params)
 
@@ -260,9 +292,9 @@ Four improvements:
 
 If any filter is missing, add it. Filter additions are backwards-compatible.
 
-### 8.4 No new database models or migrations
+### 8.4 One new database model + migration
 
-All additions are read-side aggregates, schema fields backed by existing columns, or new endpoints over existing tables. The only mutation endpoint (`POST /admin/canonicals/merge`) operates on existing tables (`party_aliases`, `credit_period_config`, `parties_canonical`, `audit_log`).
+Most additions are read-side aggregates, schema fields backed by existing columns, or new endpoints over existing tables. The single new table is `exception_notes` (§7.8) introduced by Alembic migration `0009_exception_notes.py` (reversible). The `POST /admin/canonicals/merge` mutation operates on existing tables (`party_aliases`, `credit_period_config`, `parties_canonical`, `audit_log`). The `PATCH /exceptions/:id` mutation operates on the existing `exception_tags` table.
 
 ## 9. Error handling
 
@@ -290,6 +322,8 @@ Estimated +50 cases:
 - A3: preview column renders with bucket color + label.
 - A4: timeline chart renders, table sort by effective_date.
 - A5: action dropdown populates, diff highlights changed/added/removed keys.
+- S5 notes: edit-headline modal opens pre-filled, submits, refreshes; side-panel thread renders chronologically; "Add note" disabled when blank, enabled and submits otherwise.
+- D2 Exceptions tab: notes-count chip renders correct count, clicking expands inline thread.
 
 ### 10.2 Backend (pytest)
 
@@ -301,6 +335,10 @@ Estimated +15 cases:
 - `POST /admin/canonicals/merge` — happy path moves aliases + CP rows + deletes source + writes audit; 409 on dangling FK; 403 for non-ADMIN.
 - `GET /admin/audit-log/actions` and `/actors` — distinct values, count correct.
 - Audit-log filter extensions (`actions[]`, `actors[]`, date range) — combined filter behavior.
+- `PATCH /exceptions/:id` — happy path (reason+note edit), RBAC matrix (ANALYST entity-scoped, CFO 403, PENDING 403), audit-log row written with before/after, blank `reason` rejected.
+- `POST /exceptions/:id/notes` — happy path, body length validation (0 chars rejected, 5001 chars rejected), RBAC, audit-log row.
+- `GET /exceptions/:id/notes` — order is created_at ASC, RBAC, 404 on missing exception.
+- Migration `0009_exception_notes.py` — `test_migration_files_parse` passes; up + down + up cycle clean on a fresh Neon branch.
 
 ### 10.3 No skipped or xfailed tests added.
 
@@ -313,8 +351,9 @@ Per `CLAUDE.md`: every change ships with tests. Parser tests run against the 3 s
 3. `/snapshots` lists every snapshot across IND + UAE, filterable by entity / source / status / date range. Action button context is correct for each status. Clicking "View invoices" on a PUBLISHED snapshot lands on `/snapshots/:id/invoices` and lists its invoices with bucket badges + outstanding ₹. Each invoice row links to `/invoice/:id`.
 4. All 14 wireframe-parity items in §6 are visible on their respective pages.
 5. D2 has Invoices + Follow-up timeline + Exceptions tabs. D3 has Raw row + Snapshot history + Related sections. S4 has confidence badges + Merge canonicals action. A2 has Outbox queue + Email rules sections. A3 has Preview column. A4 has timeline chart + table. A5 has action dropdown, actor dropdown, date range filter, and diff-highlighted before/after modal.
-6. All existing tests stay green. New tests pass.
-7. No regression in existing flows: upload → stage → publish → dashboard → exception → reconciliation continues to work end-to-end.
+6. S5 exception rows can be edited (headline + reason + note + expected resolution); each exception has a chronological notes thread that accepts new entries from ANALYST/ADMIN; D2 Exceptions tab shows a notes-count chip that expands inline.
+7. All existing tests stay green. New tests pass.
+8. No regression in existing flows: upload → stage → publish → dashboard → exception → reconciliation continues to work end-to-end.
 
 ## 12. Out of scope (explicitly deferred)
 
@@ -331,7 +370,8 @@ Per `CLAUDE.md`: every change ships with tests. Parser tests run against the 3 s
 | Bug fixes (§4) | 30 min |
 | Workspace (§5) | 4–6 hr |
 | Wireframe-parity sweep (§6) | 6–8 hr |
-| 7 inline-designed pages (§7) | 2–3 days |
+| 7 inline-designed pages (§7.1–§7.7) | 2–3 days |
+| Exception notes UX (§7.8 — migration + endpoints + S5 panel + D2 chip) | 4–6 hr |
 | **Total** | **~3–4 working days at Sonnet pace, parallelizable across multiple agents per page.** |
 
 ## 14. Open questions
