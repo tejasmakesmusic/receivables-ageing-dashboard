@@ -21,11 +21,13 @@ from typing import TYPE_CHECKING, Literal
 
 import structlog
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.db.models.entity import Entity
 from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.exception_tag import ExceptionTag
+from app.db.models.follow_up import FollowUp
+from app.db.models.fx_rate import FxRate
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
 from app.db.models.party import PartyCanonical
@@ -34,10 +36,11 @@ from app.db.models.user import User
 from app.schemas.dashboard import (
     DashboardKPIs,
     DashboardResponse,
+    DashboardTrendRow,
     RecentExceptionRow,
     TopPartyRow,
 )
-from app.services.fx_conversion import MissingFxRateError, convert_to_inr, lookup_rate
+from app.services.fx_conversion import MissingFxRateError, convert_to_inr
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -45,6 +48,11 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 _MATCHED_TOLERANCE = Decimal("100")  # ₹100 tolerance for reconciliation
+
+# Snapshots that produce invoice_snapshot rows. CREDIT_PERIOD publish writes
+# only credit_period_config rows (ADR-0005), so it must not be chosen as the
+# "latest published snapshot" when the dashboard is aggregating ageing.
+_INVOICE_SOURCE_HINTS = ("TALLY", "XERO")
 
 
 def _resolve_snapshot(
@@ -71,6 +79,7 @@ def _resolve_snapshot(
             .where(
                 Entity.code.in_(["IND", "UAE"]),
                 Snapshot.status == "PUBLISHED",
+                Snapshot.source_hint.in_(_INVOICE_SOURCE_HINTS),
             )
             .order_by(Snapshot.as_of_date.desc(), Snapshot.published_at.desc())
             .limit(1)
@@ -78,7 +87,7 @@ def _resolve_snapshot(
         if latest is None:
             raise HTTPException(
                 status_code=404,
-                detail="No published snapshots found for any entity.",
+                detail="No published invoice snapshots (TALLY/XERO) found for any entity.",
             )
         return latest
 
@@ -93,6 +102,7 @@ def _resolve_snapshot(
             .where(
                 Snapshot.entity_id == entity.id,
                 Snapshot.status == "PUBLISHED",
+                Snapshot.source_hint.in_(_INVOICE_SOURCE_HINTS),
                 Snapshot.as_of_date.is_not(None),
             )
             .order_by(Snapshot.as_of_date.desc(), Snapshot.published_at.desc())
@@ -101,7 +111,10 @@ def _resolve_snapshot(
         if snapshot is None:
             raise HTTPException(
                 status_code=404,
-                detail=f"No published snapshots found for entity '{entity_code}'.",
+                detail=(
+                    f"No published invoice snapshots (TALLY/XERO) found for "
+                    f"entity '{entity_code}'."
+                ),
             )
         return snapshot
 
@@ -119,6 +132,7 @@ def _resolve_snapshot(
         .where(
             Snapshot.entity_id == entity.id,
             Snapshot.status == "PUBLISHED",
+            Snapshot.source_hint.in_(_INVOICE_SOURCE_HINTS),
             Snapshot.as_of_date == target_date,
         )
         .limit(1)
@@ -127,11 +141,36 @@ def _resolve_snapshot(
         raise HTTPException(
             status_code=404,
             detail=(
-                f"No published snapshot found for entity '{entity_code}' "
-                f"with as_of_date={as_of}."
+                f"No published invoice snapshot (TALLY/XERO) found for entity "
+                f"'{entity_code}' with as_of_date={as_of}."
             ),
         )
     return snapshot
+
+
+def _lookup_fx_row(
+    from_ccy: str,
+    to_ccy: str,
+    invoice_date: date,
+    db: Session,
+) -> FxRate | None:
+    """Return the full FxRate row (rate + effective_from) for the given pair and date.
+
+    Mirrors the lookup logic in fx_conversion.lookup_rate but returns the
+    entire ORM row so callers can read effective_from for tooltip rendering.
+    """
+    if from_ccy == to_ccy:
+        return None
+    return db.scalar(
+        select(FxRate)
+        .where(
+            FxRate.from_ccy == from_ccy,
+            FxRate.to_ccy == to_ccy,
+            FxRate.effective_from <= invoice_date,
+        )
+        .order_by(FxRate.effective_from.desc())
+        .limit(1)
+    )
 
 
 def _get_snapshot_for_entity(
@@ -139,12 +178,13 @@ def _get_snapshot_for_entity(
     as_of_date: date,
     db: Session,
 ) -> Snapshot | None:
-    """Get the PUBLISHED snapshot for a specific entity nearest to as_of_date."""
+    """Get the PUBLISHED invoice snapshot for an entity nearest to as_of_date."""
     return db.scalar(
         select(Snapshot)
         .where(
             Snapshot.entity_id == entity_id,
             Snapshot.status == "PUBLISHED",
+            Snapshot.source_hint.in_(_INVOICE_SOURCE_HINTS),
             Snapshot.as_of_date == as_of_date,
         )
         .limit(1)
@@ -180,6 +220,7 @@ def _aggregate_single_entity(
             Invoice.currency,
             Invoice.invoice_date,
             Invoice.credit_days_source,
+            Invoice.raw_row_json,
         )
         .join(Invoice, InvoiceSnapshot.invoice_id == Invoice.id)
         .where(
@@ -221,6 +262,7 @@ def _aggregate_single_entity(
                 "canonical_id": row.canonical_id,
                 "outstanding": amount,
                 "bucket": bucket,
+                "raw_row_json": row.raw_row_json or {},
             }
         )
 
@@ -234,11 +276,13 @@ def _compute_top_parties(
     invoice_rows: list[dict],
     db: Session,
 ) -> list[TopPartyRow]:
-    """Compute top 10 parties by outstanding, with worst bucket and exception count."""
+    """Compute top 10 parties by outstanding, with worst bucket, exception count,
+    and max Tally overdue_days (spec §13 #4)."""
     from collections import defaultdict
 
     party_outstanding: dict = defaultdict(Decimal)
     party_buckets: dict = {}
+    party_tally_overdue_max: dict = {}  # canonical_id -> max int overdue_days from raw_row_json
     bucket_order = {"90_PLUS": 5, "61_90": 4, "31_60": 3, "0_30": 2, "NOT_DUE": 1}
 
     for row in invoice_rows:
@@ -248,6 +292,19 @@ def _compute_top_parties(
         new_bucket = row["bucket"]
         if bucket_order.get(new_bucket, 0) > bucket_order.get(current_worst, 0):
             party_buckets[cid] = new_bucket
+
+        # Extract Tally overdue_days from raw_row_json (None-safe)
+        raw_json: dict = row.get("raw_row_json") or {}
+        tally_overdue_raw = raw_json.get("overdue_days")
+        if tally_overdue_raw is not None:
+            try:
+                tally_overdue_int = int(tally_overdue_raw)
+            except (ValueError, TypeError):
+                tally_overdue_int = None
+            if tally_overdue_int is not None:
+                current_max = party_tally_overdue_max.get(cid)
+                if current_max is None or tally_overdue_int > current_max:
+                    party_tally_overdue_max[cid] = tally_overdue_int
 
     # Sort by outstanding descending, take top 10
     sorted_parties = sorted(party_outstanding.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -271,6 +328,14 @@ def _compute_top_parties(
             or 0
         )
 
+        # Fetch the most-recent follow-up for this canonical
+        last_fu = db.execute(
+            select(FollowUp.date, FollowUp.channel)
+            .where(FollowUp.canonical_id == canonical_id)
+            .order_by(FollowUp.date.desc())
+            .limit(1)
+        ).first()
+
         results.append(
             TopPartyRow(
                 canonical_id=canonical_id,
@@ -278,6 +343,9 @@ def _compute_top_parties(
                 outstanding=outstanding,
                 overdue_bucket=party_buckets.get(canonical_id, "NOT_DUE"),
                 active_exception_count=exception_count,
+                tally_overdue_days_max=party_tally_overdue_max.get(canonical_id),
+                last_follow_up_date=last_fu.date if last_fu else None,
+                last_follow_up_channel=last_fu.channel if last_fu else None,
             )
         )
 
@@ -326,6 +394,112 @@ def _get_recent_exceptions(
         )
         for r in rows
     ]
+
+
+def _get_trend_weekly(
+    entity_ids: list,
+    db: Session,
+    convert_uae_to_inr: bool = False,
+) -> list[DashboardTrendRow]:
+    """Return last ≤8 weekly trend rows for the given entity_ids.
+
+    Algorithm:
+    - Bucket snapshots by ISO week (date_trunc('week', as_of_date)).
+    - Pick the latest as_of_date per week (DISTINCT ON).
+    - For each chosen snapshot_id, sum outstanding_amount (total) and
+      sum outstanding_amount WHERE bucket='90_PLUS'.
+    - For entity=ALL (convert_uae_to_inr=True), UAE invoices are converted
+      to INR using per-invoice FX rates.  If any FX rate is missing the row
+      is silently skipped (trend is best-effort; KPI endpoint enforces hard 422).
+    - Returns rows sorted by week_start ascending, limited to 8.
+    """
+    if not entity_ids:
+        return []
+
+    # Step 1: find the latest snapshot per week for the given entities.
+    # Raw SQL via text() to leverage date_trunc + DISTINCT ON (Postgres-specific).
+    distinct_sql = text(
+        """
+        SELECT DISTINCT ON (date_trunc('week', s.as_of_date))
+            s.id                                  AS snapshot_id,
+            s.entity_id,
+            s.as_of_date,
+            date_trunc('week', s.as_of_date)::date AS week_start
+        FROM snapshots s
+        WHERE s.entity_id = ANY(:entity_ids)
+          AND s.status    = 'PUBLISHED'
+          AND s.source_hint IN ('TALLY', 'XERO')
+          AND s.as_of_date IS NOT NULL
+        ORDER BY date_trunc('week', s.as_of_date) DESC,
+                 s.as_of_date DESC,
+                 s.published_at DESC
+        LIMIT 8
+        """
+    )
+    rows = db.execute(distinct_sql, {"entity_ids": entity_ids}).all()
+
+    if not rows:
+        return []
+
+    # Step 2: for each chosen snapshot, aggregate invoice_snapshots.
+    trend_rows: list[DashboardTrendRow] = []
+
+    for row in rows:
+        snapshot_id = row.snapshot_id
+        week_start = row.week_start
+        as_of_date = row.as_of_date
+
+        # Fetch invoice_snapshot rows for this snapshot
+        inv_rows = db.execute(
+            select(
+                InvoiceSnapshot.outstanding_amount,
+                InvoiceSnapshot.bucket,
+                Invoice.currency,
+                Invoice.invoice_date,
+            )
+            .join(Invoice, InvoiceSnapshot.invoice_id == Invoice.id)
+            .where(
+                InvoiceSnapshot.snapshot_id == snapshot_id,
+                InvoiceSnapshot.as_of_date == as_of_date,
+            )
+        ).all()
+
+        total = Decimal("0")
+        ninety_plus = Decimal("0")
+        skip = False
+
+        for ir in inv_rows:
+            amount = ir.outstanding_amount
+            if convert_uae_to_inr and ir.currency != "INR":
+                try:
+                    amount = convert_to_inr(
+                        amount=ir.outstanding_amount,
+                        source_currency=ir.currency,
+                        invoice_date=ir.invoice_date,
+                        db=db,
+                    )
+                except MissingFxRateError:
+                    # Skip this week's row entirely if FX is missing
+                    skip = True
+                    break
+            total += amount
+            if ir.bucket == "90_PLUS":
+                ninety_plus += amount
+
+        if skip:
+            continue
+
+        trend_rows.append(
+            DashboardTrendRow(
+                week_start=week_start,
+                total_outstanding=total,
+                ninety_plus=ninety_plus,
+            )
+        )
+
+    # Sort ascending by week_start (DISTINCT ON returned DESC)
+    trend_rows.sort(key=lambda r: r.week_start)
+    return trend_rows
 
 
 def get_dashboard(
@@ -381,6 +555,8 @@ def _get_single_entity_dashboard(
 
     currency_display: Literal["INR", "AED"] = "INR" if entity_code == "IND" else "AED"
 
+    trend_weekly = _get_trend_weekly([entity.id], db, convert_uae_to_inr=False)
+
     return DashboardResponse(
         entity=entity_code,
         as_of_date=snapshot.as_of_date,
@@ -398,6 +574,7 @@ def _get_single_entity_dashboard(
         top_parties=top_parties,
         recent_exceptions=recent_exceptions,
         parties_on_default_credit_period_count=default_count,
+        trend_weekly=trend_weekly,
     )
 
 
@@ -425,6 +602,7 @@ def _get_consolidated_dashboard(
     total_outstanding = Decimal("0")
     default_count = 0
     last_fx_rate: Decimal | None = None
+    last_fx_rate_row: FxRate | None = None
 
     for entity in [e for e in [ind_entity, uae_entity] if e is not None]:
         # Find the PUBLISHED snapshot for this entity at ref_as_of_date
@@ -433,17 +611,19 @@ def _get_consolidated_dashboard(
             .where(
                 Snapshot.entity_id == entity.id,
                 Snapshot.status == "PUBLISHED",
+                Snapshot.source_hint.in_(_INVOICE_SOURCE_HINTS),
                 Snapshot.as_of_date == ref_as_of_date,
             )
             .limit(1)
         )
         if snap is None:
-            # Try the most recent published snapshot as fallback
+            # Try the most recent published invoice snapshot as fallback
             snap = db.scalar(
                 select(Snapshot)
                 .where(
                     Snapshot.entity_id == entity.id,
                     Snapshot.status == "PUBLISHED",
+                    Snapshot.source_hint.in_(_INVOICE_SOURCE_HINTS),
                 )
                 .order_by(Snapshot.as_of_date.desc())
                 .limit(1)
@@ -465,12 +645,12 @@ def _get_consolidated_dashboard(
         total_outstanding += total
         default_count += d_count
 
-        # Capture a representative FX rate for display (use latest UAE invoice date)
+        # Capture a representative FX rate row for tooltip display
         if convert and rows:
-            # Get a sample rate using the ref_as_of_date as proxy
-            sample_rate = lookup_rate("AED", "INR", ref_as_of_date, db)
-            if sample_rate:
-                last_fx_rate = sample_rate
+            fx_row = _lookup_fx_row("AED", "INR", ref_as_of_date, db)
+            if fx_row is not None:
+                last_fx_rate = fx_row.rate
+                last_fx_rate_row = fx_row
 
     overdue_total = sum(v for k, v in combined_buckets.items() if k != "NOT_DUE")
     pct_overdue = (
@@ -485,6 +665,10 @@ def _get_consolidated_dashboard(
     # Recent exceptions across all entities — use ref_snapshot
     recent_exceptions = _get_recent_exceptions(ref_snapshot, db)
 
+    # Trend: collect entity_ids for IND + UAE, convert UAE→INR
+    all_entity_ids = [e.id for e in [ind_entity, uae_entity] if e is not None]
+    trend_weekly = _get_trend_weekly(all_entity_ids, db, convert_uae_to_inr=True)
+
     return DashboardResponse(
         entity="ALL",
         as_of_date=ref_as_of_date,
@@ -497,9 +681,13 @@ def _get_consolidated_dashboard(
             parties_with_90plus_count=parties_90plus,
             last_snapshot_date=ref_as_of_date,
             fx_rate_used=last_fx_rate,
+            fx_rate_effective_from=last_fx_rate_row.effective_from if last_fx_rate_row else None,
+            fx_rate_from_ccy="AED" if last_fx_rate_row else None,
+            fx_rate_to_ccy="INR" if last_fx_rate_row else None,
         ),
         ageing_buckets=combined_buckets,
         top_parties=top_parties,
         recent_exceptions=recent_exceptions,
         parties_on_default_credit_period_count=default_count,
+        trend_weekly=trend_weekly,
     )

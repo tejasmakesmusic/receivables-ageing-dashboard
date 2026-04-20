@@ -22,10 +22,9 @@ import threading
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import openpyxl
-import pytest
 from sqlalchemy import select
 
 from app.core.rbac import Role
@@ -109,7 +108,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -134,7 +133,7 @@ def _login_as_analyst(
         user.entity_id_scope = None
     user.is_active = True
     db_session.flush()
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _login_as_cfo(client: TestClient, db_session: Session, email: str) -> None:
@@ -226,7 +225,7 @@ def _make_xero_xlsx(
     ws.append([None] * 23)
     ws.append(_XERO_HEADER_ROW)
     ws.append([None] * 23)
-    party_header = [None] * 23
+    party_header: list[Any] = [None] * 23
     party_header[0] = party
     ws.append(party_header)
     inv_row: list[Any] = [None] * 23
@@ -343,7 +342,7 @@ def _create_canonical_for_party(
         db_session.add(alias)
         db_session.flush()
 
-    return canonical.id
+    return cast(uuid.UUID, canonical.id)
 
 
 def _resolve_all_rows_via_canonical(
@@ -1016,6 +1015,7 @@ def test_exception_auto_resolved_on_settled_cascade(
     inv = db_session.scalar(select(Invoice).where(Invoice.invoice_ref == "INV-EXC"))
     assert inv is not None
     admin = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
+    assert admin is not None
     bucket_type = db_session.scalar(select(ExceptionBucketType).limit(1))
     assert bucket_type is not None
 
@@ -1088,6 +1088,7 @@ def test_material_change_flagged_when_amount_delta_gt_5_percent_on_active_except
     inv = db_session.scalar(select(Invoice).where(Invoice.invoice_ref == "INV-MAT"))
     assert inv is not None
     admin = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
+    assert admin is not None
     bucket_type = db_session.scalar(select(ExceptionBucketType).limit(1))
     assert bucket_type is not None
 
@@ -1452,68 +1453,251 @@ def test_entity_default_credit_days_null_returns_422(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason=(
-        "FOLLOW-UP: Threading against the shared test_engine hits SQLAlchemy "
-        "state-change errors under concurrent transactional DDL. The production "
-        "SELECT FOR UPDATE lock is exercised in publish_service.publish_snapshot "
-        "and sequentially covered by test_publish_twice_returns_409. A proper "
-        "concurrency test needs per-thread engine instances against a non-"
-        "branched Postgres, not the session-scoped Neon branch. "
-        "Track in M7 hardening (RBAC suite + race tests)."
-    ),
-    strict=False,
-)
 def test_concurrent_publish_serialised_via_row_lock(
-    client: TestClient, db_session: Session, test_engine: Any
+    branch_dsn: str,
 ) -> None:
-    """Two concurrent publish calls on same snapshot; exactly one wins (200).
+    """Two concurrent publish calls on the same snapshot; exactly one wins (200).
 
-    Each thread gets a FRESH `Session` bound to the same `test_engine` (Neon
-    test branch). Using the shared `db_session` across threads would hit
-    "Session is already flushing" because SQLAlchemy Sessions are not
-    thread-safe — the correctness signal we want (row-level lock serialisation
-    at the DB) is independent of the session object and is surfaced per-thread
-    as 200 vs 409.
+    The SELECT FOR UPDATE in publish_service.publish_snapshot must serialise the
+    two requests so one gets 200 (PUBLISHED) and the other gets 409 (SNAPSHOT_NOT_STAGED).
+
+    Why call the service directly (not via HTTP)?
+    ---------------------------------------------------
+    Concurrency tests need two real Postgres connections that commit independently.
+
+    The standard ``db_session`` / ``client`` fixtures wrap everything in a
+    ``connection.begin()`` outer transaction that is rolled back on teardown.
+    Calling ``db_session.commit()`` inside that context only releases a savepoint
+    (RELEASE SAVEPOINT), never a real Postgres COMMIT.  Per-thread NullPool
+    sessions therefore cannot see any of the seeded rows.
+
+    HTTP-layer approaches (TestClient with threading) additionally hit an anyio
+    dispatch problem: FastAPI wraps sync-generator dependencies in
+    ``contextmanager_in_threadpool`` → ``anyio.to_thread.run_sync``, moving the
+    generator body to a *new* OS thread where any per-caller session lookup
+    (threading.local, dict-by-thread-id) is invisible.
+
+    The correct approach: use ``ThreadSessionFactory`` for *all* phases.  Each
+    phase (seeding, concurrent publishes, cleanup) uses its own NullPool engine
+    + Session with real COMMITs so rows are visible across connections.
+    ``threading.Barrier(2)`` synchronises both publish calls to maximise
+    lock-contention at Postgres.  HTTP status codes are inferred from
+    return values and HTTPException.status_code.
+
+    Data isolation: unique UUID-suffix invoice ref + canonical name; DELETE in
+    finally so committed rows don't leak into subsequent tests.
     """
-    from sqlalchemy.orm import sessionmaker
+    from datetime import date as _date
 
-    _login_as_admin(client)
-    snapshot_id, _ = _setup_publishable_tally_snapshot(client, db_session, inv_ref="INV-CONCURRENT")
-    # Commit so the snapshot + canonical are visible to the per-thread sessions.
-    db_session.commit()
+    from fastapi import HTTPException as FastAPIHTTPException
+    from sqlalchemy import delete, select
 
-    SessionLocal = sessionmaker(bind=test_engine, expire_on_commit=False)
+    from app.db.models.audit_log import AuditLog
+    from app.db.models.email_outbox import EmailOutbox
+    from app.db.models.entity import Entity
+    from app.db.models.invoice import Invoice
+    from app.db.models.invoice_snapshot import InvoiceSnapshot
+    from app.db.models.party import PartyAlias, PartyCanonical
+    from app.db.models.reconciliation_entry import ReconciliationEntry
+    from app.db.models.snapshot import Snapshot
+    from app.db.models.user import User
+    from app.schemas.publish import PublishRequest
+    from app.services.publish_service import publish_snapshot
+    from app.services.snapshot_service import upload_snapshot
+    from app.services.staging_service import ack_warnings
+    from tests.parallel_db import ThreadSessionFactory
+
+    # Unique suffix so cleanup can target exactly these rows.
+    run_id = uuid.uuid4().hex[:12]
+    inv_ref = f"INV-CONCURRENT-{run_id}"
+    party_name = f"ConcurrentParty-{run_id}"
+
+    snap_uuid: uuid.UUID | None = None
+    canonical_id: uuid.UUID | None = None
+
+    # -----------------------------------------------------------------------
+    # Phase 1: Seed with real COMMITs so per-thread sessions can see the rows.
+    # -----------------------------------------------------------------------
+    seed_factory = ThreadSessionFactory(branch_dsn)
+    seed_session = seed_factory.make()
+    try:
+        admin = seed_session.scalar(
+            select(User).where(User.email == "tejaswa.sharma@emb.global")
+        )
+        assert admin is not None, "Admin user not found — check migration 0002 seed"
+
+        # Use UAE so the concurrent publish does not accidentally SETTLE the 291
+        # OPEN IND invoices that other integration tests committed to this Neon branch
+        # (from sample-file publishes).  UAE has no committed invoices, so the
+        # publish service will only see the one invoice we seed here.
+        entity = seed_session.scalar(select(Entity).where(Entity.code == "UAE"))
+        assert entity is not None, "Entity UAE not found — check migration seed"
+
+        # Ensure entity default_credit_days is set so publish gate can resolve credit_days
+        entity.default_credit_days = 30
+        seed_session.flush()
+
+        # Create canonical + MANUAL alias (exact match avoids needing staging patch)
+        canonical = PartyCanonical(
+            entity_id=entity.id,
+            name=party_name,
+            created_by=admin.id,
+        )
+        seed_session.add(canonical)
+        seed_session.flush()
+        canonical_id = canonical.id
+
+        seed_session.add(
+            PartyAlias(
+                canonical_id=canonical.id,
+                alias_text=party_name,
+                source="MANUAL",
+                confidence=None,
+                created_by=admin.id,
+            )
+        )
+        seed_session.flush()
+
+        # Upload the snapshot via service (writes parse_result_json + STAGED status)
+        xlsx_bytes = _make_tally_xlsx(
+            data_rows=[
+                [_date(2026, 2, 1), inv_ref, party_name, 5000.0, 5000.0, None, None]
+            ]
+        )
+        create_resp = upload_snapshot(
+            db=seed_session,
+            file_bytes=xlsx_bytes,
+            entity_code="UAE",
+            source_hint_form="TALLY",
+            as_of_date_form=_date(2026, 3, 31),
+            current_user=admin,
+            request_ip="127.0.0.1",
+        )
+        snap_uuid = uuid.UUID(create_resp.snapshot_id)
+
+        # Ack warnings so publish gate passes (Tally emits UNALLOCATED_CREDITS_DELTA)
+        snapshot_row = seed_session.scalar(select(Snapshot).where(Snapshot.id == snap_uuid))
+        assert snapshot_row is not None
+        pr = snapshot_row.parse_result_json or {}
+        warning_codes = sorted(
+            {w.get("code") for w in pr.get("warnings", []) if w.get("code")}
+        )
+        if warning_codes:
+            ack_warnings(
+                db=seed_session,
+                snapshot_id=snap_uuid,
+                codes=warning_codes,
+                current_user=admin,
+            )
+
+        # Real COMMIT — makes all rows visible to independent NullPool sessions.
+        seed_session.commit()
+    finally:
+        seed_factory.close_all()
+
+    assert snap_uuid is not None
+    assert canonical_id is not None
+
+    # -----------------------------------------------------------------------
+    # Phase 2: Two concurrent publish calls via dedicated NullPool sessions.
+    # -----------------------------------------------------------------------
+    publish_factory = ThreadSessionFactory(branch_dsn)
     results: list[int] = []
+    thread_errors: list[Exception] = []
+
+    # Barrier: both threads must arrive before either fires the publish call.
+    # This maximises the chance the two SELECT FOR UPDATE statements race at Postgres.
+    barrier = threading.Barrier(2, timeout=30)
 
     def do_publish() -> None:
-        from fastapi.testclient import TestClient
-
-        from app.api.deps import db_session as db_dep
-        from app.main import app
-
-        thread_session = SessionLocal()
-
-        def override():
-            try:
-                yield thread_session
-            finally:
-                thread_session.close()
-
-        app.dependency_overrides[db_dep] = override
+        """One thread: dedicated NullPool session → barrier → publish service."""
+        session = publish_factory.make()
         try:
-            with TestClient(app, cookies=dict(client.cookies)) as tc:
-                r = _publish(tc, snapshot_id)
-                results.append(r.status_code)
+            admin_local = session.scalar(
+                select(User).where(User.email == "tejaswa.sharma@emb.global")
+            )
+            assert admin_local is not None
+
+            body = PublishRequest()
+            barrier.wait()  # synchronise before the publish call
+            try:
+                publish_snapshot(
+                    db=session,
+                    snapshot_id=snap_uuid,
+                    body=body,
+                    current_user=admin_local,
+                    request_ip="127.0.0.1",
+                )
+                results.append(200)
+            except FastAPIHTTPException as exc:
+                results.append(exc.status_code)
+        except Exception as exc:
+            thread_errors.append(exc)
+        # publish_factory.close_all() handles teardown in the outer finally
+
+    try:
+        t1 = threading.Thread(target=do_publish)
+        t2 = threading.Thread(target=do_publish)
+        t1.start()
+        t2.start()
+        t1.join(timeout=60)
+        t2.join(timeout=60)
+
+        if thread_errors:
+            raise thread_errors[0]
+
+        # One should succeed (200) and one should fail (409 — SNAPSHOT_NOT_STAGED).
+        assert sorted(results) == [200, 409], f"Expected [200, 409], got {sorted(results)}"
+    finally:
+        publish_factory.close_all()
+
+        # -----------------------------------------------------------------------
+        # Phase 3: Cleanup — DELETE all seeded rows using a fresh NullPool session.
+        # -----------------------------------------------------------------------
+        cleanup_session = ThreadSessionFactory(branch_dsn).make()
+        try:
+            from sqlalchemy import update
+
+            # Delete the rows that belong exclusively to this test run.
+            cleanup_session.execute(
+                delete(InvoiceSnapshot).where(InvoiceSnapshot.snapshot_id == snap_uuid)
+            )
+            cleanup_session.execute(
+                delete(AuditLog).where(AuditLog.entity_id == snap_uuid)
+            )
+            cleanup_session.execute(
+                delete(EmailOutbox).where(EmailOutbox.snapshot_id == snap_uuid)
+            )
+            cleanup_session.execute(
+                delete(ReconciliationEntry).where(
+                    ReconciliationEntry.snapshot_id == snap_uuid
+                )
+            )
+            cleanup_session.execute(
+                delete(Invoice).where(Invoice.invoice_ref == inv_ref)
+            )
+            cleanup_session.execute(delete(Snapshot).where(Snapshot.id == snap_uuid))
+            cleanup_session.execute(
+                delete(PartyAlias).where(PartyAlias.canonical_id == canonical_id)
+            )
+            cleanup_session.execute(
+                delete(PartyCanonical).where(PartyCanonical.id == canonical_id)
+            )
+            # Restore entity.default_credit_days to NULL so other tests that
+            # set it themselves are not contaminated by our committed seed value.
+            cleanup_session.execute(
+                update(Entity)
+                .where(Entity.code == "UAE")
+                .values(default_credit_days=None)
+            )
+            cleanup_session.commit()
+        except Exception as exc:
+            import sys
+
+            sys.stderr.write(
+                f"WARN test_concurrent_publish cleanup failed: {exc!r}. "
+                "Rows may be left in the Neon test branch.\n"
+            )
+            cleanup_session.rollback()
         finally:
-            app.dependency_overrides.pop(db_dep, None)
-
-    t1 = threading.Thread(target=do_publish)
-    t2 = threading.Thread(target=do_publish)
-    t1.start()
-    t2.start()
-    t1.join(timeout=60)
-    t2.join(timeout=60)
-
-    # One should succeed (200) and one should fail (409 — already published)
-    assert sorted(results) == [200, 409], f"Expected [200, 409], got {sorted(results)}"
+            cleanup_session.close()

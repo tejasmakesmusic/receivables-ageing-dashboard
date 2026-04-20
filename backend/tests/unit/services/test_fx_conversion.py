@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid  # noqa: TCH003
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from fastapi import HTTPException
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 def _admin_id(db_session: Session) -> uuid.UUID:
     user = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert user is not None
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _seed_rate(
@@ -126,10 +126,11 @@ def test_missing_fx_rate_error_to_http_422() -> None:
     exc = err.to_http_422()
     assert isinstance(exc, HTTPException)
     assert exc.status_code == 422
-    assert exc.detail["code"] == "FX_RATE_MISSING"
-    assert exc.detail["from_ccy"] == "AED"
-    assert exc.detail["to_ccy"] == "INR"
-    assert "2026-01-15" in exc.detail["invoice_date"]
+    detail = cast(dict[str, Any], exc.detail)
+    assert detail["code"] == "FX_RATE_MISSING"
+    assert detail["from_ccy"] == "AED"
+    assert detail["to_ccy"] == "INR"
+    assert "2026-01-15" in detail["invoice_date"]
 
 
 # ---------------------------------------------------------------------------

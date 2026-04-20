@@ -6,7 +6,7 @@ ADMIN only. Supports filters: actor_id, action, entity_type, ts_from, ts_to. Pag
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -29,7 +29,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -62,7 +62,7 @@ def _login_as_cfo(
 def _admin_id(db_session: Session) -> uuid.UUID:
     u = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert u is not None
-    return u.id
+    return cast(uuid.UUID, u.id)
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,8 @@ from app.api.routes.snapshots import router as snapshots_router
 from app.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import CSRFMiddleware, RequestIDMiddleware
+from app.core.scheduler import shutdown_scheduler, start_scheduler
+from app.core.startup import assert_prod_auth_safe
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -34,8 +36,13 @@ log = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Placeholder for future startup tasks (e.g., scheduler init).
-    yield
+    # Safety check must fire before scheduler or any request handler.
+    assert_prod_auth_safe(settings)
+    start_scheduler()
+    try:
+        yield
+    finally:
+        shutdown_scheduler()
 
 
 app = FastAPI(

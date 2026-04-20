@@ -14,24 +14,13 @@ Open each `.html` file directly in a browser. No build step, no server. All Tail
 | S2 | [S2-staging.html](S2-staging.html) | /staging/:snapshot_id | ANALYST, ADMIN |
 | D1 | [D1-dashboard.html](D1-dashboard.html) | /dashboard | ALL (non-PENDING) |
 | S5 | [S5-exceptions.html](S5-exceptions.html) | /exceptions | ANALYST, ADMIN |
-| A6 | [A6-reconciliation.html](A6-reconciliation.html) | /admin/reconciliation | AR entry role pending spec clarification (see Open spec questions above) |
+| A6 | [A6-reconciliation.html](A6-reconciliation.html) | /admin/reconciliation | ANALYST read+write (entity-scoped), ADMIN read+write, CFO read-only, PENDING 403 — per [ADR-0006](../docs/adr/0006-reconciliation-rbac.md) |
 
-## Open spec questions (flagged for Tejaswa before M6)
+## Resolved spec questions
 
-### A6 reconciliation: who enters the Tally/Xero closing AR?
+### A6 reconciliation RBAC — resolved 2026-04-19 via ADR-0006
 
-Spec is internally contradictory:
-
-- **§2 D19** — "Analyst enters actual Tally/Xero closing AR per snapshot."
-- **§9 route matrix** — A6 is `ANALYST (read), ADMIN` (i.e. ADMIN writes).
-
-These cannot both be true. M2 wireframe A6 uses role-neutral copy for the
-AR-entry control pending clarification. M6 implementation blocked on this:
-
-- If D19 is authoritative: flip the route matrix to `ANALYST (write), ADMIN`.
-- If §9 route matrix is authoritative: amend D19 to `ADMIN enters closing AR`.
-
-No decision inferred here. Requires Tejaswa's call before M6 starts.
+Previous contradiction between §2 D19 (analyst writes) and §9 route matrix (ADMIN writes). Resolution: ANALYST read+write (entity-scoped), ADMIN read+write (any entity), CFO read-only, PENDING 403. Principle: ADMIN ⊇ ANALYST for permissions; CFO reviews but does not author. See [ADR-0006](../docs/adr/0006-reconciliation-rbac.md).
 
 ---
 

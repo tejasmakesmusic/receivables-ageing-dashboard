@@ -22,7 +22,7 @@ def _make_xlsx(sheet_names: list[str]) -> bytes:
     """Build a minimal XLSX with the given sheet names."""
     wb = openpyxl.Workbook()
     # rename the default sheet to the first name
-    wb.active.title = sheet_names[0]  # type: ignore[union-attr]
+    wb.active.title = sheet_names[0]  # openpyxl: active is non-None on a fresh workbook
     for name in sheet_names[1:]:
         wb.create_sheet(name)
     buf = io.BytesIO()

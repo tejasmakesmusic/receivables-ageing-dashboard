@@ -37,16 +37,35 @@ dotenv.load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
 @pytest.fixture(scope="session")
-def _branch_dsn() -> Iterator[str]:  # type: ignore[misc]
+def _branch_dsn() -> Iterator[str]:
     with neon_branch_dsn() as dsn:
         yield dsn
 
 
 @pytest.fixture(scope="session")
-def test_engine(_branch_dsn: str) -> Iterator[Engine]:  # type: ignore[misc]
+def branch_dsn(_branch_dsn: str) -> str:
+    """Public alias that exposes the Neon branch DSN to concurrency tests.
+
+    The ``ThreadSessionFactory`` in ``parallel_db.py`` needs a raw DSN string
+    to create per-thread NullPool engines that exercise real row-level locks.
+    Concurrency tests should request this fixture rather than ``_branch_dsn``
+    (the private fixture is consumed by ``test_engine`` which also sets env vars).
+    """
+    return _branch_dsn
+
+
+@pytest.fixture(scope="session")
+def test_engine(_branch_dsn: str) -> Iterator[Engine]:
     # Point app config at the branch for this test session
     os.environ["DATABASE_URL"] = _branch_dsn
     os.environ["DATABASE_URL_DIRECT"] = _branch_dsn
+    # Force stub auth for integration tests regardless of the developer's .env.
+    # Many tests call `/auth/google/callback?stub_email=...`; that helper only
+    # works when auth_provider == "stub". Without this override, a developer
+    # whose .env has AUTH_PROVIDER=google (e.g. because they're also testing
+    # real Google OAuth locally) would see every auth-dependent integration
+    # test fail with "auth.state_mismatch".
+    os.environ["AUTH_PROVIDER"] = "stub"
     # Reset cached settings so the env change takes effect
     from app.config import get_settings
 
@@ -68,7 +87,7 @@ def test_engine(_branch_dsn: str) -> Iterator[Engine]:  # type: ignore[misc]
 
 
 @pytest.fixture
-def db_session(test_engine: Engine) -> Iterator[Session]:  # type: ignore[misc]
+def db_session(test_engine: Engine) -> Iterator[Session]:
     """Per-test session with transaction rollback.
 
     Each test sees a clean DB because we roll back at teardown.
@@ -98,7 +117,7 @@ def db_session(test_engine: Engine) -> Iterator[Session]:  # type: ignore[misc]
 
 
 @pytest.fixture(scope="session")
-def http_client() -> Iterator[TestClient]:  # type: ignore[misc]
+def http_client() -> Iterator[TestClient]:
     """Session-scoped TestClient with NO DB dependency.
 
     Use for tests that exercise routes independent of DB state (e.g.
@@ -114,7 +133,7 @@ def http_client() -> Iterator[TestClient]:  # type: ignore[misc]
 
 
 @pytest.fixture
-def client(db_session: Session) -> Iterator[TestClient]:  # type: ignore[misc]
+def client(db_session: Session) -> Iterator[TestClient]:
     """TestClient that uses the per-test DB session via dependency override."""
     from app.api.deps import db_session as db_session_dep
     from app.main import app

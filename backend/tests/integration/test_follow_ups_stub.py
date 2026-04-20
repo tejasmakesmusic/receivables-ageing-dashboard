@@ -12,7 +12,7 @@ Endpoints:
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -38,7 +38,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -74,13 +74,13 @@ def _headers(client: TestClient) -> dict[str, str]:
 def _admin_id(db_session: Session) -> uuid.UUID:
     u = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert u is not None
-    return u.id
+    return cast(uuid.UUID, u.id)
 
 
 def _entity_id(db_session: Session, code: str = "IND") -> uuid.UUID:
     e = db_session.scalar(select(Entity).where(Entity.code == code))
     assert e is not None
-    return e.id
+    return cast(uuid.UUID, e.id)
 
 
 def _make_invoice_and_canonical(db_session: Session) -> tuple[uuid.UUID, uuid.UUID]:
@@ -118,7 +118,7 @@ def _make_invoice_and_canonical(db_session: Session) -> tuple[uuid.UUID, uuid.UU
     )
     db_session.add(invoice)
     db_session.flush()
-    return invoice.id, canonical.id
+    return cast(uuid.UUID, invoice.id), cast(uuid.UUID, canonical.id)
 
 
 # ---------------------------------------------------------------------------

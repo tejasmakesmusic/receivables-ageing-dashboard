@@ -45,7 +45,7 @@ def _make_entry(
         canonical_id=cid,
         canonical_name=canonical_name,
         matched_text=matched_text if matched_text is not None else canonical_name,
-        matched_on=matched_on,  # type: ignore[arg-type]
+        matched_on=matched_on,
     )
 
 

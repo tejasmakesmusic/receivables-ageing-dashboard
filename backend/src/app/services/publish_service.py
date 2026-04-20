@@ -26,13 +26,14 @@ Design decisions:
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import structlog
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
@@ -42,10 +43,11 @@ from app.db.models.entity import Entity
 from app.db.models.exception_tag import ExceptionTag
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
+from app.db.models.party import PartyAlias, PartyCanonical
 from app.db.models.reconciliation_entry import ReconciliationEntry
 from app.db.models.snapshot import Snapshot
+from app.emails.templates.publish_notif import render_publish_notif_html
 from app.schemas.publish import (
-    CreditPeriodPublishNotImplementedError,
     PublishRequest,
     PublishResponse,
     PublishResult,
@@ -66,10 +68,144 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+# Source hints that produce invoice snapshots (excludes CREDIT_PERIOD reference data).
+_INVOICE_SOURCE_HINTS = ("TALLY", "XERO")
+
+
+# ---------------------------------------------------------------------------
+# Publish diff dataclass
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PublishDiff:
+    """Computed diff between this snapshot and the prior published snapshot."""
+
+    new_invoices_count: int = 0
+    settled_invoices_count: int = 0
+    # e.g. {"NOT_DUE→0_30": 5, "0_30→31_60": 3}
+    bucket_shifts: dict[str, int] = field(default_factory=dict)
+    new_exceptions_count: int = 0
+    material_change_count: int = 0
+    total_outstanding_now: str | None = None
+    total_outstanding_prior: str | None = None
+    has_prior_snapshot: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _compute_publish_diff(
+    snapshot: Snapshot,
+    invoices_inserted: int,
+    invoices_settled: int,
+    newly_settled_invoice_ids: list[uuid.UUID],
+    material_change_count: int,
+    effective_invoice_ids: set[uuid.UUID],
+    db: Session,
+) -> PublishDiff:
+    """Compute the diff body payload for the PUBLISH_NOTIF email (spec §8.2).
+
+    Requires:
+    - snapshot must already be flushed (invoice_snapshots rows written).
+    - effective_invoice_ids: IDs of invoices included in this publish.
+    - newly_settled_invoice_ids: IDs just transitioned to SETTLED.
+
+    Never logs party names or invoice refs (CLAUDE.md data-handling rule).
+    """
+    diff = PublishDiff(
+        new_invoices_count=invoices_inserted,
+        settled_invoices_count=invoices_settled,
+        material_change_count=material_change_count,
+        has_prior_snapshot=False,
+    )
+
+    # Total outstanding for this snapshot (sum of invoice_snapshots rows).
+    as_of_date: date = snapshot.as_of_date  # type: ignore[assignment]
+    total_now_row = db.execute(
+        select(func.sum(InvoiceSnapshot.outstanding_amount)).where(
+            InvoiceSnapshot.snapshot_id == snapshot.id,
+            InvoiceSnapshot.as_of_date == as_of_date,
+        )
+    ).scalar()
+    diff.total_outstanding_now = (
+        str(total_now_row.quantize(Decimal("0.01"))) if total_now_row is not None else "0.00"
+    )
+
+    # New exception tags: count ACTIVE tags on invoices present in this snapshot.
+    if effective_invoice_ids:
+        new_exc_count: int = db.scalar(
+            select(func.count(ExceptionTag.id)).where(
+                ExceptionTag.invoice_id.in_(effective_invoice_ids),
+                ExceptionTag.status == "ACTIVE",
+            )
+        ) or 0
+    else:
+        new_exc_count = 0
+    diff.new_exceptions_count = new_exc_count
+
+    # Prior published TALLY/XERO snapshot for this entity.
+    prior_snapshot = db.scalar(
+        select(Snapshot)
+        .where(
+            Snapshot.entity_id == snapshot.entity_id,
+            Snapshot.status == "PUBLISHED",
+            Snapshot.source_hint.in_(_INVOICE_SOURCE_HINTS),
+            Snapshot.as_of_date < snapshot.as_of_date,
+        )
+        .order_by(Snapshot.as_of_date.desc())
+        .limit(1)
+    )
+
+    if prior_snapshot is None:
+        return diff
+
+    diff.has_prior_snapshot = True
+    prior_as_of: date = prior_snapshot.as_of_date  # type: ignore[assignment]
+
+    # Total outstanding for prior snapshot.
+    total_prior_row = db.execute(
+        select(func.sum(InvoiceSnapshot.outstanding_amount)).where(
+            InvoiceSnapshot.snapshot_id == prior_snapshot.id,
+            InvoiceSnapshot.as_of_date == prior_as_of,
+        )
+    ).scalar()
+    diff.total_outstanding_prior = (
+        str(total_prior_row.quantize(Decimal("0.01"))) if total_prior_row is not None else "0.00"
+    )
+
+    # Bucket shifts: invoices that appear in both snapshots but moved bucket.
+    # Fetch (invoice_id, bucket) for prior snapshot.
+    prior_buckets_rows = db.execute(
+        select(InvoiceSnapshot.invoice_id, InvoiceSnapshot.bucket).where(
+            InvoiceSnapshot.snapshot_id == prior_snapshot.id,
+            InvoiceSnapshot.as_of_date == prior_as_of,
+        )
+    ).all()
+    prior_bucket_by_invoice: dict[uuid.UUID, str] = {
+        row.invoice_id: row.bucket for row in prior_buckets_rows
+    }
+
+    # Current snapshot buckets — only for invoices that were also in prior.
+    if effective_invoice_ids and prior_bucket_by_invoice:
+        current_buckets_rows = db.execute(
+            select(InvoiceSnapshot.invoice_id, InvoiceSnapshot.bucket).where(
+                InvoiceSnapshot.snapshot_id == snapshot.id,
+                InvoiceSnapshot.as_of_date == as_of_date,
+                InvoiceSnapshot.invoice_id.in_(prior_bucket_by_invoice.keys()),
+            )
+        ).all()
+        shifts: dict[str, int] = {}
+        for row in current_buckets_rows:
+            prior_b = prior_bucket_by_invoice.get(row.invoice_id)
+            if prior_b is not None and prior_b != row.bucket:
+                key = f"{prior_b}→{row.bucket}"
+                shifts[key] = shifts.get(key, 0) + 1
+        diff.bucket_shifts = shifts
+
+    return diff
 
 
 def _check_rbac_and_entity_scope(
@@ -212,6 +348,252 @@ def _resolve_credit_days(
 
 
 # ---------------------------------------------------------------------------
+# CREDIT_PERIOD publish (ADR-0005)
+# ---------------------------------------------------------------------------
+
+
+def _publish_credit_period_snapshot(  # noqa: PLR0915
+    db: Session,
+    snapshot: Snapshot,
+    body: PublishRequest,
+    current_user: User,
+    published_as: str,
+    now_utc: datetime,
+) -> PublishResponse:
+    """Publish a CREDIT_PERIOD snapshot: write versioned credit_period_config rows.
+
+    ADR-0005:
+      - Auto-create canonical + MANUAL alias for CP clients without one.
+      - valid_from = snapshot.as_of_date; valid_to = NULL (open).
+      - Idempotency: matching active config (same days + reason_note) → no-op.
+        Conflicting active config → supersede (set old.valid_to = as_of - 1 day,
+        insert new). No active config → insert.
+
+    Requires snapshot.as_of_date to be set; 422 if missing.
+    """
+    # Default valid_from to today if the snapshot has no as_of_date. CP
+    # snapshots uploaded before the upload-side as_of_date fix (2026-04-19)
+    # can have NULL here; rather than 422-ing, use today() so the existing
+    # staged snapshot is still publishable. ADR-0005 D2 says valid_from is
+    # the date the master is "considered effective" — today is a reasonable
+    # default when the analyst didn't supply one.
+    as_of: date = snapshot.as_of_date or datetime.now(tz=UTC).date()
+    if snapshot.as_of_date is None:
+        log.warning(
+            "publish_service.cp_as_of_date_defaulted_to_today",
+            snapshot_id=str(snapshot.id),
+            defaulted_to=as_of.isoformat(),
+        )
+        snapshot.as_of_date = as_of  # persist it so reconciliation + reads agree
+
+    parse_result: dict[str, Any] = snapshot.parse_result_json or {}
+    cp_rows_all: list[dict[str, Any]] = parse_result.get("credit_periods", [])
+    invoice_rows_all: list[dict[str, Any]] = parse_result.get("invoices", [])
+    warnings_all: list[dict[str, Any]] = parse_result.get("warnings", [])
+
+    # Recompute publish gate (CP: invoices_empty, only warnings + role matter).
+    overrides_by_row = _build_effective_overrides(list(snapshot.staging_overrides_json or []))
+    publish_gate = _compute_publish_gate(
+        source_hint=snapshot.source_hint,
+        invoice_rows_all=invoice_rows_all,
+        cp_rows_all=cp_rows_all,
+        resolutions_by_raw={},
+        overrides_by_row=overrides_by_row,
+        warnings_all=warnings_all,
+        warnings_acknowledged_json=list(snapshot.warnings_acknowledged_json or []),
+        current_user=current_user,
+        snapshot_entity_id=snapshot.entity_id,
+    )
+    if not publish_gate.ok:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "PUBLISH_GATE_BLOCKED",
+                "publish_gate": publish_gate.model_dump(),
+                "detail": "Publish gate checks failed. Resolve all issues before publishing.",
+            },
+        )
+
+    # Resolve IND + UAE entity_ids (CP rows carry entity_code, not entity_id).
+    entity_id_by_code: dict[str, uuid.UUID] = {}
+    for row in db.scalars(select(Entity)).all():
+        entity_id_by_code[row.code] = row.id
+    if "IND" not in entity_id_by_code or "UAE" not in entity_id_by_code:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "ENTITY_SEED_MISSING",
+                "detail": "IND and/or UAE entity rows are not present; re-seed and retry.",
+            },
+        )
+
+    configs_inserted = 0
+    configs_superseded = 0
+    configs_noop = 0
+    canonicals_created = 0
+    aliases_created = 0
+
+    for cp_row in cp_rows_all:
+        entity_code = cp_row.get("entity_code")
+        name = (cp_row.get("name") or "").strip()
+        days = cp_row.get("credit_days")
+        reason_note: str | None = cp_row.get("reason_note")
+        if not name or days is None or entity_code not in ("IND", "UAE"):
+            continue  # defensive — parser validates these, but guard anyway
+        entity_id = entity_id_by_code[entity_code]
+
+        # Resolve or create canonical (D1 — auto-create).
+        canonical = db.scalar(
+            select(PartyCanonical).where(
+                PartyCanonical.entity_id == entity_id,
+                PartyCanonical.name == name,
+            )
+        )
+        if canonical is None:
+            canonical = PartyCanonical(
+                entity_id=entity_id,
+                name=name,
+                notes="auto-created from credit-period publish",
+                created_by=current_user.id,
+            )
+            db.add(canonical)
+            db.flush()  # need canonical.id
+            canonicals_created += 1
+
+        # Ensure MANUAL alias exists.
+        existing_alias = db.scalar(
+            select(PartyAlias).where(
+                PartyAlias.alias_text == name,
+                PartyAlias.canonical_id == canonical.id,
+            )
+        )
+        if existing_alias is None:
+            db.add(
+                PartyAlias(
+                    canonical_id=canonical.id,
+                    alias_text=name,
+                    source="MANUAL",
+                    confidence=None,
+                    created_by=current_user.id,
+                )
+            )
+            aliases_created += 1
+
+        # Versioning (D2 + D3).
+        active_config = db.scalar(
+            select(CreditPeriodConfig).where(
+                CreditPeriodConfig.canonical_id == canonical.id,
+                CreditPeriodConfig.valid_to.is_(None),
+            )
+        )
+        if active_config is not None:
+            if active_config.days == days and active_config.reason_note == reason_note:
+                configs_noop += 1
+                continue
+            # Supersede: close the old row before inserting the new.
+            active_config.valid_to = as_of - timedelta(days=1)
+            db.add(
+                CreditPeriodConfig(
+                    canonical_id=canonical.id,
+                    days=days,
+                    reason_note=reason_note,
+                    valid_from=as_of,
+                    valid_to=None,
+                    updated_by=current_user.id,
+                )
+            )
+            configs_superseded += 1
+        else:
+            db.add(
+                CreditPeriodConfig(
+                    canonical_id=canonical.id,
+                    days=days,
+                    reason_note=reason_note,
+                    valid_from=as_of,
+                    valid_to=None,
+                    updated_by=current_user.id,
+                )
+            )
+            configs_inserted += 1
+
+    # email_outbox PUBLISH_NOTIF — CP flavor
+    as_of_str = as_of.isoformat()
+    outbox_row = EmailOutbox(
+        rule_type="PUBLISH_NOTIF",
+        snapshot_id=snapshot.id,
+        recipients_json=[],  # M6 drain populates
+        subject=f"[EMB AR] CP master snapshot #{snapshot.id} published (as_of={as_of_str})",
+        body_html=(
+            f"<p>Credit-period master snapshot <strong>{snapshot.id}</strong> published.</p>"
+            f"<ul>"
+            f"<li>As-of date: {as_of_str}</li>"
+            f"<li>Configs inserted: {configs_inserted}</li>"
+            f"<li>Configs superseded: {configs_superseded}</li>"
+            f"<li>Configs unchanged (no-op): {configs_noop}</li>"
+            f"<li>Canonicals auto-created: {canonicals_created}</li>"
+            f"<li>Aliases auto-created: {aliases_created}</li>"
+            f"</ul>"
+        ),
+        status="QUEUED",
+    )
+    db.add(outbox_row)
+
+    # Mark snapshot PUBLISHED.
+    snapshot.status = "PUBLISHED"
+    snapshot.published_at = now_utc
+    snapshot.published_by = current_user.id
+    snapshot.published_as = published_as
+
+    publish_result = PublishResult(
+        publish_notif_enqueued=True,
+        credit_period_configs_inserted=configs_inserted,
+        credit_period_configs_superseded=configs_superseded,
+        credit_period_configs_noop=configs_noop,
+        canonicals_auto_created=canonicals_created,
+        aliases_auto_created=aliases_created,
+    )
+    db.add(
+        AuditLog(
+            action="snapshot.publish",
+            entity_type="snapshots",
+            entity_id=snapshot.id,
+            actor_user_id=current_user.id,
+            before={"status": "STAGED"},
+            after={
+                "status": "PUBLISHED",
+                "published_as": published_as,
+                "published_by": str(current_user.id),
+                "override_reason": body.override_reason,
+                "source_hint": "CREDIT_PERIOD",
+                "result": publish_result.model_dump(),
+            },
+        )
+    )
+
+    db.commit()
+
+    log.info(
+        "publish_service.publish_credit_period_snapshot",
+        snapshot_id=str(snapshot.id),
+        as_of_date=as_of_str,
+        configs_inserted=configs_inserted,
+        configs_superseded=configs_superseded,
+        configs_noop=configs_noop,
+        canonicals_created=canonicals_created,
+        aliases_created=aliases_created,
+    )
+
+    return PublishResponse(
+        snapshot_id=snapshot.id,
+        status="PUBLISHED",
+        published_at=now_utc,
+        published_by=UserRef(id=current_user.id, email=current_user.email),
+        published_as=published_as,
+        result=publish_result,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -256,13 +638,25 @@ def publish_snapshot(  # noqa: PLR0912, PLR0915
     # If a prior PUBLISHED snapshot exists for this entity with an earlier
     # as_of_date AND its reconciliation_entry.status != MATCHED → 422.
     # This check runs before the expensive publish flow.
+    #
+    # Exempt CREDIT_PERIOD snapshots: the §13 #6 gate protects invoice-state
+    # continuity.  CP snapshots are reference data (master credit terms) and
+    # don't affect AR balances, so an unreconciled prior invoice snapshot
+    # shouldn't block a CP master update.
+    #
+    # The prior-snapshot lookup itself must also skip CP snapshots — a CP
+    # publish that landed between two invoice snapshots would otherwise
+    # shadow the real prior TALLY/XERO snapshot and always 422 (CP snapshots
+    # never have a ReconciliationEntry). Mirrors the source_hint filter on
+    # dashboard_service._resolve_snapshot.
     # -----------------------------------------------------------------------
-    if snapshot.as_of_date is not None:
+    if snapshot.as_of_date is not None and snapshot.source_hint != "CREDIT_PERIOD":
         prior_snapshot = db.scalar(
             select(Snapshot)
             .where(
                 Snapshot.entity_id == snapshot.entity_id,
                 Snapshot.status == "PUBLISHED",
+                Snapshot.source_hint.in_(("TALLY", "XERO")),
                 Snapshot.as_of_date < snapshot.as_of_date,
             )
             .order_by(Snapshot.as_of_date.desc())
@@ -281,7 +675,7 @@ def publish_snapshot(  # noqa: PLR0912, PLR0915
                     detail={
                         "code": "PRIOR_SNAPSHOT_UNRECONCILED",
                         "prior_snapshot_id": str(prior_snapshot.id),
-                        "prior_snapshot_as_of_date": prior_snapshot.as_of_date.isoformat(),
+                        "prior_snapshot_as_of_date": prior_snapshot.as_of_date.isoformat(),  # type: ignore[union-attr]
                         "prior_status": prior_status,
                         "detail": (
                             "The previous published snapshot must be reconciled (status=MATCHED) "
@@ -297,12 +691,16 @@ def publish_snapshot(  # noqa: PLR0912, PLR0915
     published_as = _check_rbac_and_entity_scope(current_user, snapshot)
 
     # -----------------------------------------------------------------------
-    # Step 4: Short-circuit CREDIT_PERIOD → 422 (Task 6 handles this)
+    # Step 4: Dispatch CREDIT_PERIOD to its own publish flow (ADR-0005)
     # -----------------------------------------------------------------------
     if snapshot.source_hint == "CREDIT_PERIOD":
-        raise HTTPException(
-            status_code=422,
-            detail=CreditPeriodPublishNotImplementedError().model_dump(),
+        return _publish_credit_period_snapshot(
+            db=db,
+            snapshot=snapshot,
+            body=body,
+            current_user=current_user,
+            published_as=published_as,
+            now_utc=now_utc,
         )
 
     # -----------------------------------------------------------------------
@@ -632,24 +1030,37 @@ def publish_snapshot(  # noqa: PLR0912, PLR0915
     # -----------------------------------------------------------------------
     entity_code = entity.code
     as_of_str = as_of_date.isoformat()
+
+    publish_diff = _compute_publish_diff(
+        snapshot=snapshot,
+        invoices_inserted=invoices_inserted,
+        invoices_settled=invoices_settled,
+        newly_settled_invoice_ids=newly_settled_invoice_ids,
+        material_change_count=exceptions_material_change_flagged,
+        effective_invoice_ids=effective_invoice_ids,
+        db=db,
+    )
+    notif_body_html = render_publish_notif_html(
+        payload={
+            "new_invoices_count": publish_diff.new_invoices_count,
+            "settled_invoices_count": publish_diff.settled_invoices_count,
+            "bucket_shifts": publish_diff.bucket_shifts,
+            "new_exceptions_count": publish_diff.new_exceptions_count,
+            "material_change_count": publish_diff.material_change_count,
+            "total_outstanding_now": publish_diff.total_outstanding_now,
+            "total_outstanding_prior": publish_diff.total_outstanding_prior,
+            "has_prior_snapshot": publish_diff.has_prior_snapshot,
+        },
+        snapshot_id=str(snapshot.id),
+        entity_code=entity_code,
+        as_of_str=as_of_str,
+    )
     outbox_row = EmailOutbox(
         rule_type="PUBLISH_NOTIF",
         snapshot_id=snapshot.id,
         recipients_json=[],  # M6 populates from email_rules at drain time
         subject=f"[EMB AR] Snapshot #{snapshot.id} published ({entity_code}, as_of={as_of_str})",
-        body_html=(
-            f"<p>Snapshot <strong>{snapshot.id}</strong> for entity "
-            f"<strong>{entity_code}</strong> was published.</p>"
-            f"<ul>"
-            f"<li>As-of date: {as_of_str}</li>"
-            f"<li>Invoices inserted: {invoices_inserted}</li>"
-            f"<li>Invoices updated: {invoices_updated}</li>"
-            f"<li>Invoices settled: {invoices_settled}</li>"
-            f"<li>Invoice snapshots written: {invoice_snapshots_written}</li>"
-            f"<li>Exceptions auto-resolved: {exceptions_auto_resolved}</li>"
-            f"<li>Material changes flagged: {exceptions_material_change_flagged}</li>"
-            f"</ul>"
-        ),
+        body_html=notif_body_html,
         status="QUEUED",
     )
     db.add(outbox_row)

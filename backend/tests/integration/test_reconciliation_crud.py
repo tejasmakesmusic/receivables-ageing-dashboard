@@ -6,7 +6,9 @@ Design spec (D19):
   MISMATCHED: abs(delta) > 100
   UNRECONCILED: no entry yet
 
-Only ADMIN can POST; all other roles (ANALYST, CFO) can GET.
+RBAC per ADR-0006 (D19 vs §9 resolution):
+  ANALYST read+write (entity-scoped), ADMIN read+write (any entity),
+  CFO read-only (403 on POST), PENDING 403 everywhere.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import select
 
@@ -44,7 +46,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -89,13 +91,13 @@ def _headers(client: TestClient) -> dict[str, str]:
 def _admin_id(db_session: Session) -> uuid.UUID:
     u = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert u is not None
-    return u.id
+    return cast(uuid.UUID, u.id)
 
 
 def _entity_id(db_session: Session, code: str = "IND") -> uuid.UUID:
     e = db_session.scalar(select(Entity).where(Entity.code == code))
     assert e is not None
-    return e.id
+    return cast(uuid.UUID, e.id)
 
 
 def _build_published_snapshot(
@@ -152,7 +154,7 @@ def _build_published_snapshot(
     db_session.add(inv_snap)
     db_session.flush()
 
-    return snapshot.id
+    return cast(uuid.UUID, snapshot.id)
 
 
 def _add_active_exception(
@@ -375,19 +377,49 @@ def test_post_reconciliation_upsert_updates_existing(
     assert count == 1
 
 
-def test_post_reconciliation_admin_only_403_for_analyst(
+def test_post_reconciliation_allowed_for_analyst_in_scope(
     client: TestClient, db_session: Session
 ) -> None:
+    """ADR-0006: ANALYST writes reconciliation for their scoped entity (200)."""
     _login_as_analyst(client, db_session, "analyst@emb.global")
-    snap_id = _build_published_snapshot(db_session, snap_ref="PR06")
+    snap_id = _build_published_snapshot(db_session, snap_ref="PR06", entity_code="IND")
 
     resp = _post_reconciliation(client, snap_id, tally_ar=10000.0)
+    assert resp.status_code == 200, resp.json()
+
+
+def test_post_reconciliation_allowed_for_analyst_with_no_scope(
+    client: TestClient, db_session: Session
+) -> None:
+    """ANALYST with NULL entity_id_scope (explicit all-entity scope) writes any entity."""
+    _login_as_analyst(client, db_session, "analyst@emb.global")
+    snap_id = _build_published_snapshot(db_session, snap_ref="PR06B", entity_code="UAE")
+
+    resp = _post_reconciliation(client, snap_id, tally_ar=10000.0)
+    assert resp.status_code == 200, resp.json()
+
+
+def test_post_reconciliation_403_for_analyst_out_of_scope(
+    client: TestClient, db_session: Session
+) -> None:
+    """ADR-0006: ANALYST scoped to IND attempting to reconcile a UAE snapshot → 403."""
+    _login_as_analyst(client, db_session, "analyst@emb.global")
+    # Scope the analyst to IND
+    user = db_session.scalar(select(User).where(User.email == "analyst@emb.global"))
+    assert user is not None
+    user.entity_id_scope = _entity_id(db_session, "IND")
+    db_session.flush()
+
+    uae_snap_id = _build_published_snapshot(db_session, snap_ref="PR06C", entity_code="UAE")
+
+    resp = _post_reconciliation(client, uae_snap_id, tally_ar=10000.0)
     assert resp.status_code == 403
 
 
-def test_post_reconciliation_admin_only_403_for_cfo(
+def test_post_reconciliation_403_for_cfo(
     client: TestClient, db_session: Session
 ) -> None:
+    """ADR-0006: CFO is read-only — POST returns 403."""
     _login_as_cfo(client, db_session, "cfo@emb.global")
     snap_id = _build_published_snapshot(db_session, snap_ref="PR07")
 

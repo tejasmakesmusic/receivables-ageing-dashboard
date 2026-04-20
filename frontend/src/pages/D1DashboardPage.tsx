@@ -8,12 +8,35 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import type { DashboardResponse, EntityOrAll } from "@/types";
+import type { DashboardResponse, DashboardTrendRow, EntityOrAll } from "@/types";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatISTDate, formatPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// FX tooltip helper (spec §7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the tooltip copy used on every converted INR figure in the
+ * consolidated (entity=ALL) view.  Returns undefined when the rate is absent
+ * so callers can omit the title attribute entirely.
+ */
+function fxTooltip(kpis: import("@/types").DashboardKPIs): string | undefined {
+  if (
+    !kpis.fx_rate_used ||
+    !kpis.fx_rate_effective_from ||
+    !kpis.fx_rate_from_ccy ||
+    !kpis.fx_rate_to_ccy
+  ) {
+    return undefined;
+  }
+  const rate = parseFloat(kpis.fx_rate_used).toFixed(4);
+  return `Converted at ${kpis.fx_rate_from_ccy}→${kpis.fx_rate_to_ccy} ${rate} effective from ${kpis.fx_rate_effective_from}`;
+}
 
 // ---------------------------------------------------------------------------
 // Bucket config
@@ -57,15 +80,164 @@ function bucketBadge(bucket: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Trend sparkline (inline SVG, no external chart lib)
+// ---------------------------------------------------------------------------
+
+function TrendSparkline({ data }: { data: DashboardTrendRow[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="text-xs text-slate-400 py-8 text-center">No trend data yet</p>
+    );
+  }
+
+  const W = 300;
+  const H = 100;
+  const PAD_L = 4;
+  const PAD_R = 4;
+  const PAD_T = 8;
+  const PAD_B = 18; // room for x-axis labels
+
+  const totals = data.map((d) => parseFloat(d.total_outstanding));
+  const ninetyPlus = data.map((d) => parseFloat(d.ninety_plus));
+  const allValues = [...totals, ...ninetyPlus];
+  const maxVal = Math.max(...allValues, 1);
+  const minVal = 0;
+
+  const xStep = data.length > 1 ? (W - PAD_L - PAD_R) / (data.length - 1) : 0;
+  const yRange = H - PAD_T - PAD_B;
+
+  function toPoint(value: number, idx: number): string {
+    const x = PAD_L + idx * xStep;
+    const y = PAD_T + yRange - ((value - minVal) / (maxVal - minVal)) * yRange;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }
+
+  const totalPoints = totals.map((v, i) => toPoint(v, i)).join(" ");
+  const ninetyPoints = ninetyPlus.map((v, i) => toPoint(v, i)).join(" ");
+
+  // x-axis: show first, middle (if ≥4 pts), and last week labels
+  const labelIndices: number[] = [0];
+  if (data.length >= 4) labelIndices.push(Math.floor(data.length / 2));
+  if (data.length > 1) labelIndices.push(data.length - 1);
+  // deduplicate
+  const uniqueIndices = [...new Set(labelIndices)];
+
+  function shortDate(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  }
+
+  return (
+    <div data-testid="trend-sparkline">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        style={{ height: "100px" }}
+        aria-label="8-week AR trend sparkline"
+      >
+        {/* Light grid lines */}
+        {[0.25, 0.5, 0.75].map((frac) => {
+          const y = PAD_T + yRange * (1 - frac);
+          return (
+            <line
+              key={frac}
+              x1={PAD_L}
+              y1={y.toFixed(1)}
+              x2={W - PAD_R}
+              y2={y.toFixed(1)}
+              stroke="#f3f4f6"
+              strokeWidth="1"
+            />
+          );
+        })}
+
+        {/* Total AR polyline — indigo/slate-700 per task spec */}
+        {data.length > 1 && (
+          <polyline
+            points={totalPoints}
+            fill="none"
+            stroke="#334155"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        )}
+        {data.length === 1 && (
+          <circle
+            cx={PAD_L}
+            cy={(PAD_T + yRange / 2).toFixed(1)}
+            r="3"
+            fill="#334155"
+          />
+        )}
+
+        {/* 90+ overlay polyline — red-500 dashed */}
+        {data.length > 1 && (
+          <polyline
+            points={ninetyPoints}
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="1.5"
+            strokeDasharray="4,2"
+            strokeLinejoin="round"
+          />
+        )}
+        {data.length === 1 && (
+          <circle
+            cx={PAD_L}
+            cy={(PAD_T + yRange / 2).toFixed(1)}
+            r="2"
+            fill="#ef4444"
+          />
+        )}
+
+        {/* X-axis labels */}
+        {uniqueIndices.map((idx) => {
+          const x = PAD_L + idx * xStep;
+          return (
+            <text
+              key={idx}
+              x={x.toFixed(1)}
+              y={H - 2}
+              fontSize="7"
+              fill="#9ca3af"
+              textAnchor={idx === 0 ? "start" : idx === data.length - 1 ? "end" : "middle"}
+            >
+              {shortDate(data[idx].week_start)}
+            </text>
+          );
+        })}
+      </svg>
+
+      {/* Legend */}
+      <div className="flex gap-4 text-xs mt-1">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-4 h-0.5 bg-slate-700 rounded" />
+          <span className="text-slate-500">Total AR</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span
+            className="inline-block w-4 h-0.5 bg-red-500 rounded"
+            style={{ backgroundImage: "repeating-linear-gradient(to right, #ef4444 0 4px, transparent 4px 6px)" }}
+          />
+          <span className="text-slate-500">90+ bucket</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Ageing bar chart
 // ---------------------------------------------------------------------------
 
 function AgeingBar({
   buckets,
   currency,
+  fxTooltipText,
 }: {
   buckets: Record<string, string>;
   currency: "INR" | "AED";
+  fxTooltipText?: string;
 }) {
   const ORDERED = ["NOT_DUE", "0_30", "31_60", "61_90", "90_PLUS"];
   const values = ORDERED.map((k) => parseFloat(buckets[k] ?? "0"));
@@ -101,7 +273,11 @@ function AgeingBar({
               <div className={cn("h-2.5 w-2.5 rounded-sm", BUCKET_COLORS[k])} />
               <span className="text-xs text-slate-500">{BUCKET_LABELS[k]}</span>
             </div>
-            <span className={cn("text-xs font-semibold", BUCKET_TEXT[k])}>
+            <span
+              className={cn("text-xs font-semibold", BUCKET_TEXT[k])}
+              title={fxTooltipText}
+              data-testid={fxTooltipText ? `ageing-bucket-${k}` : undefined}
+            >
               {formatCurrency(values[i], currency)}
             </span>
           </div>
@@ -117,31 +293,38 @@ function AgeingBar({
 
 function KpiStrip({ data }: { data: DashboardResponse }) {
   const { kpis, currency_display } = data;
+  const tooltip = fxTooltip(kpis);
+
   const tiles = [
     {
       label: "Total Outstanding",
       value: formatCurrency(kpis.total_outstanding, currency_display),
       sub: null,
+      tooltip,
     },
     {
       label: "% Overdue",
       value: formatPct(kpis.pct_overdue),
       sub: null,
+      tooltip: undefined,
     },
     {
       label: "Parties 90+ Days",
       value: kpis.parties_with_90plus_count.toString(),
       sub: null,
+      tooltip: undefined,
     },
     {
       label: "Last Snapshot",
       value: formatISTDate(kpis.last_snapshot_date),
       sub: data.snapshot_status,
+      tooltip: undefined,
     },
     {
       label: kpis.fx_rate_used ? "FX Rate (AED→INR)" : "Currency",
       value: kpis.fx_rate_used ? `₹${parseFloat(kpis.fx_rate_used).toFixed(4)}` : currency_display,
       sub: kpis.fx_rate_used ? "pinned by invoice date" : null,
+      tooltip: undefined,
     },
   ];
 
@@ -150,10 +333,71 @@ function KpiStrip({ data }: { data: DashboardResponse }) {
       {tiles.map((t) => (
         <div key={t.label} className="rounded-lg border border-gray-200 bg-white px-4 py-3">
           <p className="text-xs text-slate-500">{t.label}</p>
-          <p className="mt-0.5 text-xl font-bold text-slate-800 leading-tight">{t.value}</p>
+          <p
+            className="mt-0.5 text-xl font-bold text-slate-800 leading-tight"
+            title={t.tooltip}
+            data-testid={t.label === "Total Outstanding" ? "kpi-total-outstanding" : undefined}
+          >
+            {t.value}
+          </p>
           {t.sub && <p className="mt-0.5 text-xs text-slate-400">{t.sub}</p>}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tally / Our overdue days cell (spec §13 #4)
+// ---------------------------------------------------------------------------
+
+function TallyOverdueCell({ party }: { party: import("@/types").TopPartyRow }) {
+  // overdue_bucket encodes our worst bucket; we need a single "our" figure —
+  // but the backend only exposes bucket label at top-party level, not an exact
+  // day count.  The tooltip is trust-critical: show Tally's raw figure when
+  // present; omit the Tally half when null (Xero/no raw data).
+  if (party.tally_overdue_days_max === null || party.tally_overdue_days_max === undefined) {
+    return <span className="text-slate-300">—</span>;
+  }
+  return (
+    <span
+      className="cursor-help"
+      title="Our calc uses EMB credit period master. Tally's figure may differ due to its own due_on logic (spec §13 #4)."
+      data-testid="tally-overdue-cell"
+    >
+      <span className="text-slate-500">Tally: {party.tally_overdue_days_max}</span>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Default credit period banner
+// ---------------------------------------------------------------------------
+
+function DefaultCreditPeriodBanner({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-5 py-3">
+      <div className="flex items-center gap-3">
+        <span className="text-xl text-amber-500" aria-hidden="true">ℹ</span>
+        <div>
+          <p className="text-sm font-medium text-amber-800">
+            {count} {count === 1 ? "party" : "parties"} using entity default credit period
+          </p>
+          <p className="mt-0.5 text-xs text-amber-600">
+            These parties have no party-specific credit config. Review and add specific terms where applicable.
+          </p>
+        </div>
+      </div>
+      <Link to="/credit-period" className="flex-shrink-0">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
+        >
+          Review credit config →
+        </Button>
+      </Link>
     </div>
   );
 }
@@ -256,8 +500,26 @@ export function D1DashboardPage() {
               <CardTitle>Ageing Breakdown</CardTitle>
               <span className="text-xs text-slate-400">as of {formatISTDate(data.as_of_date)}</span>
             </CardHeader>
-            <AgeingBar buckets={data.ageing_buckets} currency={data.currency_display} />
+            <AgeingBar
+              buckets={data.ageing_buckets}
+              currency={data.currency_display}
+              fxTooltipText={fxTooltip(data.kpis)}
+            />
           </Card>
+
+          {/* Default credit period call-out */}
+          <DefaultCreditPeriodBanner count={data.parties_on_default_credit_period_count} />
+
+          {/* Trend sparkline */}
+          {data.trend_weekly !== undefined && (
+            <Card>
+              <CardHeader>
+                <CardTitle>8-week AR Trend</CardTitle>
+                <span className="text-xs text-slate-400">{entity} · total vs 90+</span>
+              </CardHeader>
+              <TrendSparkline data={data.trend_weekly} />
+            </Card>
+          )}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {/* Top 10 parties */}
@@ -265,11 +527,6 @@ export function D1DashboardPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Top 10 Parties by Outstanding</CardTitle>
-                  {data.parties_on_default_credit_period_count > 0 && (
-                    <span className="text-xs text-orange-600">
-                      {data.parties_on_default_credit_period_count} on default credit period
-                    </span>
-                  )}
                 </CardHeader>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -279,6 +536,16 @@ export function D1DashboardPage() {
                         <th className="py-1 text-right font-medium">Outstanding</th>
                         <th className="py-1 text-left font-medium">Worst bucket</th>
                         <th className="py-1 text-right font-medium">Exceptions</th>
+                        <th className="py-1 text-left font-medium">
+                          Overdue days
+                          <span
+                            className="ml-1 cursor-help text-slate-400"
+                            title="Tally / Our — Tally's own overdue_days vs EMB's computed figure (spec §13 #4)"
+                          >
+                            ℹ
+                          </span>
+                        </th>
+                        <th className="py-1 text-left font-medium">Last follow-up</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -293,7 +560,9 @@ export function D1DashboardPage() {
                             </Link>
                           </td>
                           <td className="py-2 text-right font-mono text-xs">
-                            {formatCurrency(p.outstanding, data.currency_display)}
+                            <span title={fxTooltip(data.kpis)} data-testid={fxTooltip(data.kpis) ? `party-outstanding-${p.canonical_id}` : undefined}>
+                              {formatCurrency(p.outstanding, data.currency_display)}
+                            </span>
                           </td>
                           <td className="py-2">{bucketBadge(p.overdue_bucket)}</td>
                           <td className="py-2 text-right">
@@ -308,11 +577,24 @@ export function D1DashboardPage() {
                               <span className="text-xs text-slate-300">—</span>
                             )}
                           </td>
+                          <td className="py-2 text-xs text-slate-500">
+                            <TallyOverdueCell party={p} />
+                          </td>
+                          <td className="py-2 text-xs text-slate-500" data-testid={`last-fu-${p.canonical_id}`}>
+                            {p.last_follow_up_date ? (
+                              <span className="flex items-center gap-1">
+                                {formatISTDate(p.last_follow_up_date)}
+                                <Badge variant="muted">{p.last_follow_up_channel}</Badge>
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                       {data.top_parties.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="py-4 text-center text-xs text-slate-400">
+                          <td colSpan={6} className="py-4 text-center text-xs text-slate-400">
                             No data
                           </td>
                         </tr>

@@ -27,7 +27,7 @@ import io
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import openpyxl
 import pytest
@@ -110,7 +110,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _csrf_headers(client: TestClient) -> dict[str, str]:
@@ -200,7 +200,7 @@ def _create_canonical_with_alias(
     )
     db_session.add(alias)
     db_session.flush()
-    return canonical.id
+    return cast(uuid.UUID, canonical.id)
 
 
 def _add_exception_tag(

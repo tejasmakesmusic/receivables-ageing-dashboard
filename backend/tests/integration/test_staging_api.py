@@ -17,7 +17,7 @@ import io
 import json
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import openpyxl
 import pytest
@@ -44,7 +44,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -69,7 +69,7 @@ def _login_as_analyst(
         user.entity_id_scope = None
     user.is_active = True
     db_session.flush()
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _login_as_cfo(client: TestClient, db_session: Session, email: str) -> None:
@@ -173,7 +173,7 @@ def _make_xero_xlsx(
     ws.append([None] * 23)
     ws.append(_XERO_HEADER_ROW)
     ws.append([None] * 23)
-    party_header = [None] * 23
+    party_header: list[Any] = [None] * 23
     party_header[0] = party
     ws.append(party_header)
     inv_row: list[Any] = [None] * 23
@@ -483,7 +483,7 @@ class TestStagingGetFilters:
         file_bytes = _make_tally_xlsx(rows)
         r = _upload(client, file_bytes, "IND", "TALLY", as_of_date)
         assert r.status_code == 201
-        return r.json()["snapshot_id"]
+        return str(r.json()["snapshot_id"])
 
     def test_filter_ok_returns_only_ok_rows(self, client: TestClient, db_session: Session) -> None:
         snap_id = self._upload_tally_with_data(
@@ -582,7 +582,7 @@ class TestStagingGetRbac:
         )
         r = _upload(client, file_bytes, "IND", "TALLY", "2026-01-31")
         assert r.status_code == 201
-        return r.json()["snapshot_id"]
+        return str(r.json()["snapshot_id"])
 
     def test_cfo_gets_403(self, client: TestClient, db_session: Session) -> None:
         snap_id = self._upload_tally(client)
@@ -1054,7 +1054,7 @@ class TestWarningsAck:
         ws.append(_XERO_HEADER_ROW)
         ws.append([None] * 23)
         # Party header
-        ph = [None] * 23
+        ph: list[Any] = [None] * 23
         ph[0] = "PartyWithWarning"
         ws.append(ph)
         # Invoice row — total = 500
@@ -1073,7 +1073,7 @@ class TestWarningsAck:
         wb.save(buf)
         r = _upload(client, buf.getvalue(), "UAE", "XERO")
         assert r.status_code == 201
-        return r.json()["snapshot_id"]
+        return str(r.json()["snapshot_id"])
 
     def test_ack_warning_code_removes_from_unacknowledged(
         self, client: TestClient, db_session: Session

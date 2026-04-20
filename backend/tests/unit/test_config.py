@@ -21,4 +21,4 @@ def test_auth_provider_accepts_google() -> None:
 
 def test_auth_provider_rejects_unknown() -> None:
     with pytest.raises(ValueError):
-        Settings(auth_provider="facebook")  # type: ignore[arg-type]
+        Settings(auth_provider="facebook")

@@ -42,6 +42,8 @@ __all__ = [
     # Warnings ack
     "WarningsAckRequest",
     "WarningsAckResponse",
+    "BulkCreateCanonicalsRequest",
+    "BulkCreateCanonicalsResponse",
 ]
 
 
@@ -250,6 +252,44 @@ class WarningsAckResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     acknowledged: list[str]
+    publish_gate: PublishGate
+
+
+# ---------------------------------------------------------------------------
+# POST /snapshots/{id}/staging/bulk-create-canonicals
+# ---------------------------------------------------------------------------
+
+
+class BulkCreateCanonicalsRequest(BaseModel):
+    """Request body for the bulk-create-canonicals endpoint.
+
+    include_fuzzy (default False): when True, also create new canonicals for
+    FUZZY_HIGH and FUZZY_LOW rows — rejecting the resolver's suggestion in
+    favor of a fresh canonical keyed on the raw name.  Use when the analyst
+    has reviewed the fuzzy suggestions and concluded that none of them fit.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    include_fuzzy: bool = False
+
+
+class BulkCreateCanonicalsResponse(BaseModel):
+    """Summary of a bulk-create-canonicals operation.
+
+    `distinct_unmapped_names` counts the distinct raw names that were
+    processed — "unmapped" is shorthand for "rows that didn't have an EXACT
+    canonical yet", which expands to include fuzzy rows when
+    `include_fuzzy=True` was sent on the request.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    distinct_unmapped_names: int
+    created_canonicals: int
+    created_aliases: int
+    skipped_existing_canonical: int
+    skipped_existing_alias: int
     publish_gate: PublishGate
 
 

@@ -7,7 +7,7 @@ ADMIN only for writes. All non-PENDING roles for reads.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import select
 
@@ -30,7 +30,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -189,7 +189,7 @@ def test_post_exception_bucket_writes_audit_log(
 def _get_bucket_id(db_session: Session, code: str) -> uuid.UUID:
     bt = db_session.scalar(select(ExceptionBucketType).where(ExceptionBucketType.code == code))
     assert bt is not None
-    return bt.id
+    return cast(uuid.UUID, bt.id)
 
 
 def test_patch_exception_bucket_toggle_inactive(

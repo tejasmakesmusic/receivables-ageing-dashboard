@@ -47,6 +47,7 @@ from app.db.models.snapshot import Snapshot
 from app.schemas.staging import (
     AnalystOverridesCreditPeriod,
     AnalystOverridesInvoice,
+    BulkCreateCanonicalsResponse,
     PaginationMeta,
     PublishGate,
     SnapshotNotStagedError,
@@ -935,5 +936,208 @@ def ack_warnings(
 
     return WarningsAckResponse(
         acknowledged=codes,
+        publish_gate=publish_gate,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public: POST /snapshots/{id}/staging/bulk-create-canonicals
+# ---------------------------------------------------------------------------
+
+
+def bulk_create_canonicals_for_unmapped(
+    db: Session,
+    snapshot_id: uuid.UUID,
+    current_user: User,
+    include_fuzzy: bool = False,
+) -> BulkCreateCanonicalsResponse:
+    """Create one canonical + MANUAL alias per distinct raw party name.
+
+    Default scope (`include_fuzzy=False`): rows where alias-resolver state ==
+    UNMAPPED (no existing alias AND no fuzzy candidate).  Fuzzy rows are
+    skipped so suggested matches aren't silently bypassed.
+
+    `include_fuzzy=True`: also processes FUZZY_HIGH and FUZZY_LOW rows — the
+    analyst has reviewed the suggestions and decided none of them fit, so
+    create a new canonical from the raw name for each.
+
+    Idempotent:
+      - If a canonical with the same (entity_id, name) already exists, reuse
+        it and count as skipped_existing_canonical.
+      - If the alias already exists on that canonical, skip and count as
+        skipped_existing_alias.
+
+    Also appends one override entry per distinct name (action=resolve_alias,
+    payload.canonical_id=<created_or_existing>) using the first row_index
+    where that raw name appears.  Emits a single bulk audit log entry.
+
+    422:
+      - CREDIT_PERIOD snapshot (no party aliases concept).
+    409: not STAGED. 403: wrong role or entity scope.
+    """
+    snapshot = db.scalar(
+        select(Snapshot).where(Snapshot.id == snapshot_id).with_for_update()
+    )
+    snapshot = _require_staged(snapshot, snapshot_id)
+    _check_entity_scope(current_user, snapshot, db)
+
+    if snapshot.source_hint == "CREDIT_PERIOD":
+        raise HTTPException(
+            status_code=422,
+            detail="Bulk create canonicals is not valid on CREDIT_PERIOD snapshots.",
+        )
+
+    parse_result: dict[str, Any] = snapshot.parse_result_json or {}
+    invoice_rows_all: list[dict[str, Any]] = parse_result.get("invoices", [])
+    warnings_all: list[dict[str, Any]] = parse_result.get("warnings", [])
+    cp_rows_all: list[dict[str, Any]] = parse_result.get("credit_periods", [])
+
+    raw_names = [inv.get("party_name_raw", "") for inv in invoice_rows_all]
+    resolutions = resolve_aliases_batch(raw_names, snapshot.entity_id, db)
+    resolutions_by_raw = {
+        name: res for name, res in zip(raw_names, resolutions, strict=False)
+    }
+
+    # Group distinct non-EXACT raw names → first row_index.
+    # Default: UNMAPPED only. include_fuzzy: also FUZZY_HIGH + FUZZY_LOW.
+    eligible_states = {"UNMAPPED"}
+    if include_fuzzy:
+        eligible_states |= {"FUZZY_HIGH", "FUZZY_LOW"}
+
+    first_row_by_name: dict[str, int] = {}
+    for inv in invoice_rows_all:
+        if inv.get("status") != "OK":
+            continue
+        raw = inv.get("party_name_raw", "")
+        if not raw:
+            continue
+        res = resolutions_by_raw.get(raw)
+        if res is None or res.resolution_state not in eligible_states:
+            continue
+        if raw not in first_row_by_name:
+            first_row_by_name[raw] = inv.get("row_index", -1)
+
+    distinct_count = len(first_row_by_name)
+    created_canonicals = 0
+    created_aliases = 0
+    skipped_existing_canonical = 0
+    skipped_existing_alias = 0
+
+    for raw_name, row_index in first_row_by_name.items():
+        canonical_name = raw_name.strip()
+        alias_text = raw_name.strip()
+        if not canonical_name:
+            continue
+
+        existing_canonical = db.scalar(
+            select(PartyCanonical).where(
+                PartyCanonical.entity_id == snapshot.entity_id,
+                PartyCanonical.name == canonical_name,
+            )
+        )
+        canonical_created = existing_canonical is None
+        if existing_canonical is not None:
+            canonical = existing_canonical
+            skipped_existing_canonical += 1
+        else:
+            canonical = PartyCanonical(
+                entity_id=snapshot.entity_id,
+                name=canonical_name,
+                notes="bulk auto-created from staging",
+                created_by=current_user.id,
+            )
+            db.add(canonical)
+            db.flush()  # obtain canonical.id
+            created_canonicals += 1
+
+        existing_alias = db.scalar(
+            select(PartyAlias).where(
+                PartyAlias.alias_text == alias_text,
+                PartyAlias.canonical_id == canonical.id,
+            )
+        )
+        alias_created = existing_alias is None
+        if existing_alias is not None:
+            skipped_existing_alias += 1
+        else:
+            alias = PartyAlias(
+                canonical_id=canonical.id,
+                alias_text=alias_text,
+                source="MANUAL",
+                confidence=None,
+                created_by=current_user.id,
+            )
+            db.add(alias)
+            created_aliases += 1
+
+        # Emit per-row override + audit, matching the convention used by the
+        # single-row create_canonical action.
+        _append_override(
+            db,
+            snapshot,
+            row_index,
+            "resolve_alias",
+            {
+                "canonical_id": str(canonical.id),
+                "alias_created": alias_created,
+                "canonical_created": canonical_created,
+            },
+            current_user.id,
+        )
+
+    bulk_audit = AuditLog(
+        action="staging.bulk_create_canonicals",
+        entity_type="snapshots",
+        entity_id=snapshot.id,
+        actor_user_id=current_user.id,
+        before={},
+        after={
+            "include_fuzzy": include_fuzzy,
+            "distinct_unmapped_names": distinct_count,
+            "created_canonicals": created_canonicals,
+            "created_aliases": created_aliases,
+            "skipped_existing_canonical": skipped_existing_canonical,
+            "skipped_existing_alias": skipped_existing_alias,
+        },
+    )
+    db.add(bulk_audit)
+    db.commit()
+    db.refresh(snapshot)
+
+    # Recompute publish gate against the new alias master.
+    new_resolutions = resolve_aliases_batch(raw_names, snapshot.entity_id, db)
+    new_resolutions_by_raw = {
+        name: res for name, res in zip(raw_names, new_resolutions, strict=False)
+    }
+    overrides_by_row = _build_effective_overrides(list(snapshot.staging_overrides_json or []))
+    publish_gate = _compute_publish_gate(
+        source_hint=snapshot.source_hint,
+        invoice_rows_all=invoice_rows_all,
+        cp_rows_all=cp_rows_all,
+        resolutions_by_raw=new_resolutions_by_raw,
+        overrides_by_row=overrides_by_row,
+        warnings_all=warnings_all,
+        warnings_acknowledged_json=list(snapshot.warnings_acknowledged_json or []),
+        current_user=current_user,
+        snapshot_entity_id=snapshot.entity_id,
+    )
+
+    log.info(
+        "staging_service.bulk_create_canonicals",
+        snapshot_id=str(snapshot_id),
+        include_fuzzy=include_fuzzy,
+        distinct_unmapped_names=distinct_count,
+        created_canonicals=created_canonicals,
+        created_aliases=created_aliases,
+        skipped_existing_canonical=skipped_existing_canonical,
+        skipped_existing_alias=skipped_existing_alias,
+    )
+
+    return BulkCreateCanonicalsResponse(
+        distinct_unmapped_names=distinct_count,
+        created_canonicals=created_canonicals,
+        created_aliases=created_aliases,
+        skipped_existing_canonical=skipped_existing_canonical,
+        skipped_existing_alias=skipped_existing_alias,
         publish_gate=publish_gate,
     )

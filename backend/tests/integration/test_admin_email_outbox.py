@@ -6,7 +6,7 @@ ADMIN only. mark-sent: 409 if already SENT.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -29,7 +29,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -56,7 +56,7 @@ def _headers(client: TestClient) -> dict[str, str]:
 def _admin_id(db_session: Session) -> uuid.UUID:
     u = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert u is not None
-    return u.id
+    return cast(uuid.UUID, u.id)
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ def _seed_outbox(
     )
     db_session.add(entry)
     db_session.flush()
-    return entry.id
+    return cast(uuid.UUID, entry.id)
 
 
 # ---------------------------------------------------------------------------

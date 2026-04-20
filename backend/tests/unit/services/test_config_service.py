@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -221,7 +222,7 @@ def test_patch_credit_period_closed_row_raises_409() -> None:
     with pytest.raises(HTTPException) as exc:
         config_service.patch_credit_period(db=db, config_id=cfg.id, body=body, current_user=admin)
     assert exc.value.status_code == 409
-    assert exc.value.detail["code"] == "CREDIT_PERIOD_ROW_CLOSED"
+    assert cast(dict[str, Any], exc.value.detail)["code"] == "CREDIT_PERIOD_ROW_CLOSED"
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.entity import Entity
 from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.exception_tag import ExceptionTag
+from app.db.models.follow_up import FollowUp
 from app.db.models.invoice import Invoice
 from app.db.models.party import PartyCanonical
 from app.db.models.user import User
@@ -241,6 +242,40 @@ def update_exception(
     )
 
 
+def _last_follow_up_for_canonical(
+    canonical_id: uuid.UUID,
+    invoice_id: uuid.UUID | None,
+    db: Session,
+) -> tuple[None, None] | tuple[object, str]:
+    """Return (date, channel) of the most-recent follow-up for this exception row.
+
+    Prefer a follow-up logged against the specific invoice (invoice_id scoped);
+    fall back to any follow-up logged at the canonical level.
+    """
+    # Invoice-scoped first
+    if invoice_id is not None:
+        row = db.execute(
+            select(FollowUp.date, FollowUp.channel)
+            .where(FollowUp.invoice_id == invoice_id)
+            .order_by(FollowUp.date.desc())
+            .limit(1)
+        ).first()
+        if row is not None:
+            return row.date, row.channel
+
+    # Canonical-scoped fallback
+    row = db.execute(
+        select(FollowUp.date, FollowUp.channel)
+        .where(FollowUp.canonical_id == canonical_id)
+        .order_by(FollowUp.date.desc())
+        .limit(1)
+    ).first()
+    if row is not None:
+        return row.date, row.channel
+
+    return None, None
+
+
 def list_exceptions(
     db: Session,
     entity_code: str | None,
@@ -302,25 +337,33 @@ def list_exceptions(
         .limit(page_size)
     ).all()
 
-    items = [
-        ExceptionListRow(
-            id=r.id,
-            invoice_id=r.invoice_id,
-            invoice_ref=r.invoice_ref,
+    items = []
+    for r in rows:
+        fu_date, fu_channel = _last_follow_up_for_canonical(
             canonical_id=r.canonical_id,
-            canonical_name=r.canonical_name,
-            entity_code=r.entity_code,
-            bucket_type_code=r.bucket_code,
-            bucket_type_name=r.bucket_name,
-            reason=r.reason,
-            status=r.status,
-            tagged_at=r.tagged_at,
-            tagged_by_email=r.tagged_by_email,
-            expected_resolution_date=r.expected_resolution_date,
-            resolved_at=r.resolved_at,
+            invoice_id=r.invoice_id,
+            db=db,
         )
-        for r in rows
-    ]
+        items.append(
+            ExceptionListRow(
+                id=r.id,
+                invoice_id=r.invoice_id,
+                invoice_ref=r.invoice_ref,
+                canonical_id=r.canonical_id,
+                canonical_name=r.canonical_name,
+                entity_code=r.entity_code,
+                bucket_type_code=r.bucket_code,
+                bucket_type_name=r.bucket_name,
+                reason=r.reason,
+                status=r.status,
+                tagged_at=r.tagged_at,
+                tagged_by_email=r.tagged_by_email,
+                expected_resolution_date=r.expected_resolution_date,
+                resolved_at=r.resolved_at,
+                last_follow_up_date=fu_date,
+                last_follow_up_channel=fu_channel,
+            )
+        )
 
     return ExceptionListResponse(
         items=items,

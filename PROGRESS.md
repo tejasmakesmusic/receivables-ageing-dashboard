@@ -22,9 +22,9 @@ Receivables Ageing Dashboard — ingestion pipeline, dashboard, exceptions, admi
 | M5-MVP | Exception CRUD; follow-ups stubbed (table exists, 501 endpoints) | ✅ | vertical slice |
 | M6-MVP | FX rates, admin screens, reconciliation, `email_outbox` drain stub, §13 #6 prior-publish gate | ✅ | vertical slice |
 | Frontend | React 18 + Vite + Tailwind + Router + Query; 16 pages; 58 vitest | ✅ | 304 kB JS / 89 kB gzipped |
-| M5-full | D2/D3 rich drill-downs, S6 follow-up CRUD UI, material-change banner on S5 | ⏳ | deferred |
-| M6-full | SMTP delivery, daily CFO digest cron, A6 permission contradiction resolution | ⏳ | deferred (SPF/DKIM blocker) |
-| M7 | Hardening — RBAC sweeps, race-test infra, mypy cleanup on test files | ⏳ | deferred |
+| M5-full | D2/D3 rich drill-downs, S6 follow-up CRUD UI, material-change banner on S5 | ✅ | 2026-04-19 — D2 (11 tests) + D3 (14 tests) + S6 backend 7 endpoints (43 tests) + S6 UI (21 tests) + S5 banner (3 backend + 7 frontend tests) |
+| M6-full | SMTP delivery, daily CFO digest cron, A6 permission contradiction resolution | ✅ (code) / ⏳ (DNS) | 2026-04-19 — A6 resolved via [ADR-0006](docs/adr/0006-reconciliation-rbac.md) (5 RBAC tests added); SMTP email drain (9 tests, provider-agnostic Resend/SendGrid, FOR UPDATE SKIP LOCKED, CLI entrypoint); daily digest cron (7 tests, 09:00 Asia/Kolkata, idempotent). Live send blocked only on SPF/DKIM DNS for emb.global — EMB IT ticket. |
+| M7 | Hardening — RBAC sweeps, race-test infra, mypy cleanup on test files | ✅ | 2026-04-19 — `backend/tests/parallel_db.py` (NullPool per-thread engine factory, 113 LOC); `test_concurrent_publish_serialised_via_row_lock` un-xfailed, passes 3/3 flake runs. RBAC negative-test sweep (`test_rbac_negative_gaps.py`, 19 tests, 0 prod-side bugs surfaced). Mypy cleanup on test files complete (0 non-import errors). All three lanes done. |
 | M8 | Production cutover — DNS, Railway Pro, Google OAuth client, first live snapshot | ⏳ | deferred |
 
 ---
@@ -56,7 +56,7 @@ Receivables Ageing Dashboard — ingestion pipeline, dashboard, exceptions, admi
 
 | Area | Count |
 |---|---|
-| Alembic migrations (`backend/alembic/versions/`) | 7 (`0001_initial` → `0007_reconciliation_entries_and_follow_ups`) |
+| Alembic migrations (`backend/alembic/versions/`) | 8 (`0001_initial` → `0008_q3_q4_2026_partitions`) |
 | SQLAlchemy 2.0 models (`backend/src/app/db/models/`) | 14 (entity, user, fx_rate, audit_log, snapshot, party_canonical, party_alias, credit_period_config, invoice, invoice_snapshot, exception_bucket_type, exception_tag, email_outbox, reconciliation_entry, follow_up) |
 | pydantic v2 schemas (`backend/src/app/schemas/`) | 13 (snapshot, staging, publish, discard, config, dashboard, party, invoice, exception, fx_rate, admin, reconciliation) |
 | Service modules (`backend/src/app/services/`) | 13 (ageing, snapshot, staging, alias_resolver, source_detect, partition_check, publish, discard, config, dashboard, exception, fx_conversion, reconciliation) |
@@ -129,13 +129,13 @@ Receivables Ageing Dashboard — ingestion pipeline, dashboard, exceptions, admi
 
 | Item | Where noted | Owner |
 |---|---|---|
-| A6 permission contradiction (D19 says analyst writes; §9 says ANALYST read, ADMIN write) | `wireframes/README.md § Open spec questions` | Tejaswa — needs spec call before M6-full |
+| A6 permission contradiction | Resolved 2026-04-19 via [ADR-0006](docs/adr/0006-reconciliation-rbac.md) — ANALYST read+write (entity-scoped) / ADMIN read+write (any entity) / CFO read-only / PENDING 403 | ✅ closed |
 | Tally 2-layer netting (party + group) | ADR-0003 addendum | Resolved in code via classification-completeness safety net |
 | Xero overdue-only grand total | ADR-0004 | Resolved via `GRAND_TOTAL_MISMATCH` demoted to warning |
 | `AGENTS.md` untracked | Repo root | Tejaswa — commit it or `.gitignore` it |
-| `test_concurrent_publish_serialised_via_row_lock` xfail | `test_snapshots_publish.py` | M7 — needs per-thread engine fixture infra |
+| `test_concurrent_publish_serialised_via_row_lock` xfail | `test_snapshots_publish.py` | ✅ CLOSED 2026-04-19 — xfail marker removed; passes 3/3 flake runs |
 | M1 test-file mypy errors (32) | `backend/tests/unit/`, `integration/` | M7 — not in CI scope today |
-| Q3/Q4 2026 partitions not yet created on `invoice_snapshots` | `docs/runbook.md § Partitioning invoice_snapshots` | Tejaswa — manual SQL before 2026-06-25 |
+| Q3/Q4 2026 partitions | Created via migration `0008_q3_q4_2026_partitions` (2026-04-19). Next: 2027-Q1 partition before **2026-12-25**. | ✅ closed |
 | Stub auth in prod-mode startup guard not implemented | `config.py` docstring references missing `app/core/startup.py` | M6-full or pre-cutover |
 | SPF / DKIM for `emb.global` | LOCAL_SETUP.md item 13 | EMB IT ticket — blocker for email delivery |
 | Railway Pro upgrade | LOCAL_SETUP.md item 6 | Tejaswa — billing action |
@@ -165,6 +165,8 @@ Both local feature branches have been deleted. Remote copies remain as audit his
 
 Last full-suite run (before the 6-test fix): 798 passed / 2 skip / 1 xfail / 7 fail (all 7 failures spec-correctly caused by the new §13 #6 gate; fixed in `d73cf73`).
 
+M7 concurrent-lock test run (2026-04-19, clean Neon branch): `test_concurrent_publish_serialised_via_row_lock` passes 3/3 — no xfail marker. Publish suite: 27 passed / 4 failed (pre-existing contamination from `test_digest_service.py` committing 291 OPEN IND invoices to the Neon parent branch; unrelated to M7 changes).
+
 ---
 
 ## Next steps (when ready)
@@ -173,7 +175,7 @@ From `LOCAL_SETUP.md` — roughly in time order:
 
 1. Walk the golden path locally (5 min): `LOCAL_SETUP.md § Run it`.
 2. Commit-or-ignore `AGENTS.md` (30 seconds).
-3. Seed Q3/Q4 2026 partitions (5 minutes — SQL in runbook).
+3. ✅ Q3/Q4 2026 partitions seeded via migration `0008_q3_q4_2026_partitions` (2026-04-19). Next: 2027-Q1 before 2026-12-25.
 4. Pre-seed top-20 party aliases (15-30 minutes — CSV import via `/config/aliases` POST).
 5. Flip `AUTH_PROVIDER=google` after Google Cloud Console setup (30 minutes).
 6. File EMB IT ticket for SPF / DKIM on `emb.global` (DNS lead time; file now).

@@ -7,13 +7,14 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/api/client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import type { ReconciliationResponse, SnapshotListResponse } from "@/types";
+import type { ReconciliationResponse, SnapshotListResponse, SnapshotListRow } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Modal } from "@/components/ui/Modal";
 import { formatCurrency, formatISTDate, formatISTDateTime } from "@/lib/format";
 
 function statusBadge(status: string) {
@@ -23,6 +24,90 @@ function statusBadge(status: string) {
     UNRECONCILED: "neutral",
   };
   return <Badge variant={map[status] ?? "neutral"}>{status}</Badge>;
+}
+
+function signedAmount(delta: string | null, currency: "INR" | "AED"): string {
+  if (delta === null) return "—";
+  const n = parseFloat(delta);
+  if (isNaN(n)) return "—";
+  const prefix = n > 0 ? "+" : "";
+  return `${prefix}${formatCurrency(delta, currency)}`;
+}
+
+function RecentReconciliationsTable({
+  snapshots,
+  currentEntityCode,
+  onSelectSnapshot,
+}: {
+  snapshots: SnapshotListRow[];
+  currentEntityCode: string;
+  onSelectSnapshot: (id: string) => void;
+}) {
+  const currency = currentEntityCode === "UAE" ? "AED" : "INR";
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Recent reconciliations (last 8 snapshots · {currentEntityCode})</CardTitle>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Spot drift — if delta increases snapshot-over-snapshot, investigate unmapped exception growth.
+        </p>
+      </CardHeader>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr className="text-slate-500 uppercase tracking-wide">
+              <th className="px-4 py-2.5 text-left font-medium">As-of date</th>
+              <th className="px-3 py-2.5 text-left font-medium">Status</th>
+              <th className="px-3 py-2.5 text-right font-medium">Delta</th>
+              <th className="px-3 py-2.5 text-right font-medium">Tally/Xero closing AR</th>
+              <th className="px-3 py-2.5 text-left font-medium">Updated at</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {snapshots.map((s) => {
+              const r = s.reconciliation;
+              const reconStatus = r?.status ?? "UNRECONCILED";
+              const rowBg =
+                reconStatus === "MISMATCHED"
+                  ? "hover:bg-red-50 cursor-pointer"
+                  : "hover:bg-gray-50 cursor-pointer";
+              return (
+                <tr
+                  key={s.id}
+                  className={rowBg}
+                  onClick={() => onSelectSnapshot(s.id)}
+                  title="Click to view this snapshot's reconciliation"
+                >
+                  <td className="px-4 py-2 text-slate-700 font-medium">
+                    {s.as_of_date ? formatISTDate(s.as_of_date) : "—"}
+                  </td>
+                  <td className="px-3 py-2">{statusBadge(reconStatus)}</td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {signedAmount(r?.delta ?? null, currency)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {r?.tally_xero_closing_ar
+                      ? formatCurrency(r.tally_xero_closing_ar, currency)
+                      : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-slate-400">
+                    {r?.updated_at ? formatISTDateTime(r.updated_at) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+            {snapshots.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-4 text-center text-slate-400">
+                  No published snapshots found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 }
 
 function TileCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -35,12 +120,57 @@ function TileCard({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
+function PublishGateBanner({ status, isAdmin }: { status: string; isAdmin: boolean }) {
+  const [overrideOpen, setOverrideOpen] = useState(false);
+
+  if (status === "MATCHED") return null;
+
+  return (
+    <>
+      <div className="flex items-center gap-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-red-900">
+        <span className="flex-1 text-sm font-medium">
+          Next publish blocked — snapshot not reconciled. The next publish for this entity will 422
+          with PRIOR_SNAPSHOT_UNRECONCILED until this is resolved.
+        </span>
+        {isAdmin && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setOverrideOpen(true)}
+          >
+            Override next publish
+          </Button>
+        )}
+      </div>
+
+      <Modal
+        open={overrideOpen}
+        onClose={() => setOverrideOpen(false)}
+        title="Override next publish"
+        size="sm"
+      >
+        <p className="text-sm text-slate-700">
+          Override flow wiring pending. The actual override mechanism will be a follow-up PR. For
+          now, file a JIRA / inform engineering.
+        </p>
+        <div className="mt-5 flex justify-end">
+          <Button variant="primary" size="sm" onClick={() => setOverrideOpen(false)}>
+            Got it
+          </Button>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 export function A6ReconciliationPage() {
   const { data: user } = useCurrentUser();
   const qc = useQueryClient();
   const isAdmin = user?.role === "ADMIN";
+  const isAnalyst = user?.role === "ANALYST";
+  const canWrite = isAdmin || isAnalyst;
 
-  // Snapshot selector
+  // Snapshot selector — also used for the historical table
   const { data: snapshots } = useQuery<SnapshotListResponse>({
     queryKey: ["snapshots-all"],
     queryFn: () => api.get<SnapshotListResponse>("/snapshots?page=1&page_size=8&status=PUBLISHED"),
@@ -48,6 +178,10 @@ export function A6ReconciliationPage() {
 
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string>("");
   const snapshotId = selectedSnapshotId || snapshots?.items?.[0]?.id || "";
+
+  // Current entity for the selected snapshot (drives currency + history filter)
+  const selectedSnapshot = snapshots?.items?.find((s) => s.id === snapshotId);
+  const currentEntityCode = selectedSnapshot?.entity_code ?? snapshots?.items?.[0]?.entity_code ?? "IND";
 
   const { data, isLoading, error } = useQuery<ReconciliationResponse, ApiError>({
     queryKey: ["reconciliation", snapshotId],
@@ -78,7 +212,7 @@ export function A6ReconciliationPage() {
       <h1 className="text-lg font-semibold text-slate-800">Reconciliation</h1>
       <p className="mt-0.5 text-xs text-slate-500">
         Compare Dashboard AR against Tally/Xero closing balance per snapshot.
-        {!isAdmin && " Read-only — ADMIN role required to enter closing AR."}
+        {!canWrite && " Read-only — ADMIN or ANALYST role required to enter closing AR."}
       </p>
 
       {/* Snapshot selector */}
@@ -127,6 +261,9 @@ export function A6ReconciliationPage() {
               </span>
             )}
           </div>
+
+          {/* Publish-gate banner */}
+          <PublishGateBanner status={data.status} isAdmin={isAdmin} />
 
           {/* 4 tiles */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -188,8 +325,8 @@ export function A6ReconciliationPage() {
             </Card>
           )}
 
-          {/* Entry form — ADMIN only */}
-          {isAdmin && (
+          {/* Entry form — ADMIN or ANALYST */}
+          {canWrite && (
             <Card>
               <CardHeader>
                 <CardTitle>Enter Tally/Xero closing AR</CardTitle>
@@ -224,6 +361,19 @@ export function A6ReconciliationPage() {
               </div>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* Historical reconciliations table — always visible once snapshots load */}
+      {snapshots && snapshots.items.length > 0 && (
+        <div className="mt-6">
+          <RecentReconciliationsTable
+            snapshots={snapshots.items.filter(
+              (s) => s.entity_code === currentEntityCode,
+            )}
+            currentEntityCode={currentEntityCode}
+            onSelectSnapshot={(id) => setSelectedSnapshotId(id)}
+          />
         </div>
       )}
     </div>

@@ -24,6 +24,10 @@ class DashboardKPIs(BaseModel):
     last_snapshot_date: date
     # Only populated for entity=ALL (consolidated FX view)
     fx_rate_used: Decimal | None = None
+    # Serialised as string on the wire (spec §7 tooltip requirement)
+    fx_rate_effective_from: date | None = None
+    fx_rate_from_ccy: Literal["AED"] | None = None
+    fx_rate_to_ccy: Literal["INR"] | None = None
 
 
 class TopPartyRow(BaseModel):
@@ -34,6 +38,9 @@ class TopPartyRow(BaseModel):
     outstanding: Decimal
     overdue_bucket: str  # the worst (most overdue) bucket for this party
     active_exception_count: int
+    tally_overdue_days_max: int | None = None  # max Tally overdue_days across OPEN invoices (spec §13 #4)
+    last_follow_up_date: date | None = None
+    last_follow_up_channel: str | None = None
 
 
 class RecentExceptionRow(BaseModel):
@@ -56,6 +63,14 @@ class UserRef(BaseModel):
     email: str
 
 
+class DashboardTrendRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    week_start: date
+    total_outstanding: Decimal
+    ninety_plus: Decimal
+
+
 class DashboardResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -69,3 +84,4 @@ class DashboardResponse(BaseModel):
     top_parties: list[TopPartyRow]
     recent_exceptions: list[RecentExceptionRow]
     parties_on_default_credit_period_count: int
+    trend_weekly: list[DashboardTrendRow] = []

@@ -82,6 +82,8 @@ class ExceptionListRow(BaseModel):
     tagged_by_email: str
     expected_resolution_date: date | None
     resolved_at: datetime | None
+    last_follow_up_date: date | None = None
+    last_follow_up_channel: str | None = None
 
 
 class ExceptionListResponse(BaseModel):

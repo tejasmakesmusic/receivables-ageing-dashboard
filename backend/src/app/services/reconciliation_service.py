@@ -207,11 +207,17 @@ def create_or_update_reconciliation(
     current_user: UserModel,
     db: Session,
 ) -> ReconciliationResponse:
-    """Create or update reconciliation entry for a snapshot. ADMIN only.
+    """Create or update reconciliation entry for a snapshot.
+
+    RBAC per ADR-0006 (D19 vs §9 resolution):
+      ANALYST writes reconciliation for their scoped entity; ADMIN writes for
+      any entity; CFO/PENDING 403 (enforced at the route layer).
 
     Recomputes dashboard_ar, exception totals, and delta on every call.
     delta = dashboard_ar + exception_bucket_total - tally_xero_closing_ar (D19)
     """
+    from app.core.rbac import Role
+
     snapshot = db.get(Snapshot, snapshot_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found.")
@@ -223,6 +229,17 @@ def create_or_update_reconciliation(
                 "code": "SNAPSHOT_NOT_PUBLISHED",
                 "detail": "Can only reconcile PUBLISHED snapshots.",
             },
+        )
+
+    # ANALYST entity-scope enforcement — ADR-0006.
+    if (
+        current_user.role == Role.ANALYST
+        and current_user.entity_id_scope is not None
+        and current_user.entity_id_scope != snapshot.entity_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Analyst scope does not include this snapshot's entity.",
         )
 
     entity = db.get(Entity, snapshot.entity_id)

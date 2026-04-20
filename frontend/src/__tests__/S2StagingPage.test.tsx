@@ -40,11 +40,18 @@ const MOCK_STAGING: Record<string, unknown> = {
       source_currency: "INR",
       parse_error_reason: null,
       alias_resolution: {
-        confidence: "EXACT",
-        matched_canonical_id: "party-1",
-        matched_canonical_name: "Acme Corp India Pvt Ltd",
-        score: 100,
-        candidates: [],
+        resolution_state: "EXACT",
+        raw_name: "Acme Corp",
+        top_matches: [
+          {
+            canonical_id: "party-1",
+            canonical_name: "Acme Corp India Pvt Ltd",
+            ratio: 100,
+            matched_on: "CANONICAL_NAME",
+            matched_text: "Acme Corp India Pvt Ltd",
+            is_exact: true,
+          },
+        ],
       },
       analyst_overrides: {
         resolved_canonical_id: null,
@@ -143,5 +150,59 @@ describe("S2StagingPage", () => {
       expect(link).toBeInTheDocument();
       expect(link).toHaveAttribute("href", "/upload");
     });
+  });
+
+  it("dedupes repeated warning codes in the publish gate label", async () => {
+    // Real Tally exports emit one warning per offending party, so the
+    // unacknowledged list can contain 20+ entries of the same code. The gate
+    // label must collapse those to "CODE ×N" rather than a comma-joined wall.
+    // Mock with rows:[] to exercise only the gate panel, not the invoice-row
+    // renderer (whose mock row has unrelated drift vs current types).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/staging")) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                ...MOCK_STAGING,
+                rows: [],
+                pagination: { offset: 0, limit: 50, total: 0 },
+                publish_gate: {
+                  ...(MOCK_STAGING.publish_gate as Record<string, unknown>),
+                  warnings_unacknowledged: [
+                    "SUBTOTAL_MISMATCH",
+                    "SUBTOTAL_MISMATCH",
+                    "SUBTOTAL_MISMATCH",
+                    "GRAND_TOTAL_MISMATCH",
+                    "UNALLOCATED_CREDITS_DELTA",
+                  ],
+                },
+              }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({}),
+        });
+      }) as typeof fetch,
+    );
+
+    render(<Wrapper />);
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /Warnings acknowledged: SUBTOTAL_MISMATCH ×3, GRAND_TOTAL_MISMATCH, UNALLOCATED_CREDITS_DELTA/,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    // Button count reflects instance total (5), not unique code count (3).
+    expect(
+      screen.getByRole("button", { name: /Acknowledge all warnings \(5\)/ }),
+    ).toBeInTheDocument();
   });
 });

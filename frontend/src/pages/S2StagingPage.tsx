@@ -9,10 +9,12 @@ import { api, ApiError } from "@/api/client";
 import type {
   StagingViewResponse,
   StagingInvoiceRow,
+  StagingCreditPeriodRow,
   PublishGate,
   AliasCandidate,
   StagingPatchResponse,
   WarningsAckResponse,
+  BulkCreateCanonicalsResponse,
 } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -28,7 +30,8 @@ import { formatISTDate } from "@/lib/format";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function confidenceBadge(conf: string) {
+function confidenceBadge(conf: string | undefined) {
+  if (!conf) return <Badge variant="neutral">—</Badge>;
   const map: Record<string, "success" | "warning" | "error" | "neutral"> = {
     EXACT: "success",
     FUZZY_HIGH: "warning",
@@ -51,15 +54,42 @@ function PublishGatePanel({
   gate,
   onAckWarnings,
   acking,
+  onBulkCreateCanonicals,
+  onBulkRejectFuzzy,
+  bulkCreating,
+  bulkSupported,
 }: {
   gate: PublishGate;
   onAckWarnings: (codes: string[]) => void;
   acking: boolean;
+  onBulkCreateCanonicals: () => void;
+  onBulkRejectFuzzy: () => void;
+  bulkCreating: boolean;
+  bulkSupported: boolean;
 }) {
   const unmappedOk = gate.unmapped_parties_count === 0;
   const warningsOk = gate.warnings_unacknowledged.length === 0;
   const parseOk = gate.parse_errors_unresolved_count === 0;
   const roleOk = gate.role_permits_publish;
+
+  // Dedupe warning codes with counts — the backend emits one entry per warning
+  // instance (e.g. 24× SUBTOTAL_MISMATCH for 24 distinct parties), but the ack
+  // contract is per-code, not per-instance. Collapse to "CODE ×N" for display
+  // and send unique codes on ack.
+  const warningCounts = gate.warnings_unacknowledged.reduce<Record<string, number>>(
+    (acc, code) => {
+      acc[code] = (acc[code] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+  const uniqueWarningCodes = Object.keys(warningCounts);
+  const warningsLabel =
+    uniqueWarningCodes.length === 0
+      ? "all clear"
+      : uniqueWarningCodes
+          .map((c) => (warningCounts[c] > 1 ? `${c} ×${warningCounts[c]}` : c))
+          .join(", ");
 
   return (
     <div
@@ -75,20 +105,45 @@ function PublishGatePanel({
       <div className="space-y-1">
         {gateLine(unmappedOk, `Party mapping: ${gate.unmapped_parties_count} unmapped`)}
         {gateLine(gate.fuzzy_high_pending_count === 0, `Fuzzy-high pending: ${gate.fuzzy_high_pending_count}`)}
-        {gateLine(warningsOk, `Warnings acknowledged: ${gate.warnings_unacknowledged.join(", ") || "all clear"}`)}
+        {gateLine(warningsOk, `Warnings acknowledged: ${warningsLabel}`)}
         {gateLine(parseOk, `Parse errors resolved: ${gate.parse_errors_unresolved_count} remaining`)}
         {gateLine(roleOk, roleOk ? "Role permits publish" : "Your role cannot publish")}
       </div>
-      {gate.warnings_unacknowledged.length > 0 && (
-        <div className="mt-3">
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={acking}
-            onClick={() => onAckWarnings(gate.warnings_unacknowledged)}
-          >
-            Acknowledge all warnings ({gate.warnings_unacknowledged.length})
-          </Button>
+      {(gate.warnings_unacknowledged.length > 0 ||
+        (bulkSupported && gate.unmapped_parties_count > 0)) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {gate.warnings_unacknowledged.length > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={acking}
+              onClick={() => onAckWarnings(uniqueWarningCodes)}
+            >
+              Acknowledge all warnings ({gate.warnings_unacknowledged.length})
+            </Button>
+          )}
+          {bulkSupported && gate.unmapped_parties_count > 0 && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={bulkCreating}
+                onClick={onBulkCreateCanonicals}
+                title="Create one canonical party + MANUAL alias per distinct UNMAPPED raw name. Fuzzy candidates are left alone — confirm those row-by-row."
+              >
+                Auto-create canonicals for unmapped
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={bulkCreating}
+                onClick={onBulkRejectFuzzy}
+                title="Reject all fuzzy suggestions and create a NEW canonical from the raw name for each FUZZY_HIGH / FUZZY_LOW row. Use when the analyst has reviewed the suggestions and none of them fit."
+              >
+                Reject fuzzy suggestions
+              </Button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -129,7 +184,7 @@ function RowActionModal({ row, open, onClose, onAction, loading }: RowActionModa
     }
   }
 
-  const candidates = row.alias_resolution.candidates;
+  const candidates = row.alias_resolution.top_matches;
 
   return (
     <Modal open={open} onClose={onClose} title={`Row ${row.row_index} — ${row.party_name_raw}`} size="md">
@@ -164,7 +219,7 @@ function RowActionModal({ row, open, onClose, onAction, loading }: RowActionModa
                       onChange={() => setSelectedCanonical(c)}
                     />
                     <span className="text-sm font-medium">{c.canonical_name}</span>
-                    <span className="text-xs text-slate-400">score: {c.score.toFixed(0)}%</span>
+                    <span className="text-xs text-slate-400">score: {c.ratio.toFixed(0)}%</span>
                   </label>
                 ))}
               </div>
@@ -232,13 +287,15 @@ export function S2StagingPage() {
   const [activeRow, setActiveRow] = useState<StagingInvoiceRow | null>(null);
   const [publishConfirm, setPublishConfirm] = useState(false);
   const [discardConfirm, setDiscardConfirm] = useState(false);
+  type FilterMode = "all" | "ok" | "parse_error" | "unmapped" | "fuzzy_low" | "fuzzy_high";
+  const [filter, setFilter] = useState<FilterMode>("all");
   const PAGE_SIZE = 50;
 
   const { data, isLoading, error } = useQuery<StagingViewResponse>({
-    queryKey: ["staging", snapshot_id, page],
+    queryKey: ["staging", snapshot_id, page, filter],
     queryFn: () =>
       api.get<StagingViewResponse>(
-        `/snapshots/${snapshot_id}/staging?offset=${(page - 1) * PAGE_SIZE}&limit=${PAGE_SIZE}`,
+        `/snapshots/${snapshot_id}/staging?offset=${(page - 1) * PAGE_SIZE}&limit=${PAGE_SIZE}&filter=${filter}`,
       ),
     enabled: !!snapshot_id,
   });
@@ -257,6 +314,25 @@ export function S2StagingPage() {
       api.patch<WarningsAckResponse>(`/snapshots/${snapshot_id}/warnings/ack`, { codes }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staging", snapshot_id] });
+    },
+  });
+
+  const bulkCreateCanonicals = useMutation<BulkCreateCanonicalsResponse, ApiError, { include_fuzzy: boolean }>({
+    mutationFn: (body) =>
+      api.post<BulkCreateCanonicalsResponse>(
+        `/snapshots/${snapshot_id}/staging/bulk-create-canonicals`,
+        body,
+      ),
+    onSuccess: (resp, body) => {
+      qc.invalidateQueries({ queryKey: ["staging", snapshot_id] });
+      const label = body.include_fuzzy ? "Reject-fuzzy" : "Auto-create";
+      const summary =
+        `${label} done. ${resp.distinct_unmapped_names} distinct names handled: ` +
+        `${resp.created_canonicals} new canonical(s), ${resp.created_aliases} new alias(es), ` +
+        `${resp.skipped_existing_canonical} canonical(s) reused, ` +
+        `${resp.skipped_existing_alias} alias(es) already present.`;
+      // eslint-disable-next-line no-alert
+      alert(summary);
     },
   });
 
@@ -301,6 +377,7 @@ export function S2StagingPage() {
 
   const isInvoiceRows = data.source_hint !== "CREDIT_PERIOD";
   const invoiceRows = isInvoiceRows ? (data.rows as StagingInvoiceRow[]) : [];
+  const cpRows = !isInvoiceRows ? (data.rows as StagingCreditPeriodRow[]) : [];
   const totalPages = Math.ceil(data.pagination.total / PAGE_SIZE);
 
   return (
@@ -369,8 +446,45 @@ export function S2StagingPage() {
           gate={data.publish_gate}
           onAckWarnings={(codes) => ackWarnings.mutate(codes)}
           acking={ackWarnings.isPending}
+          onBulkCreateCanonicals={() => bulkCreateCanonicals.mutate({ include_fuzzy: false })}
+          onBulkRejectFuzzy={() => {
+            // eslint-disable-next-line no-alert
+            if (
+              window.confirm(
+                "Reject all fuzzy suggestions and create new canonicals from the raw name for each? This acts on every distinct FUZZY_HIGH / FUZZY_LOW raw name in the snapshot.",
+              )
+            ) {
+              bulkCreateCanonicals.mutate({ include_fuzzy: true });
+            }
+          }}
+          bulkCreating={bulkCreateCanonicals.isPending}
+          bulkSupported={data.source_hint !== "CREDIT_PERIOD"}
         />
       </div>
+
+      {/* Filter toolbar (invoice rows only) */}
+      {isInvoiceRows && (
+        <div className="mb-2 flex items-center gap-2 text-xs text-slate-600">
+          <label htmlFor="staging-filter">Filter:</label>
+          <select
+            id="staging-filter"
+            className="rounded border border-gray-200 bg-white px-2 py-1 text-sm"
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value as typeof filter);
+              setPage(1);
+            }}
+          >
+            <option value="all">All rows</option>
+            <option value="ok">OK only</option>
+            <option value="parse_error">Parse errors</option>
+            <option value="unmapped">Unmapped</option>
+            <option value="fuzzy_low">Fuzzy low (70–89%)</option>
+            <option value="fuzzy_high">Fuzzy high (≥90%)</option>
+          </select>
+          <span className="text-slate-400">({data.pagination.total} shown)</span>
+        </div>
+      )}
 
       {/* Invoice rows table */}
       {isInvoiceRows && (
@@ -406,10 +520,10 @@ export function S2StagingPage() {
                       {row.party_name_raw}
                     </td>
                     <td className="px-3 py-2">
-                      {confidenceBadge(row.alias_resolution.confidence)}
+                      {confidenceBadge(row.alias_resolution.resolution_state)}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600 max-w-[140px] truncate">
-                      {row.alias_resolution.matched_canonical_name ??
+                      {row.alias_resolution.top_matches[0]?.canonical_name ??
                         row.analyst_overrides.resolved_canonical_id ??
                         "—"}
                     </td>
@@ -465,6 +579,47 @@ export function S2StagingPage() {
         </div>
       )}
 
+      {/* Credit-period rows table (read-only) */}
+      {!isInvoiceRows && (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-600">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">#</th>
+                <th className="px-3 py-2 text-left font-medium">Entity</th>
+                <th className="px-3 py-2 text-left font-medium">Client</th>
+                <th className="px-3 py-2 text-right font-medium">Credit days</th>
+                <th className="px-3 py-2 text-left font-medium">Reason note</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {cpRows.map((row) => (
+                <tr key={`${row.entity_code}-${row.row_index}`} className="hover:bg-slate-50">
+                  <td className="px-3 py-2 text-xs text-slate-400">{row.row_index}</td>
+                  <td className="px-3 py-2">
+                    <Badge variant={row.entity_code === "IND" ? "success" : "warning"}>
+                      {row.entity_code}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 font-medium">{row.name}</td>
+                  <td className="px-3 py-2 text-right font-mono">{row.credit_days}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500 max-w-[280px] truncate">
+                    {row.reason_note ?? "—"}
+                  </td>
+                </tr>
+              ))}
+              {cpRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-xs text-slate-400">
+                    No rows on this page
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-3 flex items-center gap-2 text-sm">
@@ -499,12 +654,32 @@ export function S2StagingPage() {
       )}
 
       {/* Publish confirm */}
-      <Modal open={publishConfirm} onClose={() => setPublishConfirm(false)} title="Publish snapshot">
+      <Modal
+        open={publishConfirm}
+        onClose={() => {
+          publishMutation.reset();
+          setPublishConfirm(false);
+        }}
+        title="Publish snapshot"
+      >
         <p className="text-sm text-slate-700">
           Publishing will push these invoices to the live AR ledger. This cannot be undone. Confirm?
         </p>
+        {publishMutation.isError && (
+          <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs">
+            <p className="font-semibold text-red-700">
+              Publish failed ({publishMutation.error?.status ?? "error"})
+            </p>
+            <pre className="mt-1 whitespace-pre-wrap break-words text-red-900">
+              {JSON.stringify(publishMutation.error?.detail ?? publishMutation.error?.message ?? {}, null, 2)}
+            </pre>
+          </div>
+        )}
         <ModalFooter
-          onClose={() => setPublishConfirm(false)}
+          onClose={() => {
+            publishMutation.reset();
+            setPublishConfirm(false);
+          }}
           onConfirm={() => publishMutation.mutate()}
           confirmLabel="Publish"
           loading={publishMutation.isPending}

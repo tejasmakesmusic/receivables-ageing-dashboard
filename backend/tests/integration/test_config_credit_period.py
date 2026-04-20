@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -39,7 +39,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -64,7 +64,7 @@ def _login_as_analyst(
         user.entity_id_scope = None
     user.is_active = True
     db_session.flush()
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _login_as_cfo(client: TestClient, db_session: Session, email: str) -> None:
@@ -107,7 +107,7 @@ def _create_canonical(
     canonical = PartyCanonical(entity_id=entity.id, name=name, created_by=admin.id)
     db_session.add(canonical)
     db_session.flush()
-    return canonical.id
+    return cast(uuid.UUID, canonical.id)
 
 
 def _create_credit_period_row(
@@ -129,7 +129,7 @@ def _create_credit_period_row(
     )
     db_session.add(cfg)
     db_session.flush()
-    return cfg.id
+    return cast(uuid.UUID, cfg.id)
 
 
 def _csrf_headers(client: TestClient) -> dict[str, str]:

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     app_name: str = "receivables-ageing-dashboard"
     app_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     app_base_url: str = "http://localhost:8000"
+    frontend_url: str = "http://localhost:5173"
 
     # ---- Database (Neon — see ADR-0002) ----
     database_url: str = Field(
@@ -69,6 +70,9 @@ class Settings(BaseSettings):
     # ---- Scheduler (§8.1 — IST 09:00 = UTC 03:30) ----
     digest_cron_utc: str = "30 3 * * 1-5"
     scheduler_timezone: str = "UTC"
+    # D18: digest fires at this IST time (CronTrigger uses Asia/Kolkata)
+    digest_hour_ist: int = 9
+    digest_minute_ist: int = 0
 
     # ---- Object storage (optional) ----
     s3_bucket: str = ""

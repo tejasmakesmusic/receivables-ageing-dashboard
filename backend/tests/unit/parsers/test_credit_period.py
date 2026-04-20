@@ -174,61 +174,50 @@ def test_invoices_empty_on_real_fixture(credit_period_file_bytes: bytes) -> None
 def test_real_fixture_parser_runs_and_emits_expected_error_codes(
     credit_period_file_bytes: bytes,
 ) -> None:
-    """Real fixture parses without exception; expected error codes are present.
+    """Real fixture parses cleanly after 2026-04-19 cleanse.
 
-    Fixture inspection 2026-04-17:
-      - India: 3 duplicate names → DUPLICATE_CLIENT
-      - UAE: 2 duplicate groups → DUPLICATE_CLIENT
-      - UAE: 7 rows with empty credit_days → UNPARSEABLE_CREDIT_DAYS
+    Pre-cleanse the fixture held 2 DUPLICATE_CLIENT + 7 UNPARSEABLE_CREDIT_DAYS
+    errors. Those were removed at the source per policy (identical dups
+    collapsed; conflicting dups + blank-credit-days rows deleted so affected
+    clients fall to entity default via D8). Parser now returns is_valid=True.
     """
     result = parse_credit_period_master(credit_period_file_bytes)
     # Parser must complete without exception (structural integrity).
     assert result.source_hint == "CREDIT_PERIOD"
     assert result.file_sha256, "file_sha256 must be set"
 
-    error_codes = {e.code for e in result.errors}
-    # Both sheets have duplicate issues → DUPLICATE_CLIENT must appear.
-    assert "DUPLICATE_CLIENT" in error_codes, (
-        f"Expected DUPLICATE_CLIENT in errors on real fixture. "
-        f"errors={[e.code for e in result.errors]}"
-    )
-    # UAE sheet has empty credit_days rows → UNPARSEABLE_CREDIT_DAYS must appear.
-    assert "UNPARSEABLE_CREDIT_DAYS" in error_codes, (
-        f"Expected UNPARSEABLE_CREDIT_DAYS in errors on real fixture. "
-        f"errors={[e.code for e in result.errors]}"
-    )
-    # is_valid must be False (errors present).
+    # Post-cleanse: no errors expected.
     assert (
-        result.is_valid is False
-    ), "Real fixture has known data quality issues; is_valid must be False."
+        result.errors == []
+    ), f"Expected clean fixture; got errors={[e.code for e in result.errors]}"
+    assert result.is_valid is True, "Cleansed fixture must have is_valid=True."
 
 
 # ---------------------------------------------------------------------------
-# Test 4: real fixture — exact error counts from fixture inspection 2026-04-17
+# Test 4: real fixture — zero errors post-cleanse (2026-04-19)
 # ---------------------------------------------------------------------------
 
 
 def test_real_fixture_exact_error_counts(credit_period_file_bytes: bytes) -> None:
-    """Exact error counts verified by fixture inspection on 2026-04-17.
+    """Exact error counts post-cleanse (2026-04-19).
 
-    India: 1 DUPLICATE_CLIENT error (3 dupe names in one error record).
-    UAE:   1 DUPLICATE_CLIENT error (2 dupe names) + 7 UNPARSEABLE_CREDIT_DAYS errors.
-    Total errors: 9.
+    Fixture was cleansed per policy — identical dups deduped, conflicting dups
+    and blank-credit-days rows deleted. Both error codes that previously fired
+    (DUPLICATE_CLIENT, UNPARSEABLE_CREDIT_DAYS) now have zero instances.
 
-    If the fixture is replaced or cleansed, re-measure and update.
+    If the fixture is replaced, re-measure and update.
     """
     result = parse_credit_period_master(credit_period_file_bytes)
     dup_errs = [e for e in result.errors if e.code == "DUPLICATE_CLIENT"]
     invalid_errs = [e for e in result.errors if e.code == "UNPARSEABLE_CREDIT_DAYS"]
 
-    # 1 DUPLICATE_CLIENT per sheet that has dupes (India + UAE = 2 total).
-    assert (
-        len(dup_errs) == 2
-    ), f"Expected 2 DUPLICATE_CLIENT errors on real fixture; got {len(dup_errs)}."
-    # 7 rows with empty credit_days in UAE.
-    assert (
-        len(invalid_errs) == 7
-    ), f"Expected 7 UNPARSEABLE_CREDIT_DAYS errors on real fixture; got {len(invalid_errs)}."
+    assert len(dup_errs) == 0, (
+        f"Expected 0 DUPLICATE_CLIENT errors on cleansed fixture; got {len(dup_errs)}."
+    )
+    assert len(invalid_errs) == 0, (
+        f"Expected 0 UNPARSEABLE_CREDIT_DAYS errors on cleansed fixture; "
+        f"got {len(invalid_errs)}."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -637,27 +626,31 @@ def test_missing_uae_sheet_emits_missing_sheet_and_india_processed() -> None:
 def test_real_fixture_emitted_count_per_entity(credit_period_file_bytes: bytes) -> None:
     """Pin the exact number of credit_periods emitted per entity on the real fixture.
 
-    Measured 2026-04-17: fixture has data quality issues (duplicates → those
-    sheets return 0 emitted rows).  The counts below reflect the parser's
-    correct behaviour per spec §4.3 rule 5 (fail sheet on duplicates).
+    Fixture cleansed 2026-04-19 per policy:
+      - Identical duplicates: kept first occurrence (Fraction AI, Ziffy).
+      - Conflicting duplicates: all rows for that client deleted (MakeMyTrip
+        comma-variants, Sanjay Electricals, Peak Tourism with mixed values +
+        blanks). Client falls to entity default via D8.
+      - Blank credit_period rows: deleted (META ORYX, Vitamin Tea, Grootan,
+        Intech SG).
+      - MakeMyTrip row 146 (clean name, no trailing comma) preserved — parser
+        treats it as a distinct client.
 
-    India: 3 duplicate names → DUPLICATE_CLIENT → 0 IND rows emitted.
-    UAE:   2 duplicate groups → DUPLICATE_CLIENT → 0 UAE rows emitted.
-
-    Both counts are 0 because both sheets have duplicates.  If the fixture is
-    cleansed, re-run the parser, record the new counts, and update here.
+    Post-clean counts (measured against parser output):
+      India: 178 rows emitted, 0 parse errors.
+      UAE:    76 rows emitted, 0 parse errors.
     """
     result = parse_credit_period_master(credit_period_file_bytes)
     ind_count = sum(1 for cp in result.credit_periods if cp.entity_code == "IND")
     uae_count = sum(1 for cp in result.credit_periods if cp.entity_code == "UAE")
-    # Both sheets have duplicates → parser emits 0 rows for each.
-    assert ind_count == 0, (
-        f"Expected 0 IND rows (India sheet has duplicates); got {ind_count}. "
-        "If fixture was cleansed, re-measure and update."
+    assert result.is_valid, f"Expected is_valid=True on cleansed fixture; errors={result.errors}"
+    assert ind_count == 178, (
+        f"Expected 178 IND rows on cleansed fixture; got {ind_count}. "
+        "If fixture was edited again, re-measure and update."
     )
-    assert uae_count == 0, (
-        f"Expected 0 UAE rows (UAE sheet has duplicates); got {uae_count}. "
-        "If fixture was cleansed, re-measure and update."
+    assert uae_count == 76, (
+        f"Expected 76 UAE rows on cleansed fixture; got {uae_count}. "
+        "If fixture was edited again, re-measure and update."
     )
 
 

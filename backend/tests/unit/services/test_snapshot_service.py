@@ -10,7 +10,7 @@ import io
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import openpyxl
@@ -84,14 +84,14 @@ def _make_parse_result(
         warnings=warnings_list,
         as_of_date=date(2026, 1, 31) if source == "XERO" else None,
         file_sha256="a" * 64,
-        source_hint=source,  # type: ignore[arg-type]
+        source_hint=source,
     )
 
 
 def _make_tally_xlsx() -> bytes:
     """Minimal Tally-shaped XLSX (sheet name only; parser not called in mocked tests)."""
     wb = openpyxl.Workbook()
-    wb.active.title = "Sundry Debtors"  # type: ignore[union-attr]
+    wb.active.title = "Sundry Debtors"  # openpyxl: active is non-None on a fresh workbook
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -101,7 +101,7 @@ def _make_xero_xlsx(as_of_str: str | None = "As at 31 March 2026") -> bytes:
     """Minimal Xero-shaped XLSX."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Aged Receivables Detail"  # type: ignore[union-attr]
+    ws.title = "Aged Receivables Detail"  # openpyxl: active is non-None on a fresh workbook
     ws.append(["Aged Receivables Detail"])  # row 1
     ws.append(["Test Company"])  # row 2
     ws.append([as_of_str])  # row 3 — sniffed
@@ -113,7 +113,7 @@ def _make_xero_xlsx(as_of_str: str | None = "As at 31 March 2026") -> bytes:
 def _make_cp_xlsx() -> bytes:
     """Minimal Credit Period XLSX."""
     wb = openpyxl.Workbook()
-    wb.active.title = "India"  # type: ignore[union-attr]
+    wb.active.title = "India"  # openpyxl: active is non-None on a fresh workbook
     wb.create_sheet("UAE")
     buf = io.BytesIO()
     wb.save(buf)
@@ -351,7 +351,7 @@ class TestUploadSnapshotErrors:
                 request_ip="127.0.0.1",
             )
         assert exc_info.value.status_code == 409
-        assert exc_info.value.detail["code"] == "DUPLICATE_FILE"
+        assert cast(dict[str, Any], exc_info.value.detail)["code"] == "DUPLICATE_FILE"
 
     def test_tally_missing_as_of_date_raises_422(self) -> None:
         entity = _make_entity("IND")
@@ -368,7 +368,7 @@ class TestUploadSnapshotErrors:
                 request_ip="127.0.0.1",
             )
         assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["code"] == "AS_OF_DATE_MISSING"
+        assert cast(dict[str, Any], exc_info.value.detail)["code"] == "AS_OF_DATE_MISSING"
 
     def test_xero_both_absent_raises_422(self) -> None:
         entity = _make_entity("UAE")
@@ -386,7 +386,7 @@ class TestUploadSnapshotErrors:
                 request_ip="127.0.0.1",
             )
         assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["code"] == "AS_OF_DATE_MISSING"
+        assert cast(dict[str, Any], exc_info.value.detail)["code"] == "AS_OF_DATE_MISSING"
 
     @patch("app.services.snapshot_service.invoice_snapshots_has_partition_for", return_value=False)
     def test_missing_partition_raises_422(self, mock_partition: MagicMock) -> None:
@@ -404,7 +404,7 @@ class TestUploadSnapshotErrors:
                 request_ip="127.0.0.1",
             )
         assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["code"] == "MISSING_PARTITION"
+        assert cast(dict[str, Any], exc_info.value.detail)["code"] == "MISSING_PARTITION"
 
     @patch("app.services.snapshot_service.invoice_snapshots_has_partition_for", return_value=True)
     @patch("app.services.snapshot_service.parse_tally_grpbills")
@@ -428,7 +428,7 @@ class TestUploadSnapshotErrors:
                 request_ip="127.0.0.1",
             )
         assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["code"] == "PARSE_ERROR"
+        assert cast(dict[str, Any], exc_info.value.detail)["code"] == "PARSE_ERROR"
         # Verify snapshot was NOT added to DB.
         db.add.assert_not_called()
 
@@ -462,7 +462,7 @@ class TestUploadSnapshotErrors:
         # File with both Tally + Xero sheets → ambiguous.
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "Sundry Debtors"  # type: ignore[union-attr]
+        ws.title = "Sundry Debtors"  # openpyxl: active is non-None on a fresh workbook
         wb.create_sheet("Aged Receivables Detail")
         buf = io.BytesIO()
         wb.save(buf)

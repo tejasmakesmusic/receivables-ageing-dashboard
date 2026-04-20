@@ -1,7 +1,6 @@
 """Invoice routes — GET /invoices/:id, GET /invoices, POST /invoices/:id/follow-ups (M4/M5).
 
 RBAC: all non-PENDING roles can read.
-Follow-ups: stub returning 501 (M5 extension).
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ import uuid  # noqa: TCH003
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session  # noqa: TCH002
 
@@ -23,6 +21,7 @@ from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
 from app.db.models.party import PartyCanonical
 from app.db.models.user import User
+from app.schemas.follow_up import FollowUpBaseRequest, FollowUpCreateRequest, FollowUpRow
 from app.schemas.invoice import (
     ExceptionTagRow,
     InvoiceDetailResponse,
@@ -30,10 +29,12 @@ from app.schemas.invoice import (
     InvoiceListRow,
     InvoiceSnapshotHistoryRow,
 )
+from app.services.follow_up_service import create_follow_up
 
 router = APIRouter()
 
 _read_allowed = require_role(Role.ANALYST, Role.ADMIN, Role.CFO)
+_write_allowed = require_role(Role.ANALYST, Role.ADMIN)
 
 
 @router.get(
@@ -287,24 +288,38 @@ def get_invoice(
 
 @router.post(
     "/{invoice_id}/follow-ups",
-    status_code=501,
-    summary="[STUB] Create a follow-up for an invoice (M5 extension)",
+    response_model=FollowUpRow,
+    status_code=201,
+    summary="Create a follow-up for an invoice (convenience wrapper)",
     tags=["follow-ups"],
 )
 def create_invoice_follow_up(
     invoice_id: uuid.UUID,
-    current_user: Annotated[User, Depends(_read_allowed)] = ...,  # type: ignore[assignment]
-) -> JSONResponse:
-    """Stub endpoint — follow-up tracking is deferred to M5 extension.
+    body: FollowUpBaseRequest,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_write_allowed)] = ...,  # type: ignore[assignment]
+) -> FollowUpRow:
+    """Create a follow-up anchored to a specific invoice.
+
+    Forces ``invoice_id`` from the URL path; ``canonical_id`` is derived
+    automatically from the invoice row.
+
+    RBAC: ANALYST (entity-scoped), ADMIN. CFO/PENDING → 403.
 
     Returns:
-        501 Not Implemented.
+        201 with FollowUpRow.
+
+    Raises:
+        403: ANALYST out-of-scope or insufficient role.
+        404: Invoice not found.
     """
-    return JSONResponse(
-        status_code=501,
-        content={
-            "code": "NOT_IMPLEMENTED",
-            "detail": "Follow-up tracking coming in M5 extension.",
-            "endpoint": f"/invoices/{invoice_id}/follow-ups",
-        },
+    forced = FollowUpCreateRequest.model_construct(
+        date=body.date,
+        channel=body.channel,
+        contact_person=body.contact_person,
+        next_action_date=body.next_action_date,
+        notes=body.notes,
+        invoice_id=invoice_id,
+        canonical_id=None,
     )
+    return create_follow_up(body=forced, current_user=current_user, db=session)

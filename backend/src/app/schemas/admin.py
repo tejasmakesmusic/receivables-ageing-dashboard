@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import uuid as _uuid_module  # noqa: TCH003
 from datetime import datetime  # noqa: TCH003
+from decimal import Decimal  # noqa: TCH003
 from typing import Any
 from uuid import UUID  # noqa: TCH003
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
 # ---------------------------------------------------------------------------
 # Exception bucket types (A3)
@@ -131,6 +133,18 @@ class EmailOutboxMarkSentResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ReconciliationSummary(BaseModel):
+    """Nested reconciliation data on SnapshotListRow (for A6 historical table)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: str  # MATCHED | MISMATCHED | UNRECONCILED
+    delta: str | None  # Decimal serialised as string; None when UNRECONCILED
+    tally_xero_closing_ar: str | None  # Decimal serialised as string; None when UNRECONCILED
+    dashboard_ar: str  # Decimal serialised as string
+    updated_at: datetime | None  # entered_at from reconciliation_entries
+
+
 class SnapshotListRow(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -143,6 +157,7 @@ class SnapshotListRow(BaseModel):
     uploaded_by_email: str
     row_count: int | None
     total_outstanding: str | None
+    reconciliation: ReconciliationSummary | None = None
 
 
 class SnapshotListResponse(BaseModel):
@@ -152,6 +167,29 @@ class SnapshotListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ---------------------------------------------------------------------------
+# Material-change flag (M5 banner — §13 #2)
+# ---------------------------------------------------------------------------
+
+
+class MaterialChangeFlag(BaseModel):
+    """One entry from snapshot.material_change_flags_json, enriched with
+    invoice_ref and canonical_name via a join at read time."""
+
+    model_config = ConfigDict(frozen=True)
+
+    invoice_id: _uuid_module.UUID
+    invoice_ref: str
+    canonical_name: str
+    prior_amount: Decimal
+    new_amount: Decimal
+    delta_pct: Decimal
+
+    @field_serializer("prior_amount", "new_amount", "delta_pct")
+    def _serialize_decimal(self, v: Decimal) -> str:
+        return str(v)
 
 
 class SnapshotDetailResponse(BaseModel):
@@ -169,3 +207,4 @@ class SnapshotDetailResponse(BaseModel):
     published_as: str | None
     row_count: int | None
     total_outstanding: str | None
+    material_change_flags: list[MaterialChangeFlag] | None = None

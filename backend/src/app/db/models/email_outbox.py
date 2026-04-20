@@ -39,7 +39,7 @@ class EmailOutbox(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "email_outbox"
     __table_args__ = (
         CheckConstraint(
-            "rule_type IN ('DAILY_DIGEST', 'PUBLISH_NOTIF')",
+            "rule_type IN ('DAILY_DIGEST', 'PUBLISH_NOTIF', 'WEEKLY_DEFAULT_CP_NUDGE')",
             name="rule_type",
         ),
         CheckConstraint(
