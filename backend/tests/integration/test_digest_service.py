@@ -28,6 +28,7 @@ from sqlalchemy import select
 
 from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
+from app.db.models.email_rule import EmailRule
 from app.db.models.entity import Entity
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
@@ -520,3 +521,106 @@ def test_scheduler_trigger_ist_09_00() -> None:
     # Default settings use 09:00
     assert hour == 9
     assert minute == 0
+
+
+# ---------------------------------------------------------------------------
+# 8. email_rule wiring — is_active=false → skip; active with recipients → use rule
+# ---------------------------------------------------------------------------
+
+
+def test_run_daily_digest_rule_inactive_skips(db_session: Session) -> None:
+    """DAILY_DIGEST rule with is_active=false → run_daily_digest returns [] immediately."""
+    tag = uuid.uuid4().hex[:8]
+
+    # Ensure at least one published snapshot and a CFO exist so the fallback
+    # would normally enqueue — but the rule being inactive must short-circuit.
+    admin = db_session.scalar(select(User).where(User.email == ADMIN_EMAIL))
+    assert admin is not None
+    _ensure_cfo_user(db_session, tag)
+
+    ind = db_session.scalar(select(Entity).where(Entity.code == "IND"))
+    assert ind is not None
+    ind.default_credit_days = 30
+    _seed_published_snapshot(
+        db_session,
+        ind,
+        date(2026, 4, 20),
+        [(f"RULEINACT-{tag}-P", Decimal("5000.00"), "NOT_DUE")],
+        admin.id,
+    )
+
+    # Set the DAILY_DIGEST rule to inactive
+    rule = db_session.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "DAILY_DIGEST")
+    )
+    assert rule is not None
+    rule.is_active = False
+    rule.recipients_json = ["someone@emb.global"]
+    db_session.commit()
+
+    rows = run_daily_digest(db_session)
+    assert rows == [], "Expected empty list when DAILY_DIGEST rule is_active=false"
+
+    # Restore default
+    rule.is_active = False  # spec default is false — no need to change
+    db_session.commit()
+
+
+def test_run_daily_digest_rule_active_with_recipients(db_session: Session) -> None:
+    """DAILY_DIGEST rule active with recipients → enqueues using rule recipients."""
+    tag = uuid.uuid4().hex[:8]
+
+    admin = db_session.scalar(select(User).where(User.email == ADMIN_EMAIL))
+    assert admin is not None
+
+    ind = db_session.scalar(select(Entity).where(Entity.code == "IND"))
+    uae = db_session.scalar(select(Entity).where(Entity.code == "UAE"))
+    assert ind is not None and uae is not None
+    ind.default_credit_days = 30
+    uae.default_credit_days = 30
+
+    # Use a date far enough in the future that this snap is picked as latest
+    rule_test_date = date(2026, 6, 28)
+    _seed_published_snapshot(
+        db_session,
+        ind,
+        rule_test_date,
+        [(f"RULEACTIVE-{tag}-IND", Decimal("99000.00"), "90_PLUS")],
+        admin.id,
+    )
+    _seed_published_snapshot(
+        db_session,
+        uae,
+        rule_test_date,
+        [(f"RULEACTIVE-{tag}-UAE", Decimal("88000.00"), "61_90")],
+        admin.id,
+    )
+
+    rule_recipient = f"notify+{tag}@emb.global"
+
+    # Activate the DAILY_DIGEST rule with specific recipients
+    rule = db_session.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "DAILY_DIGEST")
+    )
+    assert rule is not None
+    rule.is_active = True
+    rule.recipients_json = [rule_recipient]
+    db_session.commit()
+
+    rows = run_daily_digest(db_session)
+
+    # Both entities should be enqueued
+    rule_snap_ids_enqueued = {r.snapshot_id for r in rows}
+    assert len(rule_snap_ids_enqueued) > 0, "Expected at least one row enqueued"
+
+    for row in rows:
+        assert row.rule_type == "DAILY_DIGEST"
+        assert row.status == "QUEUED"
+        assert rule_recipient in row.recipients_json, (
+            f"Expected rule recipient {rule_recipient!r} in {row.recipients_json}"
+        )
+
+    # Restore rule to inactive (spec default) so other tests are unaffected
+    rule.is_active = False
+    rule.recipients_json = []
+    db_session.commit()

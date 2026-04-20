@@ -26,6 +26,7 @@ import openpyxl
 from sqlalchemy import select
 
 from app.db.models.email_outbox import EmailOutbox
+from app.db.models.email_rule import EmailRule
 from app.db.models.entity import Entity
 from app.db.models.party import PartyAlias, PartyCanonical
 from app.db.models.reconciliation_entry import ReconciliationEntry
@@ -424,3 +425,93 @@ def test_publish_notif_email_with_prior_snapshot(
     assert "This snapshot" in body
     # Dashboard link for IND
     assert "/dashboard?entity=IND" in body
+
+
+# ---------------------------------------------------------------------------
+# Integration tests 3 & 4: email_rule wiring for PUBLISH_NOTIF
+# ---------------------------------------------------------------------------
+
+
+def test_publish_notif_empty_recipients_row_still_enqueued(
+    client: TestClient, db_session: Session
+) -> None:
+    """PUBLISH_NOTIF rule with empty recipients → outbox row enqueued with empty recipients_json.
+
+    The row is still written — body content (diff) is preserved regardless of
+    recipient list.  This allows the drain cron or drain-stub to see the queue.
+    """
+    _login_as_admin(client)
+    _set_entity_default_credit_days(db_session, "IND", 30)
+
+    # Ensure PUBLISH_NOTIF rule is active with empty recipients (seeded default)
+    rule = db_session.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "PUBLISH_NOTIF")
+    )
+    assert rule is not None
+    rule.is_active = True
+    rule.recipients_json = []
+    db_session.flush()
+
+    # Reconcile any existing published snapshots so the gate passes
+    _reconcile_all_published_for_entity(db_session, "IND")
+
+    party = "NotifRuleEmpty Client"
+    _create_canonical_for_party(db_session, "IND", party, alias_text=party)
+    xlsx = _make_tally_xlsx(
+        data_rows=[[date(2026, 3, 5), "NOTIF-RULE-EMPTY-001", party, 3000.0, 3000.0, None, None]]
+    )
+    upload_resp = _upload(client, xlsx, entity_code="IND", as_of_date="2026-03-31")
+    assert upload_resp.status_code == 201, upload_resp.json()
+    snapshot_id = upload_resp.json()["snapshot_id"]
+
+    _ack_all_warnings(client, db_session, snapshot_id)
+    pub_resp = _publish(client, snapshot_id)
+    assert pub_resp.status_code == 200, pub_resp.json()
+
+    outbox = _get_latest_outbox_row(db_session, snapshot_id)
+    # Row is enqueued even with empty recipients
+    assert outbox.status == "QUEUED"
+    assert outbox.recipients_json == []
+    assert outbox.body_html is not None and len(outbox.body_html) > 100
+
+
+def test_publish_notif_rule_with_recipients_populates_outbox(
+    client: TestClient, db_session: Session
+) -> None:
+    """PUBLISH_NOTIF rule with recipients → outbox row recipients_json populated from rule."""
+    _login_as_admin(client)
+    _set_entity_default_credit_days(db_session, "IND", 30)
+
+    rule = db_session.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "PUBLISH_NOTIF")
+    )
+    assert rule is not None
+    rule_recipient = "notif-rule@emb.global"
+    rule.is_active = True
+    rule.recipients_json = [rule_recipient]
+    db_session.flush()
+
+    _reconcile_all_published_for_entity(db_session, "IND")
+
+    party = "NotifRuleFull Client"
+    _create_canonical_for_party(db_session, "IND", party, alias_text=party)
+    xlsx = _make_tally_xlsx(
+        data_rows=[[date(2026, 4, 1), "NOTIF-RULE-FULL-001", party, 7500.0, 7500.0, None, None]]
+    )
+    upload_resp = _upload(client, xlsx, entity_code="IND", as_of_date="2026-04-30")
+    assert upload_resp.status_code == 201, upload_resp.json()
+    snapshot_id = upload_resp.json()["snapshot_id"]
+
+    _ack_all_warnings(client, db_session, snapshot_id)
+    pub_resp = _publish(client, snapshot_id)
+    assert pub_resp.status_code == 200, pub_resp.json()
+
+    outbox = _get_latest_outbox_row(db_session, snapshot_id)
+    assert outbox.recipients_json == [rule_recipient], (
+        f"Expected [{rule_recipient!r}], got {outbox.recipients_json}"
+    )
+
+    # Restore rule to seed default
+    rule.is_active = True
+    rule.recipients_json = []
+    db_session.commit()

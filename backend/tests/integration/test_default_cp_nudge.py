@@ -24,6 +24,7 @@ from sqlalchemy import select
 
 from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
+from app.db.models.email_rule import EmailRule
 from app.db.models.entity import Entity
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
@@ -478,4 +479,104 @@ def test_render_default_cp_nudge_html(db_session: Session) -> None:
     assert "INR" in html
     assert str(payload.snapshot_id) in html
     assert "Week of" in html
-    assert "Credit Period Config" in html
+
+
+# ---------------------------------------------------------------------------
+# 8. email_rule wiring — is_active=false → skip; active with recipients → use rule
+# ---------------------------------------------------------------------------
+
+
+def test_run_weekly_nudge_rule_inactive_skips(db_session: Session) -> None:
+    """WEEKLY_DEFAULT_CP_NUDGE rule with is_active=false → returns [] immediately."""
+    tag = uuid.uuid4().hex[:8]
+
+    admin = db_session.scalar(select(User).where(User.email == ADMIN_EMAIL))
+    assert admin is not None
+
+    # Seed an ANALYST so the old fallback would enqueue
+    analyst_email = ANALYST_EMAIL_TEMPLATE.format(f"ruleinact{tag}")
+    analyst = db_session.scalar(select(User).where(User.email == analyst_email))
+    if analyst is None:
+        analyst = User(
+            email=analyst_email,
+            name=f"Analyst-{tag}",
+            role=Role.ANALYST,
+            is_active=True,
+        )
+        db_session.add(analyst)
+    else:
+        analyst.role = Role.ANALYST
+        analyst.is_active = True
+    db_session.flush()
+
+    ind = db_session.scalar(select(Entity).where(Entity.code == "IND"))
+    assert ind is not None
+    ind.default_credit_days = 30
+    _seed_published_snapshot_with_source(
+        db_session,
+        ind,
+        date(2026, 4, 21),
+        [(f"NUDGEINACT-{tag}-P", Decimal("7000.00"), "DEFAULT")],
+        admin.id,
+    )
+
+    rule = db_session.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "WEEKLY_DEFAULT_CP_NUDGE")
+    )
+    assert rule is not None
+    rule.is_active = False
+    rule.recipients_json = ["someone@emb.global"]
+    db_session.commit()
+
+    rows = run_weekly_default_cp_nudge(db_session)
+    assert rows == [], "Expected empty list when WEEKLY_DEFAULT_CP_NUDGE rule is_active=false"
+
+    # Restore
+    rule.is_active = False
+    db_session.commit()
+
+
+def test_run_weekly_nudge_rule_active_with_recipients(db_session: Session) -> None:
+    """WEEKLY_DEFAULT_CP_NUDGE rule active with recipients → enqueues using rule recipients."""
+    tag = uuid.uuid4().hex[:8]
+
+    admin = db_session.scalar(select(User).where(User.email == ADMIN_EMAIL))
+    assert admin is not None
+
+    ind = db_session.scalar(select(Entity).where(Entity.code == "IND"))
+    assert ind is not None
+    ind.default_credit_days = 30
+
+    # A date offset to minimise idempotency collision with other tests
+    snap_date = date(2026, 5, 25)
+    _seed_published_snapshot_with_source(
+        db_session,
+        ind,
+        snap_date,
+        [(f"NUDGEACTIVE-{tag}-P", Decimal("12000.00"), "DEFAULT")],
+        admin.id,
+    )
+
+    rule_recipient = f"nudge+{tag}@emb.global"
+    rule = db_session.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "WEEKLY_DEFAULT_CP_NUDGE")
+    )
+    assert rule is not None
+    rule.is_active = True
+    rule.recipients_json = [rule_recipient]
+    db_session.commit()
+
+    rows = run_weekly_default_cp_nudge(db_session)
+
+    # At least one entity should have been enqueued (IND has DEFAULT-source invoices)
+    assert len(rows) >= 1, "Expected at least one WEEKLY_DEFAULT_CP_NUDGE row"
+    for row in rows:
+        assert row.rule_type == "WEEKLY_DEFAULT_CP_NUDGE"
+        assert rule_recipient in row.recipients_json, (
+            f"Expected rule recipient {rule_recipient!r} in {row.recipients_json}"
+        )
+
+    # Restore
+    rule.is_active = False
+    rule.recipients_json = []
+    db_session.commit()

@@ -88,8 +88,19 @@ def _require_staged(snapshot: Snapshot | None, snapshot_id: uuid.UUID) -> Snapsh
     return snapshot
 
 
-def _check_entity_scope(current_user: User, snapshot: Snapshot, db: Session) -> None:
-    """Raise 403 if ANALYST user's entity scope does not include snapshot's entity."""
+def _check_entity_scope(
+    current_user: User,
+    snapshot: Snapshot,
+    db: Session,
+    *,
+    allow_cfo_read: bool = False,
+) -> None:
+    """Raise 403 if the user lacks access to this snapshot's entity.
+
+    Args:
+        allow_cfo_read: When True, CFO role is permitted (read-only paths).
+            Write paths leave this False so CFO is still denied.
+    """
     from app.core.rbac import Role
 
     if current_user.role == Role.ADMIN:
@@ -104,7 +115,10 @@ def _check_entity_scope(current_user: User, snapshot: Snapshot, db: Session) -> 
                 detail="Analyst scope does not include this entity.",
             )
         return
-    # CFO, PENDING — denied
+    if allow_cfo_read and current_user.role == Role.CFO:
+        # CFO has all-entity read access — no entity-scope restriction.
+        return
+    # PENDING (and CFO on write paths) — denied
     raise HTTPException(status_code=403, detail="Insufficient permissions.")
 
 
@@ -411,10 +425,11 @@ def get_staging_view(
     """Build the full staging view for a snapshot (read-only).
 
     No DB writes.  Alias resolution is computed live via resolve_aliases_batch.
+    CFO is allowed on this read path (all-entity, no scope restriction).
     """
     snapshot = db.get(Snapshot, snapshot_id)
     snapshot = _require_staged(snapshot, snapshot_id)
-    _check_entity_scope(current_user, snapshot, db)
+    _check_entity_scope(current_user, snapshot, db, allow_cfo_read=True)
 
     parse_result: dict[str, Any] = snapshot.parse_result_json or {}
     source_hint: str = snapshot.source_hint

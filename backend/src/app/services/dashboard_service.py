@@ -315,7 +315,7 @@ def _compute_top_parties(
         canonical = db.get(PartyCanonical, canonical_id)
         canonical_name = canonical.name if canonical else str(canonical_id)
 
-        # Count active exceptions
+        # Count active, non-excluded exceptions (Task A.1: excluded rows are hidden)
         exception_count = (
             db.scalar(
                 select(func.count(ExceptionTag.id)).where(
@@ -323,6 +323,7 @@ def _compute_top_parties(
                         select(Invoice.id).where(Invoice.canonical_id == canonical_id)
                     ),
                     ExceptionTag.status == "ACTIVE",
+                    ExceptionTag.excluded_at.is_(None),
                 )
             )
             or 0
@@ -376,6 +377,7 @@ def _get_recent_exceptions(
         .where(
             Invoice.entity_id == snapshot.entity_id,
             ExceptionTag.status == "ACTIVE",
+            ExceptionTag.excluded_at.is_(None),
         )
         .order_by(ExceptionTag.tagged_at.desc())
         .limit(5)

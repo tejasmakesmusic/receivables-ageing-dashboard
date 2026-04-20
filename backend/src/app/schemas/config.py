@@ -1,12 +1,13 @@
 """Pydantic v2 schemas for /config/credit-period and /config/aliases CRUD (M3 Task 6).
 
 Covers:
-  GET /config/credit-period         → CreditPeriodListResponse
-  POST /config/credit-period        → CreditPeriodCreateRequest / CreditPeriodRow
-  PATCH /config/credit-period/:id   → CreditPeriodPatchRequest / CreditPeriodRow
-  GET /config/aliases               → AliasListResponse
-  POST /config/aliases              → AliasCreateRequest / AliasRow
-  PATCH /config/aliases/:id         → AliasPatchRequest / AliasRow
+  GET /config/credit-period                    → CreditPeriodListResponse
+  POST /config/credit-period                   → CreditPeriodCreateRequest / CreditPeriodRow
+  PATCH /config/credit-period/:id              → CreditPeriodPatchRequest / CreditPeriodRow
+  GET /config/credit-period/default-parties    → DefaultCpReportResponse  (A.4)
+  GET /config/aliases                          → AliasListResponse
+  POST /config/aliases                         → AliasCreateRequest / AliasRow
+  PATCH /config/aliases/:id                    → AliasPatchRequest / AliasRow
 """
 
 from __future__ import annotations
@@ -23,6 +24,11 @@ __all__ = [
     "CreditPeriodCreateRequest",
     "CreditPeriodPatchRequest",
     "CreditPeriodListResponse",
+    "CreditPeriodEditRequest",
+    "CreditPeriodEditResponse",
+    # Default-CP report (A.4 spec §13 #5)
+    "DefaultCpPartyReportRow",
+    "DefaultCpReportResponse",
     # Aliases
     "AliasRow",
     "AliasCreateRequest",
@@ -107,6 +113,63 @@ class CreditPeriodListResponse(BaseModel):
 
     items: list[CreditPeriodRow]
     pagination: PaginationMeta
+
+
+class CreditPeriodEditRequest(BaseModel):
+    """Body for POST /config/credit-period/{canonical_id} — analyst-facing one-off edit.
+
+    Supersedes the active credit_period_config row for the given canonical party
+    (ADR-0005 D3 supersede logic). Idempotent: if (days, reason_note) matches the
+    currently active config, returns result='noop' with no DB writes.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    days: Annotated[int, Field(ge=0)]
+    reason_note: str | None = None
+
+
+class CreditPeriodEditResponse(BaseModel):
+    """Response for POST /config/credit-period/{canonical_id}."""
+
+    model_config = ConfigDict(frozen=True)
+
+    result: Literal["inserted", "superseded", "noop"]
+    config_id: uuid.UUID
+    days: int
+    reason_note: str | None
+    valid_from: date
+
+
+# ---------------------------------------------------------------------------
+# Default-CP report schemas (A.4 — spec §13 #5)
+# ---------------------------------------------------------------------------
+
+
+class DefaultCpPartyReportRow(BaseModel):
+    """One party row in the default-CP report, as returned by
+    GET /config/credit-period/default-parties."""
+
+    model_config = ConfigDict(frozen=True)
+
+    canonical_id: uuid.UUID
+    canonical_name: str
+    total_outstanding: str  # Decimal serialised as string for JSON transport
+    n_open_invoices: int
+
+
+class DefaultCpReportResponse(BaseModel):
+    """Response for GET /config/credit-period/default-parties (A.4)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    entity_code: Literal["IND", "UAE"]
+    as_of_date: date
+    snapshot_id: uuid.UUID
+    currency_display: str
+    total_parties_on_default: int
+    # Top 20 sorted by outstanding desc (service already orders).
+    parties: list[DefaultCpPartyReportRow]
 
 
 # ---------------------------------------------------------------------------

@@ -26,13 +26,21 @@ Endpoints covered here:
            → PENDING 403  (CFO + analyst cross-entity already in test_exceptions_crud.py)
   PATCH  /exceptions/{id}
            → PENDING 403  (CFO already in test_exceptions_crud.py)
+  PATCH  /snapshots/{id}/staging/{row_index}
+           → CFO 403  (A.6 gap)
+  DELETE /follow-ups/{id}
+           → PENDING 403  (A.6 gap)
+  GET    /snapshots/{id}/staging
+           → CFO 200  (A.6: §9 deviation closed — positive confirmation test)
 
 Skipped (already fully covered per audit):
-  - /snapshots/* (upload, discard, staging PATCH, warnings/ack, publish):
+  - /snapshots/* (upload, discard, warnings/ack, publish):
       PENDING + CFO + cross-entity in test_m3_rbac_matrix.py
+  - /snapshots/{id}/staging PATCH (cross-entity ANALYST, PENDING):
+      test_m3_rbac_matrix.py
   - /config/credit-period (all verbs): test_m3_rbac_matrix.py
   - /config/aliases (all verbs): test_m3_rbac_matrix.py
-  - /follow-ups (all verbs): test_follow_ups.py
+  - /follow-ups (most verbs): test_follow_ups.py
   - /snapshots/{id}/reconciliation: test_reconciliation_crud.py
   - /admin/audit-log: test_admin_audit_log.py
   - /admin/email-outbox GET: test_admin_email_outbox.py
@@ -53,6 +61,7 @@ from app.db.models.email_outbox import EmailOutbox
 from app.db.models.entity import Entity
 from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.exception_tag import ExceptionTag
+from app.db.models.follow_up import FollowUp
 from app.db.models.invoice import Invoice
 from app.db.models.party import PartyCanonical
 from app.db.models.snapshot import Snapshot
@@ -615,3 +624,97 @@ def test_patch_exception_pending_403(client: TestClient, db_session: Session) ->
         headers=_headers(client),
     )
     assert resp.status_code == 403
+
+
+# ===========================================================================
+# PATCH /snapshots/{id}/staging/{row_index}
+# RBAC: ANALYST(entity-scoped) + ADMIN.  Gap: CFO 403
+# (PENDING + cross-entity ANALYST already in test_m3_rbac_matrix.py)
+# ===========================================================================
+
+
+def _make_follow_up(db_session: Session, canonical_id: uuid.UUID) -> uuid.UUID:
+    """Create a follow-up row at the party level and return its id."""
+    admin = _admin_id(db_session)
+    from datetime import date as _date
+
+    fu = FollowUp(
+        canonical_id=canonical_id,
+        date=_date(2026, 4, 1),
+        channel="EMAIL",
+        logged_by=admin,
+    )
+    db_session.add(fu)
+    db_session.flush()
+    return cast(uuid.UUID, fu.id)
+
+
+def _make_canonical_for_gaps(db_session: Session, entity_code: str = "IND") -> uuid.UUID:
+    admin = _admin_id(db_session)
+    entity_id = _entity_id(db_session, entity_code)
+    canonical = PartyCanonical(
+        entity_id=entity_id,
+        name=f"GapFollowUpParty-{uuid.uuid4().hex[:6]}",
+        created_by=admin,
+    )
+    db_session.add(canonical)
+    db_session.flush()
+    return cast(uuid.UUID, canonical.id)
+
+
+def test_patch_staging_row_cfo_403(client: TestClient, db_session: Session) -> None:
+    """CFO cannot PATCH a staging row — write op blocked at route level."""
+    _login_as_admin(client)
+    snap_id = _make_staged_snapshot(db_session, entity_code="IND")
+
+    # Retrieve any row_index from the (empty) staging view as admin
+    # The snapshot has no rows so we use row_index=0; the CFO check fires
+    # before the service-layer row lookup.
+    _login_as_cfo(client, db_session)
+    resp = client.patch(
+        f"/snapshots/{snap_id}/staging/0",
+        json={"action": "resolve_alias", "canonical_id": str(uuid.uuid4())},
+        headers=_headers(client),
+    )
+    assert resp.status_code == 403
+
+
+# ===========================================================================
+# DELETE /follow-ups/{id}
+# RBAC: ADMIN only.  Gap: PENDING 403
+# (CFO + ANALYST already in test_follow_ups.py)
+# ===========================================================================
+
+
+def test_delete_follow_up_pending_403(client: TestClient, db_session: Session) -> None:
+    """PENDING cannot delete a follow-up — ADMIN-only endpoint."""
+    _login_as_admin(client)
+    canonical_id = _make_canonical_for_gaps(db_session)
+    fu_id = _make_follow_up(db_session, canonical_id)
+
+    _login_as_pending(client, db_session, "pending_del_fu@emb.global")
+    resp = client.delete(
+        f"/follow-ups/{fu_id}",
+        headers=_headers(client),
+    )
+    assert resp.status_code == 403
+
+
+# ===========================================================================
+# GET /snapshots/{id}/staging
+# CFO positive test — §9 deviation closed in A.6 (route now uses _read_allowed)
+# ===========================================================================
+
+
+def test_get_staging_cfo_200(client: TestClient, db_session: Session) -> None:
+    """CFO gets 200 on staging GET after §9 deviation closed (A.6).
+
+    Route moved from _allowed (ANALYST+ADMIN) to _read_allowed (adds CFO).
+    Service-layer ANALYST entity-scope enforcement is unchanged.
+    """
+    _login_as_admin(client)
+    snap_id = _make_staged_snapshot(db_session, entity_code="IND")
+
+    _login_as_cfo(client, db_session)
+    resp = client.get(f"/snapshots/{snap_id}/staging")
+    assert resp.status_code == 200

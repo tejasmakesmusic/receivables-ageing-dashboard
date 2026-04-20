@@ -9,6 +9,7 @@ M3 models: Snapshot, PartyCanonical, PartyAlias, CreditPeriodConfig,
            Invoice, InvoiceSnapshot, ExceptionBucketType
 M3 Task 5: ExceptionTag, EmailOutbox
 M4-M6:     ReconciliationEntry, FollowUp
+Task A.3:  EmailRule
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.models.credit_period_config import CreditPeriodConfig
 from app.db.models.email_outbox import EmailOutbox
+from app.db.models.email_rule import EmailRule
 from app.db.models.entity import Entity
 from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.exception_tag import ExceptionTag
@@ -34,6 +36,7 @@ __all__ = [
     "Base",
     "CreditPeriodConfig",
     "EmailOutbox",
+    "EmailRule",
     "Entity",
     "ExceptionBucketType",
     "ExceptionTag",

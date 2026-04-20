@@ -3,6 +3,7 @@ import { render, screen, within, waitFor, fireEvent } from "@testing-library/rea
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { S5ExceptionsPage } from "@/pages/S5ExceptionsPage";
+import type { CurrentUser, ExceptionListRow } from "@/types";
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -48,7 +49,7 @@ const MOCK_SNAPSHOT_NO_FLAGS = {
   material_change_flags: null,
 };
 
-const MOCK_EXCEPTION_ROW_1 = {
+const MOCK_EXCEPTION_ROW_1: ExceptionListRow = {
   id: "exc-uuid-1",
   invoice_id: "inv-uuid-10",
   invoice_ref: "INV-1001",
@@ -65,9 +66,14 @@ const MOCK_EXCEPTION_ROW_1 = {
   resolved_at: null,
   last_follow_up_date: null,
   last_follow_up_channel: null,
+  excluded_at: null,
+  excluded_reason: null,
+  excluded_reason_note: null,
+  excluded_by_email: null,
+  is_stale: false,
 };
 
-const MOCK_EXCEPTION_ROW_2 = {
+const MOCK_EXCEPTION_ROW_2: ExceptionListRow = {
   id: "exc-uuid-2",
   invoice_id: "inv-uuid-11",
   invoice_ref: "INV-1002",
@@ -84,6 +90,22 @@ const MOCK_EXCEPTION_ROW_2 = {
   resolved_at: null,
   last_follow_up_date: null,
   last_follow_up_channel: null,
+  excluded_at: null,
+  excluded_reason: null,
+  excluded_reason_note: null,
+  excluded_by_email: null,
+  is_stale: false,
+};
+
+// Excluded row for Task A.1 tests
+const MOCK_EXCLUDED_ROW: ExceptionListRow = {
+  ...MOCK_EXCEPTION_ROW_1,
+  id: "exc-excl-1",
+  excluded_at: "2026-04-10T09:00:00Z",
+  excluded_reason: "LEGAL_HOLD",
+  excluded_reason_note: "Active litigation",
+  excluded_by_email: "admin@emb.global",
+  is_stale: false,
 };
 
 const MOCK_EXCEPTIONS = {
@@ -776,5 +798,446 @@ describe("S5ExceptionsPage — last follow-up column", () => {
 
     const cell = screen.getByTestId("last-fu-exc-exc-fu-absent");
     expect(cell.textContent).toContain("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task A.1 — Exception exclude flow
+// ---------------------------------------------------------------------------
+
+const MOCK_ADMIN_USER: CurrentUser = { id: "user-admin", email: "admin@emb.global", name: "Admin", role: "ADMIN", entity_id_scope: null };
+const MOCK_ANALYST_USER: CurrentUser = { id: "user-analyst", email: "analyst@emb.global", name: "Analyst", role: "ANALYST", entity_id_scope: "entity-ind" };
+
+function renderWithUserAndRows(
+  user: CurrentUser = MOCK_ADMIN_USER,
+  items: ExceptionListRow[] = [MOCK_EXCEPTION_ROW_1, MOCK_EXCEPTION_ROW_2],
+  postMock: ((url: string) => Promise<unknown>) | null = null,
+) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && postMock) {
+        return postMock(url as string);
+      }
+      if (url.includes("/auth/me")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(user) });
+      }
+      if (url.includes("/exceptions")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ items, total: items.length, page: 1, page_size: 25 }),
+        });
+      }
+      if (url.includes("/admin/exception-buckets")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(MOCK_BUCKETS) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    }) as typeof fetch,
+  );
+
+  return render(
+    <QueryClientProvider client={makeQC()}>
+      <MemoryRouter initialEntries={["/exceptions"]}>
+        <Routes>
+          <Route path="/exceptions" element={<S5ExceptionsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("S5ExceptionsPage — Exclude modal (Task A.1)", () => {
+  beforeEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+  });
+  afterEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+    vi.restoreAllMocks();
+  });
+
+  it("Exclude button visible for ADMIN on ACTIVE rows", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER);
+    await waitFor(() => {
+      expect(screen.getByText("AlphaCorp Industries Ltd")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`)).toBeInTheDocument();
+  });
+
+  it("Exclude button visible for ANALYST on ACTIVE rows", async () => {
+    renderWithUserAndRows(MOCK_ANALYST_USER);
+    await waitFor(() => {
+      expect(screen.getByText("AlphaCorp Industries Ltd")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`)).toBeInTheDocument();
+  });
+
+  it("clicking Exclude button opens ExcludeModal with dialog", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER);
+    await waitFor(() => {
+      expect(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("Exclude exception")).toBeInTheDocument();
+    });
+  });
+
+  it("ExcludeModal has reason Select with 4 options", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER);
+    await waitFor(() => {
+      expect(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const dialog = screen.getByRole("dialog");
+    const select = within(dialog).getAllByRole("combobox")[0];
+    const options = within(select).getAllByRole("option");
+    // 4 reasons + 1 placeholder
+    expect(options.length).toBe(5);
+    expect(options.map((o) => o.textContent)).toContain("Legal Hold");
+    expect(options.map((o) => o.textContent)).toContain("Negotiation");
+    expect(options.map((o) => o.textContent)).toContain("Agreed Write-Off");
+    expect(options.map((o) => o.textContent)).toContain("Other");
+  });
+
+  it("ExcludeModal confirm button disabled when no reason selected", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER);
+    await waitFor(() => {
+      expect(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const confirmBtn = screen.getByTestId("exclude-confirm-btn");
+    expect(confirmBtn).toBeDisabled();
+  });
+
+  it("ExcludeModal submits POST and closes; row hidden from default view", async () => {
+    let postedUrl = "";
+    const postMock = (url: string) => {
+      postedUrl = url;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: MOCK_EXCEPTION_ROW_1.id, excluded_at: "2026-04-10T09:00:00Z", excluded_reason: "LEGAL_HOLD", excluded_reason_note: null, excluded_by_email: "admin@emb.global" }) });
+    };
+
+    renderWithUserAndRows(MOCK_ADMIN_USER, [MOCK_EXCEPTION_ROW_1], postMock);
+    await waitFor(() => {
+      expect(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const dialog = screen.getByRole("dialog");
+    const select = within(dialog).getAllByRole("combobox")[0];
+    fireEvent.change(select, { target: { value: "LEGAL_HOLD" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exclude-confirm-btn")).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByTestId("exclude-confirm-btn"));
+
+    await waitFor(() => {
+      expect(postedUrl).toContain(`/exceptions/${MOCK_EXCEPTION_ROW_1.id}/exclude`);
+    });
+  });
+
+  it("ExcludeModal Cancel button closes without submitting", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER);
+    await waitFor(() => {
+      expect(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId(`exclude-btn-${MOCK_EXCEPTION_ROW_1.id}`));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe("S5ExceptionsPage — Show excluded toggle (Task A.1)", () => {
+  beforeEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+  });
+  afterEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+    vi.restoreAllMocks();
+  });
+
+  it("toggle 'Show excluded' renders in filters row", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER);
+    await waitFor(() => {
+      expect(screen.getByText("Exceptions")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("toggle-excluded")).toBeInTheDocument();
+  });
+
+  it("excluded rows are grayed out with 'Excluded — {reason}' badge", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER, [MOCK_EXCLUDED_ROW]);
+    await waitFor(() => {
+      expect(screen.getByTestId(`excluded-badge-${MOCK_EXCLUDED_ROW.id}`)).toBeInTheDocument();
+    });
+    const badge = screen.getByTestId(`excluded-badge-${MOCK_EXCLUDED_ROW.id}`);
+    expect(badge.textContent).toContain("Excluded");
+    expect(badge.textContent).toContain("LEGAL_HOLD");
+  });
+
+  it("clicking toggle changes aria-pressed state", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER);
+    await waitFor(() => {
+      expect(screen.getByTestId("toggle-excluded")).toBeInTheDocument();
+    });
+
+    const toggle = screen.getByTestId("toggle-excluded");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("toggle-excluded")).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+});
+
+describe("S5ExceptionsPage — Un-exclude (ADMIN only — Task A.1)", () => {
+  beforeEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+  });
+  afterEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+    vi.restoreAllMocks();
+  });
+
+  it("Un-exclude button only visible for ADMIN on excluded rows", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER, [MOCK_EXCLUDED_ROW]);
+    await waitFor(() => {
+      expect(screen.getByTestId(`unexclude-btn-${MOCK_EXCLUDED_ROW.id}`)).toBeInTheDocument();
+    });
+  });
+
+  it("Un-exclude button NOT visible for ANALYST on excluded rows", async () => {
+    renderWithUserAndRows(MOCK_ANALYST_USER, [MOCK_EXCLUDED_ROW]);
+    await waitFor(() => {
+      expect(screen.getByText("AlphaCorp Industries Ltd")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId(`unexclude-btn-${MOCK_EXCLUDED_ROW.id}`)).not.toBeInTheDocument();
+  });
+
+  it("clicking Un-exclude opens confirm modal", async () => {
+    renderWithUserAndRows(MOCK_ADMIN_USER, [MOCK_EXCLUDED_ROW]);
+    await waitFor(() => {
+      expect(screen.getByTestId(`unexclude-btn-${MOCK_EXCLUDED_ROW.id}`)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId(`unexclude-btn-${MOCK_EXCLUDED_ROW.id}`));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("Un-exclude exception")).toBeInTheDocument();
+    });
+  });
+
+  it("Un-exclude confirm modal submits POST /un-exclude", async () => {
+    let postedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          postedUrl = url as string;
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: MOCK_EXCLUDED_ROW.id, message: "Exception un-excluded successfully." }) });
+        }
+        if (url.includes("/auth/me")) {
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(MOCK_ADMIN_USER) });
+        }
+        if (url.includes("/exceptions")) {
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [MOCK_EXCLUDED_ROW], total: 1, page: 1, page_size: 25 }) });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(MOCK_BUCKETS) });
+      }) as typeof fetch,
+    );
+
+    render(
+      <QueryClientProvider client={makeQC()}>
+        <MemoryRouter initialEntries={["/exceptions"]}>
+          <Routes>
+            <Route path="/exceptions" element={<S5ExceptionsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId(`unexclude-btn-${MOCK_EXCLUDED_ROW.id}`)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId(`unexclude-btn-${MOCK_EXCLUDED_ROW.id}`));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /un-exclude/i }));
+
+    await waitFor(() => {
+      expect(postedUrl).toContain(`/exceptions/${MOCK_EXCLUDED_ROW.id}/un-exclude`);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D12 / Task A.5 — Stale badge and "Show stale only" toggle
+// ---------------------------------------------------------------------------
+
+const MOCK_STALE_ROW: ExceptionListRow = {
+  ...MOCK_EXCEPTION_ROW_1,
+  id: "exc-stale-1",
+  status: "ACTIVE",
+  is_stale: true,
+};
+
+const MOCK_NON_STALE_ROW: ExceptionListRow = {
+  ...MOCK_EXCEPTION_ROW_2,
+  id: "exc-nonstale-1",
+  status: "ACTIVE",
+  is_stale: false,
+};
+
+function renderWithStaleRows(items: ExceptionListRow[]) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/exceptions")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({ items, total: items.length, page: 1, page_size: 25 }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MOCK_BUCKETS),
+      });
+    }) as typeof fetch,
+  );
+
+  return render(
+    <QueryClientProvider client={makeQC()}>
+      <MemoryRouter initialEntries={["/exceptions"]}>
+        <Routes>
+          <Route path="/exceptions" element={<S5ExceptionsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("S5ExceptionsPage — Stale badge and toggle (D12 / Task A.5)", () => {
+  beforeEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+  });
+  afterEach(() => {
+    localStorage.removeItem("s5-explainer-dismissed");
+    vi.restoreAllMocks();
+  });
+
+  it("renders Stale badge for rows where is_stale=true", async () => {
+    renderWithStaleRows([MOCK_STALE_ROW, MOCK_NON_STALE_ROW]);
+
+    await waitFor(() => {
+      expect(screen.getByText("AlphaCorp Industries Ltd")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId(`stale-badge-${MOCK_STALE_ROW.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`stale-badge-${MOCK_STALE_ROW.id}`).textContent).toBe("Stale");
+  });
+
+  it("does NOT render Stale badge for rows where is_stale=false", async () => {
+    renderWithStaleRows([MOCK_STALE_ROW, MOCK_NON_STALE_ROW]);
+
+    await waitFor(() => {
+      expect(screen.getByText("BetaCorp Ltd")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByTestId(`stale-badge-${MOCK_NON_STALE_ROW.id}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("'Show stale only' toggle button renders in filters row", async () => {
+    renderWithStaleRows([MOCK_STALE_ROW, MOCK_NON_STALE_ROW]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Exceptions")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("toggle-stale-only")).toBeInTheDocument();
+    expect(screen.getByTestId("toggle-stale-only")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("'Show stale only' toggle filters to only stale rows", async () => {
+    renderWithStaleRows([MOCK_STALE_ROW, MOCK_NON_STALE_ROW]);
+
+    await waitFor(() => {
+      expect(screen.getByText("AlphaCorp Industries Ltd")).toBeInTheDocument();
+      expect(screen.getByText("BetaCorp Ltd")).toBeInTheDocument();
+    });
+
+    // Activate stale-only filter
+    fireEvent.click(screen.getByTestId("toggle-stale-only"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("toggle-stale-only")).toHaveAttribute("aria-pressed", "true");
+    });
+
+    // Only the stale row should still be visible
+    expect(screen.getByText("AlphaCorp Industries Ltd")).toBeInTheDocument();
+    expect(screen.queryByText("BetaCorp Ltd")).not.toBeInTheDocument();
+  });
+
+  it("toggling 'Show stale only' off restores all rows", async () => {
+    renderWithStaleRows([MOCK_STALE_ROW, MOCK_NON_STALE_ROW]);
+
+    await waitFor(() => {
+      expect(screen.getByText("BetaCorp Ltd")).toBeInTheDocument();
+    });
+
+    // Turn on, then off
+    fireEvent.click(screen.getByTestId("toggle-stale-only"));
+    await waitFor(() => {
+      expect(screen.queryByText("BetaCorp Ltd")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("toggle-stale-only"));
+    await waitFor(() => {
+      expect(screen.getByText("BetaCorp Ltd")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("toggle-stale-only")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("shows 'No stale exceptions' when stale-only filter active and no stale rows", async () => {
+    renderWithStaleRows([MOCK_NON_STALE_ROW]);
+
+    await waitFor(() => {
+      expect(screen.getByText("BetaCorp Ltd")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("toggle-stale-only"));
+
+    await waitFor(() => {
+      expect(screen.getByText("No stale exceptions")).toBeInTheDocument();
+    });
   });
 });

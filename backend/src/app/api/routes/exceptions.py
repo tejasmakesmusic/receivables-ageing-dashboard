@@ -20,13 +20,18 @@ from app.db.models.user import User  # noqa: TCH001
 from app.schemas.exception import (
     ExceptionCreateRequest,
     ExceptionCreateResponse,
+    ExceptionExcludeRequest,
+    ExceptionExcludeResponse,
     ExceptionListResponse,
+    ExceptionUnexcludeResponse,
     ExceptionUpdateRequest,
     ExceptionUpdateResponse,
 )
 from app.services.exception_service import (
     create_exception,
+    exclude_exception,
     list_exceptions,
+    unexclude_exception,
     update_exception,
 )
 
@@ -34,6 +39,8 @@ router = APIRouter()
 
 _read_allowed = require_role(Role.ANALYST, Role.ADMIN, Role.CFO)
 _write_allowed = require_role(Role.ANALYST, Role.ADMIN)
+_exclude_allowed = require_role(Role.ANALYST, Role.ADMIN)
+_admin_only = require_role(Role.ADMIN)
 
 
 @router.post(
@@ -128,6 +135,9 @@ def list_exceptions_route(
     invoice_id: Annotated[
         uuid.UUID | None, Query(description="Filter by specific invoice UUID")
     ] = None,
+    include_excluded: Annotated[
+        bool, Query(description="When true, include excluded exceptions (default: hide them)")
+    ] = False,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
     session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
@@ -137,6 +147,8 @@ def list_exceptions_route(
 
     ANALYST: entity-scoped automatically.
     CFO/ADMIN: sees all entities.
+    include_excluded=false (default): hides rows where excluded_at IS NOT NULL.
+    include_excluded=true: returns all rows regardless of exclusion state.
 
     Returns:
         200 with ExceptionListResponse.
@@ -150,4 +162,71 @@ def list_exceptions_route(
         page=page,
         page_size=page_size,
         current_user=current_user,
+        include_excluded=include_excluded,
+    )
+
+
+@router.post(
+    "/exceptions/{exception_id}/exclude",
+    response_model=ExceptionExcludeResponse,
+    status_code=200,
+    summary="Mark an exception as excluded",
+    tags=["exceptions"],
+)
+def exclude_exception_route(
+    exception_id: uuid.UUID,
+    body: ExceptionExcludeRequest,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_exclude_allowed)] = ...,  # type: ignore[assignment]
+) -> ExceptionExcludeResponse:
+    """Exclude an exception from the S5 default view.
+
+    Exclusion is orthogonal to status (ACTIVE/RESOLVED/AUTO_RESOLVED).
+    Excluded rows remain in DB for audit trail.
+
+    RBAC: ANALYST (entity-scoped) or ADMIN. CFO/PENDING → 403.
+
+    Returns:
+        200 with ExceptionExcludeResponse.
+
+    Raises:
+        403: CFO or PENDING, or ANALYST cross-entity.
+        404: Exception not found.
+        409: Exception already excluded.
+        422: OTHER reason requires non-empty reason_note.
+    """
+    return exclude_exception(
+        exception_id=exception_id,
+        body=body,
+        current_user=current_user,
+        db=session,
+    )
+
+
+@router.post(
+    "/exceptions/{exception_id}/un-exclude",
+    response_model=ExceptionUnexcludeResponse,
+    status_code=200,
+    summary="Un-exclude a previously excluded exception",
+    tags=["exceptions"],
+)
+def unexclude_exception_route(
+    exception_id: uuid.UUID,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_admin_only)] = ...,  # type: ignore[assignment]
+) -> ExceptionUnexcludeResponse:
+    """Clear exclusion from an exception (ADMIN only).
+
+    Returns:
+        200 with ExceptionUnexcludeResponse.
+
+    Raises:
+        403: Non-ADMIN role.
+        404: Exception not found.
+        409: Exception is not currently excluded.
+    """
+    return unexclude_exception(
+        exception_id=exception_id,
+        current_user=current_user,
+        db=session,
     )

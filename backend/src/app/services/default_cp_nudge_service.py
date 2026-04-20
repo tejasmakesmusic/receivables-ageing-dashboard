@@ -45,6 +45,7 @@ from sqlalchemy import func, select
 
 from app.db.models.audit_log import AuditLog
 from app.db.models.email_outbox import EmailOutbox
+from app.db.models.email_rule import EmailRule
 from app.db.models.entity import Entity
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot
@@ -309,7 +310,7 @@ def render_default_cp_nudge_html(payload: DefaultCpPayload) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run_weekly_default_cp_nudge(db: Session) -> list[EmailOutbox]:
+def run_weekly_default_cp_nudge(db: Session) -> list[EmailOutbox]:  # noqa: PLR0912 PLR0915
     """Run the weekly default-CP nudge for all entities.
 
     For each entity in ('IND', 'UAE'):
@@ -332,6 +333,42 @@ def run_weekly_default_cp_nudge(db: Session) -> list[EmailOutbox]:
     """
     enqueued: list[EmailOutbox] = []
     week_monday = _iso_week_monday()
+
+    # --- Recipient resolution: read from email_rules; fall back to role-discovery ---
+    email_rule = db.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "WEEKLY_DEFAULT_CP_NUDGE")
+    )
+
+    _rule_recipients: list[str] | None  # None → use per-entity fallback below
+    if email_rule is not None:
+        if not email_rule.is_active:
+            log.info(
+                "default_cp_nudge.rule_inactive",
+                detail="WEEKLY_DEFAULT_CP_NUDGE email rule is_active=false — skipping.",
+            )
+            return []
+
+        if not email_rule.recipients_json:
+            log.info(
+                "default_cp_nudge.rule_empty_recipients",
+                detail="WEEKLY_DEFAULT_CP_NUDGE email rule has no recipients — skipping.",
+            )
+            return []
+
+        _rule_recipients = list(email_rule.recipients_json)
+        log.info(
+            "default_cp_nudge.recipients_from_rule",
+            count=len(_rule_recipients),
+        )
+    else:
+        log.warning(
+            "default_cp_nudge.no_email_rule_row",
+            detail=(
+                "No WEEKLY_DEFAULT_CP_NUDGE row in email_rules — "
+                "falling back to ANALYST role discovery."
+            ),
+        )
+        _rule_recipients = None  # signal to do per-entity fallback
 
     for entity_code in _ENTITY_CODES:
         entity = db.scalar(select(Entity).where(Entity.code == entity_code))
@@ -390,33 +427,39 @@ def run_weekly_default_cp_nudge(db: Session) -> list[EmailOutbox]:
             continue
 
         # ------------------------------------------------------------------
-        # Recipient discovery: ANALYST users scoped to this entity or global
+        # Recipient resolution: from email_rule or fallback to ANALYST users
         # ------------------------------------------------------------------
-        analyst_users = db.scalars(
-            select(User).where(
-                User.role == "ANALYST",
-                User.is_active.is_(True),
-                (User.entity_id_scope == entity.id) | (User.entity_id_scope.is_(None)),
-            )
-        ).all()
+        if _rule_recipients is not None:
+            recipients = _rule_recipients
+        else:
+            analyst_users = db.scalars(
+                select(User).where(
+                    User.role == "ANALYST",
+                    User.is_active.is_(True),
+                    (User.entity_id_scope == entity.id)
+                    | (User.entity_id_scope.is_(None)),
+                )
+            ).all()
 
-        if not analyst_users:
-            log.warning(
-                "default_cp_nudge.no_analyst_recipients",
+            if not analyst_users:
+                log.warning(
+                    "default_cp_nudge.no_analyst_recipients",
+                    entity_code=entity_code,
+                    detail=(
+                        "No active ANALYST users found for this entity — nudge not enqueued."
+                    ),
+                )
+                continue
+
+            # Log hashed emails only (CLAUDE.md data-handling rule)
+            log.info(
+                "default_cp_nudge.analyst_recipients_found",
                 entity_code=entity_code,
-                detail="No active ANALYST users found for this entity — nudge not enqueued.",
+                count=len(analyst_users),
+                hashes=[_hash_email(u.email) for u in analyst_users],
             )
-            continue
 
-        # Log hashed emails only (CLAUDE.md data-handling rule)
-        log.info(
-            "default_cp_nudge.analyst_recipients_found",
-            entity_code=entity_code,
-            count=len(analyst_users),
-            hashes=[_hash_email(u.email) for u in analyst_users],
-        )
-
-        recipients = [u.email for u in analyst_users]
+            recipients = [u.email for u in analyst_users]
 
         # ------------------------------------------------------------------
         # Render + enqueue

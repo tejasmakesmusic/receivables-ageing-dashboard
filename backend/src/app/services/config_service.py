@@ -31,6 +31,7 @@ Design decisions:
 from __future__ import annotations
 
 import math
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -48,6 +49,8 @@ from app.schemas.config import (
     AliasPatchRequest,
     AliasRow,
     CreditPeriodCreateRequest,
+    CreditPeriodEditRequest,
+    CreditPeriodEditResponse,
     CreditPeriodListResponse,
     CreditPeriodPatchRequest,
     CreditPeriodRow,
@@ -60,6 +63,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from app.db.models.user import User
+
 
 log = structlog.get_logger(__name__)
 
@@ -362,6 +366,142 @@ def patch_credit_period(
 
     db.refresh(cfg)
     return _credit_period_to_row(cfg, entity_code)
+
+
+# ---------------------------------------------------------------------------
+# Credit period — analyst-facing one-off edit (ADR-0005 D3 supersede)
+# ---------------------------------------------------------------------------
+
+
+def edit_credit_period(
+    db: Session,
+    canonical_id: uuid.UUID,
+    body: CreditPeriodEditRequest,
+    current_user: User,
+    today: date,
+) -> CreditPeriodEditResponse:
+    """Supersede the active credit_period_config for a canonical party (ADR-0005 D3).
+
+    RBAC:
+      - ANALYST: must be in-scope for the canonical's entity.
+      - ADMIN: any canonical.
+      - CFO / PENDING: 403.
+
+    Idempotency (D3):
+      - Same (days, reason_note) as active config → no-op (no INSERT).
+      - Differing days or reason_note → supersede (close old, insert new).
+      - No active config → insert directly.
+
+    valid_from for the new row is always `today` (caller-supplied to avoid
+    datetime.today() in service code — CLAUDE.md guardrail).
+
+    Audit log action: CREDIT_PERIOD_EDITED with before/after.
+    """
+    _check_write_rbac(current_user)
+
+    canonical = db.get(PartyCanonical, canonical_id)
+    if canonical is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Canonical party {canonical_id} not found.",
+        )
+
+    entity = db.get(Entity, canonical.entity_id)
+    if entity is None:
+        raise HTTPException(status_code=500, detail="Entity not found for canonical.")
+
+    _check_analyst_entity_scope(current_user, canonical.entity_id)
+
+    # Find active (open) config row for this canonical
+    active_config = db.scalar(
+        select(CreditPeriodConfig).where(
+            CreditPeriodConfig.canonical_id == canonical_id,
+            CreditPeriodConfig.valid_to.is_(None),
+        )
+    )
+
+    # Idempotency check (ADR-0005 D3): if same (days, reason_note) → no-op
+    if (
+        active_config is not None
+        and active_config.days == body.days
+        and active_config.reason_note == body.reason_note
+    ):
+        log.info(
+            "config_service.edit_credit_period.noop",
+            canonical_id=str(canonical_id),
+            entity_id=str(canonical.entity_id),
+        )
+        return CreditPeriodEditResponse(
+            result="noop",
+            config_id=active_config.id,
+            days=active_config.days,
+            reason_note=active_config.reason_note,
+            valid_from=active_config.valid_from,
+        )
+
+    before_json: dict[str, Any] = {}
+    result: str
+
+    if active_config is not None:
+        # Supersede: close the existing open row
+        before_json = {
+            "config_id": str(active_config.id),
+            "days": active_config.days,
+            "reason_note": active_config.reason_note,
+            "valid_from": active_config.valid_from.isoformat(),
+        }
+        active_config.valid_to = today - timedelta(days=1)
+        db.flush()
+        result = "superseded"
+    else:
+        result = "inserted"
+
+    # Insert new open row (valid_from = today, valid_to = NULL)
+    new_cfg = CreditPeriodConfig(
+        canonical_id=canonical_id,
+        days=body.days,
+        reason_note=body.reason_note,
+        valid_from=today,
+        valid_to=None,
+        updated_by=current_user.id,
+    )
+    db.add(new_cfg)
+    db.flush()
+
+    audit = AuditLog(
+        action="CREDIT_PERIOD_EDITED",
+        entity_type="credit_period_config",
+        entity_id=new_cfg.id,
+        actor_user_id=current_user.id,
+        before=before_json,
+        after={
+            "config_id": str(new_cfg.id),
+            "days": body.days,
+            "reason_note": body.reason_note,
+            "valid_from": today.isoformat(),
+            "canonical_id": str(canonical_id),
+            "result": result,
+        },
+    )
+    db.add(audit)
+    db.commit()
+
+    log.info(
+        "config_service.edit_credit_period",
+        canonical_id=str(canonical_id),
+        entity_id=str(canonical.entity_id),
+        result=result,
+        days=body.days,
+    )
+
+    db.refresh(new_cfg)
+    return CreditPeriodEditResponse(
+        result=result,
+        config_id=new_cfg.id,
+        days=new_cfg.days,
+        reason_note=new_cfg.reason_note,
+        valid_from=new_cfg.valid_from,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from datetime import date, datetime  # noqa: TCH003
 from typing import Literal
 from uuid import UUID  # noqa: TCH003
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class ExceptionCreateRequest(BaseModel):
@@ -52,6 +52,22 @@ class ExceptionUpdateRequest(BaseModel):
     expected_resolution_date: date | None = None
 
 
+ExcludeReason = Literal["LEGAL_HOLD", "NEGOTIATION", "AGREED_WRITE_OFF", "OTHER"]
+
+
+class ExceptionExcludeRequest(BaseModel):
+    """Request body for POST /exceptions/{id}/exclude."""
+
+    reason: ExcludeReason
+    reason_note: str | None = None
+
+    @model_validator(mode="after")
+    def note_required_for_other(self) -> ExceptionExcludeRequest:
+        if self.reason == "OTHER" and not (self.reason_note and self.reason_note.strip()):
+            raise ValueError("reason_note is required when reason is OTHER")
+        return self
+
+
 class ExceptionUpdateResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -84,6 +100,30 @@ class ExceptionListRow(BaseModel):
     resolved_at: datetime | None
     last_follow_up_date: date | None = None
     last_follow_up_channel: str | None = None
+    # Exclusion fields (Task A.1)
+    excluded_at: datetime | None = None
+    excluded_reason: str | None = None
+    excluded_reason_note: str | None = None
+    excluded_by_email: str | None = None
+    # Stale flag (D12 / Task A.5)
+    is_stale: bool = False
+
+
+class ExceptionExcludeResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    excluded_at: datetime
+    excluded_reason: str
+    excluded_reason_note: str | None
+    excluded_by_email: str
+
+
+class ExceptionUnexcludeResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    message: str = "Exception un-excluded successfully."
 
 
 class ExceptionListResponse(BaseModel):

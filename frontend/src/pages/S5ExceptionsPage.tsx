@@ -10,12 +10,14 @@ import { useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/api/client";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type {
   ExceptionListResponse,
   ExceptionListRow,
   ExceptionBucketListResponse,
   MaterialChangeFlag,
   SnapshotDetailResponse,
+  ExcludeReason,
 } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
@@ -278,6 +280,143 @@ function statusBadge(status: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Exclude modal (Task A.1)
+// ---------------------------------------------------------------------------
+
+const EXCLUDE_REASONS: { value: ExcludeReason; label: string }[] = [
+  { value: "LEGAL_HOLD", label: "Legal Hold" },
+  { value: "NEGOTIATION", label: "Negotiation" },
+  { value: "AGREED_WRITE_OFF", label: "Agreed Write-Off" },
+  { value: "OTHER", label: "Other" },
+];
+
+interface ExcludeModalProps {
+  exception: ExceptionListRow;
+  open: boolean;
+  onClose: () => void;
+}
+
+function ExcludeModal({ exception, open, onClose }: ExcludeModalProps) {
+  const qc = useQueryClient();
+  const [reason, setReason] = useState<ExcludeReason | "">("");
+  const [reasonNote, setReasonNote] = useState("");
+
+  const exclude = useMutation<unknown, ApiError>({
+    mutationFn: () =>
+      api.post(`/exceptions/${exception.id}/exclude`, {
+        reason,
+        reason_note: reasonNote || null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exceptions"] });
+      onClose();
+    },
+  });
+
+  const noteRequired = reason === "OTHER";
+  const canSubmit = reason !== "" && (!noteRequired || reasonNote.trim() !== "");
+
+  return (
+    <Modal open={open} onClose={onClose} title="Exclude exception" size="sm">
+      <p className="mb-3 text-sm text-slate-700">
+        Excluding <strong>{exception.invoice_ref}</strong> ({exception.canonical_name}).
+        Excluded exceptions stay in the database for audit but are hidden from the default
+        S5 view.
+      </p>
+      <div className="space-y-3">
+        <Select
+          label="Exclusion reason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value as ExcludeReason | "")}
+        >
+          <option value="">— Select reason —</option>
+          {EXCLUDE_REASONS.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
+        <Textarea
+          label={`Note${noteRequired ? " (required for Other)" : " (optional)"}`}
+          value={reasonNote}
+          onChange={(e) => setReasonNote(e.target.value)}
+          placeholder="Describe why this exception is excluded"
+        />
+        {exclude.isError && (
+          <p className="text-xs text-red-600">
+            {(exclude.error as ApiError)?.message ?? "Submission failed."}
+          </p>
+        )}
+      </div>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="secondary" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!canSubmit}
+          loading={exclude.isPending}
+          onClick={() => exclude.mutate()}
+          data-testid="exclude-confirm-btn"
+        >
+          Exclude
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Un-exclude confirm modal (ADMIN only — Task A.1)
+// ---------------------------------------------------------------------------
+
+interface UnexcludeModalProps {
+  exception: ExceptionListRow;
+  open: boolean;
+  onClose: () => void;
+}
+
+function UnexcludeModal({ exception, open, onClose }: UnexcludeModalProps) {
+  const qc = useQueryClient();
+
+  const unexclude = useMutation<unknown, ApiError>({
+    mutationFn: () => api.post(`/exceptions/${exception.id}/un-exclude`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exceptions"] });
+      onClose();
+    },
+  });
+
+  return (
+    <Modal open={open} onClose={onClose} title="Un-exclude exception" size="sm">
+      <p className="mb-3 text-sm text-slate-700">
+        Un-exclude exception for <strong>{exception.invoice_ref}</strong> (
+        {exception.canonical_name})? It will reappear in the default S5 view.
+      </p>
+      {exception.excluded_reason && (
+        <p className="mb-2 text-xs text-slate-500">
+          Currently excluded — reason:{" "}
+          <span className="font-medium">{exception.excluded_reason}</span>
+          {exception.excluded_reason_note ? ` — ${exception.excluded_reason_note}` : ""}
+        </p>
+      )}
+      {unexclude.isError && (
+        <p className="text-xs text-red-600">
+          {(unexclude.error as ApiError)?.message ?? "Submission failed."}
+        </p>
+      )}
+      <ModalFooter
+        onClose={onClose}
+        onConfirm={() => unexclude.mutate()}
+        confirmLabel="Un-exclude"
+        loading={unexclude.isPending}
+      />
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tag modal (create exception on an invoice)
 // ---------------------------------------------------------------------------
 
@@ -403,12 +542,20 @@ export function S5ExceptionsPage() {
   const [searchParams] = useSearchParams();
   const snapshotId = searchParams.get("snapshot_id");
 
+  const { data: currentUser } = useCurrentUser();
+  const isAdmin = currentUser?.role === "ADMIN";
+  const canExclude = currentUser?.role === "ADMIN" || currentUser?.role === "ANALYST";
+
   const [page, setPage] = useState(1);
   const [entityFilter, setEntityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("ACTIVE");
   const [bucketFilter, setBucketFilter] = useState("");
+  const [includeExcluded, setIncludeExcluded] = useState(false);
+  const [staleOnly, setStaleOnly] = useState(false);
   const [tagTarget, setTagTarget] = useState<string | null>(null);
   const [resolveTarget, setResolveTarget] = useState<ExceptionListRow | null>(null);
+  const [excludeTarget, setExcludeTarget] = useState<ExceptionListRow | null>(null);
+  const [unexcludeTarget, setUnexcludeTarget] = useState<ExceptionListRow | null>(null);
   const PAGE_SIZE = 25;
 
   // Fetch snapshot detail (for material-change banner) only when snapshot_id is present
@@ -424,15 +571,26 @@ export function S5ExceptionsPage() {
   const params = new URLSearchParams({
     page: String(page),
     page_size: String(PAGE_SIZE),
-    ...(entityFilter && { entity_code: entityFilter }),
+    ...(entityFilter && { entity: entityFilter }),
     ...(statusFilter && { status: statusFilter }),
-    ...(bucketFilter && { bucket_type_code: bucketFilter }),
+    ...(bucketFilter && { bucket_type: bucketFilter }),
+    ...(includeExcluded && { include_excluded: "true" }),
   });
 
   const { data, isLoading } = useQuery<ExceptionListResponse>({
-    queryKey: ["exceptions", page, entityFilter, statusFilter, bucketFilter],
+    queryKey: ["exceptions", page, entityFilter, statusFilter, bucketFilter, includeExcluded],
     queryFn: () => api.get<ExceptionListResponse>(`/exceptions?${params}`),
   });
+
+  // Count excluded rows currently visible when toggle is on
+  const excludedCount = includeExcluded
+    ? (data?.items ?? []).filter((r) => r.excluded_at != null).length
+    : 0;
+
+  // Client-side stale filter
+  const displayedItems = staleOnly
+    ? (data?.items ?? []).filter((r) => r.is_stale)
+    : (data?.items ?? []);
 
   const { data: buckets } = useQuery<ExceptionBucketListResponse>({
     queryKey: ["exception-buckets"],
@@ -468,7 +626,7 @@ export function S5ExceptionsPage() {
       />
 
       {/* Filters */}
-      <div className="mb-4 flex flex-wrap gap-3">
+      <div className="mb-4 flex flex-wrap items-end gap-3">
         <Select
           label="Entity"
           value={entityFilter}
@@ -512,6 +670,44 @@ export function S5ExceptionsPage() {
             </option>
           ))}
         </Select>
+        {/* Show excluded toggle */}
+        <button
+          onClick={() => {
+            setIncludeExcluded((v) => !v);
+            setPage(1);
+          }}
+          data-testid="toggle-excluded"
+          className={cn(
+            "flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-colors",
+            includeExcluded
+              ? "border-slate-400 bg-slate-100 text-slate-700"
+              : "border-slate-300 bg-white text-slate-500 hover:border-slate-400",
+          )}
+          aria-pressed={includeExcluded}
+        >
+          {includeExcluded ? (
+            <>Show excluded ({excludedCount})</>
+          ) : (
+            <>Show excluded</>
+          )}
+        </button>
+        {/* Show stale only toggle (D12 / Task A.5) */}
+        <button
+          onClick={() => {
+            setStaleOnly((v) => !v);
+            setPage(1);
+          }}
+          data-testid="toggle-stale-only"
+          className={cn(
+            "flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-colors",
+            staleOnly
+              ? "border-red-400 bg-red-50 text-red-700"
+              : "border-slate-300 bg-white text-slate-500 hover:border-red-300",
+          )}
+          aria-pressed={staleOnly}
+        >
+          Show stale only
+        </button>
       </div>
 
       {/* Table */}
@@ -539,72 +735,114 @@ export function S5ExceptionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {(data?.items ?? []).map((ex) => (
-                <tr
-                  key={ex.id}
-                  className={cn(
-                    "hover:bg-slate-50",
-                    ex.status === "AUTO_RESOLVED" && "opacity-60",
-                  )}
-                >
-                  <td className="px-3 py-2 font-mono text-xs">{ex.invoice_ref}</td>
-                  <td className="px-3 py-2 max-w-[140px] truncate font-medium">
-                    {ex.canonical_name}
-                  </td>
-                  <td className="px-3 py-2 text-xs">{ex.entity_code}</td>
-                  <td className="px-3 py-2">
-                    <Badge variant="info">{ex.bucket_type_code}</Badge>
-                  </td>
-                  <td className="px-3 py-2 max-w-[180px] truncate text-xs text-slate-600">
-                    {ex.reason}
-                  </td>
-                  <td className="px-3 py-2">{statusBadge(ex.status)}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">
-                    {formatISTDate(ex.tagged_at)}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-slate-500">
-                    {ex.expected_resolution_date
-                      ? formatISTDate(ex.expected_resolution_date)
-                      : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-slate-500" data-testid={`last-fu-exc-${ex.id}`}>
-                    {ex.last_follow_up_date ? (
-                      <span className="flex items-center gap-1">
-                        {formatISTDate(ex.last_follow_up_date)}
-                        <Badge variant="muted">{ex.last_follow_up_channel}</Badge>
-                      </span>
-                    ) : (
-                      <span className="text-slate-300">—</span>
+              {displayedItems.map((ex) => {
+                const isExcluded = ex.excluded_at != null;
+                return (
+                  <tr
+                    key={ex.id}
+                    className={cn(
+                      "hover:bg-slate-50",
+                      ex.status === "AUTO_RESOLVED" && "opacity-60",
+                      isExcluded && "bg-slate-50 opacity-70",
                     )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-1">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setTagTarget(ex.invoice_id)}
-                        data-testid="tag-btn"
-                        aria-label="Tag exception"
-                      >
-                        Tag
-                      </Button>
-                      {ex.status === "ACTIVE" && (
-                        <button
-                          onClick={() => setResolveTarget(ex)}
-                          className="text-xs text-green-600 hover:underline"
-                          aria-label="Resolve exception"
-                        >
-                          Resolve
-                        </button>
+                    data-testid={isExcluded ? `excluded-row-${ex.id}` : `row-${ex.id}`}
+                  >
+                    <td className="px-3 py-2 font-mono text-xs">{ex.invoice_ref}</td>
+                    <td className="px-3 py-2 max-w-[140px] truncate font-medium">
+                      {ex.canonical_name}
+                    </td>
+                    <td className="px-3 py-2 text-xs">{ex.entity_code}</td>
+                    <td className="px-3 py-2">
+                      {isExcluded ? (
+                        <Badge variant="muted" data-testid={`excluded-badge-${ex.id}`}>
+                          Excluded — {ex.excluded_reason}
+                        </Badge>
+                      ) : (
+                        <Badge variant="info">{ex.bucket_type_code}</Badge>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {(!data?.items || data.items.length === 0) && (
+                    </td>
+                    <td className="px-3 py-2 max-w-[180px] truncate text-xs text-slate-600">
+                      {ex.reason}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        {statusBadge(ex.status)}
+                        {ex.is_stale && (
+                          <Badge variant="error" data-testid={`stale-badge-${ex.id}`}>
+                            Stale
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500">
+                      {formatISTDate(ex.tagged_at)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500">
+                      {ex.expected_resolution_date
+                        ? formatISTDate(ex.expected_resolution_date)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500" data-testid={`last-fu-exc-${ex.id}`}>
+                      {ex.last_follow_up_date ? (
+                        <span className="flex items-center gap-1">
+                          {formatISTDate(ex.last_follow_up_date)}
+                          <Badge variant="muted">{ex.last_follow_up_channel}</Badge>
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1 flex-wrap">
+                        {!isExcluded && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setTagTarget(ex.invoice_id)}
+                            data-testid="tag-btn"
+                            aria-label="Tag exception"
+                          >
+                            Tag
+                          </Button>
+                        )}
+                        {!isExcluded && ex.status === "ACTIVE" && (
+                          <button
+                            onClick={() => setResolveTarget(ex)}
+                            className="text-xs text-green-600 hover:underline"
+                            aria-label="Resolve exception"
+                          >
+                            Resolve
+                          </button>
+                        )}
+                        {!isExcluded && canExclude && ex.status === "ACTIVE" && (
+                          <button
+                            onClick={() => setExcludeTarget(ex)}
+                            className="text-xs text-amber-600 hover:underline"
+                            aria-label="Exclude exception"
+                            data-testid={`exclude-btn-${ex.id}`}
+                          >
+                            Exclude
+                          </button>
+                        )}
+                        {isExcluded && isAdmin && (
+                          <button
+                            onClick={() => setUnexcludeTarget(ex)}
+                            className="text-xs text-indigo-600 hover:underline"
+                            aria-label="Un-exclude exception"
+                            data-testid={`unexclude-btn-${ex.id}`}
+                          >
+                            Un-exclude
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {displayedItems.length === 0 && (
                 <tr>
                   <td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400">
-                    No exceptions matching filters
+                    {staleOnly ? "No stale exceptions" : "No exceptions matching filters"}
                   </td>
                 </tr>
               )}
@@ -634,6 +872,24 @@ export function S5ExceptionsPage() {
           open={!!tagTarget}
           onClose={() => setTagTarget(null)}
           buckets={buckets}
+        />
+      )}
+
+      {/* Exclude modal (Task A.1) */}
+      {excludeTarget && (
+        <ExcludeModal
+          exception={excludeTarget}
+          open={!!excludeTarget}
+          onClose={() => setExcludeTarget(null)}
+        />
+      )}
+
+      {/* Un-exclude confirm modal (ADMIN only — Task A.1) */}
+      {unexcludeTarget && (
+        <UnexcludeModal
+          exception={unexcludeTarget}
+          open={!!unexcludeTarget}
+          onClose={() => setUnexcludeTarget(null)}
         />
       )}
     </div>

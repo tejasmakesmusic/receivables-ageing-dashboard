@@ -39,6 +39,7 @@ from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
 from app.db.models.credit_period_config import CreditPeriodConfig
 from app.db.models.email_outbox import EmailOutbox
+from app.db.models.email_rule import EmailRule
 from app.db.models.entity import Entity
 from app.db.models.exception_tag import ExceptionTag
 from app.db.models.invoice import Invoice
@@ -352,7 +353,7 @@ def _resolve_credit_days(
 # ---------------------------------------------------------------------------
 
 
-def _publish_credit_period_snapshot(  # noqa: PLR0915
+def _publish_credit_period_snapshot(  # noqa: PLR0912 PLR0915
     db: Session,
     snapshot: Snapshot,
     body: PublishRequest,
@@ -516,12 +517,23 @@ def _publish_credit_period_snapshot(  # noqa: PLR0915
             )
             configs_inserted += 1
 
-    # email_outbox PUBLISH_NOTIF — CP flavor
+    # email_outbox PUBLISH_NOTIF — CP flavor; populate recipients from email_rules
     as_of_str = as_of.isoformat()
+    _cp_publish_rule = db.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "PUBLISH_NOTIF")
+    )
+    _cp_publish_recipients: list[str] = []
+    if _cp_publish_rule is not None and _cp_publish_rule.recipients_json:
+        _cp_publish_recipients = list(_cp_publish_rule.recipients_json)
+    elif _cp_publish_rule is None:
+        log.warning(
+            "publish_service.no_publish_notif_rule_cp",
+            detail="No PUBLISH_NOTIF row in email_rules — enqueuing with empty recipients.",
+        )
     outbox_row = EmailOutbox(
         rule_type="PUBLISH_NOTIF",
         snapshot_id=snapshot.id,
-        recipients_json=[],  # M6 drain populates
+        recipients_json=_cp_publish_recipients,
         subject=f"[EMB AR] CP master snapshot #{snapshot.id} published (as_of={as_of_str})",
         body_html=(
             f"<p>Credit-period master snapshot <strong>{snapshot.id}</strong> published.</p>"
@@ -1026,7 +1038,7 @@ def publish_snapshot(  # noqa: PLR0912, PLR0915
 
     # -----------------------------------------------------------------------
     # Step 13: Write email_outbox row (PUBLISH_NOTIF)
-    # recipients_json = [] — M6 drain cron populates from email_rules
+    # recipients_json populated from email_rules; empty if no row/empty rule.
     # -----------------------------------------------------------------------
     entity_code = entity.code
     as_of_str = as_of_date.isoformat()
@@ -1055,10 +1067,22 @@ def publish_snapshot(  # noqa: PLR0912, PLR0915
         entity_code=entity_code,
         as_of_str=as_of_str,
     )
+    # Read PUBLISH_NOTIF recipients from email_rules; fall back to [] (existing behaviour)
+    _publish_rule = db.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "PUBLISH_NOTIF")
+    )
+    _publish_recipients: list[str] = []
+    if _publish_rule is not None and _publish_rule.recipients_json:
+        _publish_recipients = list(_publish_rule.recipients_json)
+    elif _publish_rule is None:
+        log.warning(
+            "publish_service.no_publish_notif_rule",
+            detail="No PUBLISH_NOTIF row in email_rules — enqueuing with empty recipients.",
+        )
     outbox_row = EmailOutbox(
         rule_type="PUBLISH_NOTIF",
         snapshot_id=snapshot.id,
-        recipients_json=[],  # M6 populates from email_rules at drain time
+        recipients_json=_publish_recipients,
         subject=f"[EMB AR] Snapshot #{snapshot.id} published ({entity_code}, as_of={as_of_str})",
         body_html=notif_body_html,
         status="QUEUED",

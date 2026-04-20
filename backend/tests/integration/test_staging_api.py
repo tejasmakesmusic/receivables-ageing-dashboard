@@ -584,12 +584,13 @@ class TestStagingGetRbac:
         assert r.status_code == 201
         return str(r.json()["snapshot_id"])
 
-    def test_cfo_gets_403(self, client: TestClient, db_session: Session) -> None:
+    def test_cfo_gets_200(self, client: TestClient, db_session: Session) -> None:
+        """CFO now gets 200 on staging GET — §9 deviation closed in A.6."""
         snap_id = self._upload_tally(client)
         _login_as_cfo(client, db_session, "cfo_staging@emb.global")
         _login(client, "cfo_staging@emb.global")
         r = _staging_get(client, snap_id)
-        assert r.status_code == 403
+        assert r.status_code == 200
 
     def test_pending_gets_403(self, client: TestClient, db_session: Session) -> None:
         snap_id = self._upload_tally(client)

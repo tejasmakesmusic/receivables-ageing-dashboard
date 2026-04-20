@@ -162,12 +162,15 @@ def get_snapshot_staging(
         Query(description="Filter rows by status/resolution state"),
     ] = "all",
     session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
-    current_user: Annotated[User, Depends(_allowed)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_read_allowed)] = ...,  # type: ignore[assignment]
 ) -> StagingViewResponse:
     """Return paginated staged rows with alias resolution and publish gate.
 
     TALLY/XERO snapshots return StagingInvoiceRow entries.
     CREDIT_PERIOD snapshots return StagingCreditPeriodRow entries.
+
+    CFO has read-only access (no write operations); ANALYST entity-scope is
+    enforced in the service layer.
 
     Returns:
         200 with StagingViewResponse.

@@ -36,6 +36,7 @@ from sqlalchemy import func, select
 
 from app.db.models.audit_log import AuditLog
 from app.db.models.email_outbox import EmailOutbox
+from app.db.models.email_rule import EmailRule
 from app.db.models.entity import Entity
 from app.db.models.exception_tag import ExceptionTag
 from app.db.models.invoice import Invoice
@@ -510,29 +511,59 @@ def run_daily_digest(db: Session) -> list[EmailOutbox]:
     """
     enqueued: list[EmailOutbox] = []
 
-    # Discover CFO recipients once (apply to all entities)
-    cfo_users = db.scalars(
-        select(User).where(
-            User.role == "CFO",
-            User.is_active.is_(True),
-        )
-    ).all()
-
-    if not cfo_users:
-        log.warning(
-            "digest_service.no_cfo_recipients",
-            detail="No active CFO users found — daily digest will not be enqueued.",
-        )
-        return []
-
-    # Log hashed emails only — never raw addresses in structured logs
-    log.info(
-        "digest_service.cfo_recipients_found",
-        count=len(cfo_users),
-        hashes=[_hash_email(u.email) for u in cfo_users],
+    # --- Recipient resolution: read from email_rules; fall back to role-discovery ---
+    email_rule = db.scalar(
+        select(EmailRule).where(EmailRule.rule_type == "DAILY_DIGEST")
     )
 
-    recipients = [u.email for u in cfo_users]
+    if email_rule is not None:
+        if not email_rule.is_active:
+            log.info(
+                "digest_service.rule_inactive",
+                detail="DAILY_DIGEST email rule is_active=false — skipping.",
+            )
+            return []
+
+        if not email_rule.recipients_json:
+            log.info(
+                "digest_service.rule_empty_recipients",
+                detail="DAILY_DIGEST email rule has no recipients — skipping.",
+            )
+            return []
+
+        recipients = list(email_rule.recipients_json)
+        log.info(
+            "digest_service.recipients_from_rule",
+            count=len(recipients),
+        )
+    else:
+        # Fallback: role-discovery (pre-seed safety net)
+        log.warning(
+            "digest_service.no_email_rule_row",
+            detail="No DAILY_DIGEST row in email_rules — falling back to CFO role discovery.",
+        )
+        cfo_users = db.scalars(
+            select(User).where(
+                User.role == "CFO",
+                User.is_active.is_(True),
+            )
+        ).all()
+
+        if not cfo_users:
+            log.warning(
+                "digest_service.no_cfo_recipients",
+                detail="No active CFO users found — daily digest will not be enqueued.",
+            )
+            return []
+
+        # Log hashed emails only — never raw addresses in structured logs
+        log.info(
+            "digest_service.cfo_recipients_found",
+            count=len(cfo_users),
+            hashes=[_hash_email(u.email) for u in cfo_users],
+        )
+
+        recipients = [u.email for u in cfo_users]
 
     for entity_code in _ENTITY_CODES:
         entity = db.scalar(select(Entity).where(Entity.code == entity_code))

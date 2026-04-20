@@ -18,9 +18,11 @@ Design decisions:
 from __future__ import annotations
 
 import uuid  # noqa: TCH003
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
+import sqlalchemy.orm
 import structlog
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -36,8 +38,11 @@ from app.db.models.user import User
 from app.schemas.exception import (
     ExceptionCreateRequest,
     ExceptionCreateResponse,
+    ExceptionExcludeRequest,
+    ExceptionExcludeResponse,
     ExceptionListResponse,
     ExceptionListRow,
+    ExceptionUnexcludeResponse,
     ExceptionUpdateRequest,
     ExceptionUpdateResponse,
 )
@@ -285,9 +290,13 @@ def list_exceptions(
     page: int,
     page_size: int,
     current_user: UserModel,
+    include_excluded: bool = False,
 ) -> ExceptionListResponse:
     """Paginated list of exception tags with filters."""
     from app.core.rbac import Role
+
+    # Alias for excluder user join (different from tagged_by)
+    excluder_user = sa.orm.aliased(User, name="excluder_user")
 
     query = (
         select(
@@ -298,6 +307,9 @@ def list_exceptions(
             ExceptionTag.expected_resolution_date,
             ExceptionTag.resolved_at,
             ExceptionTag.reason,
+            ExceptionTag.excluded_at,
+            ExceptionTag.excluded_reason,
+            ExceptionTag.excluded_reason_note,
             ExceptionBucketType.code.label("bucket_code"),
             ExceptionBucketType.name.label("bucket_name"),
             Invoice.invoice_ref,
@@ -306,13 +318,19 @@ def list_exceptions(
             PartyCanonical.name.label("canonical_name"),
             Entity.code.label("entity_code"),
             User.email.label("tagged_by_email"),
+            excluder_user.email.label("excluded_by_email"),
         )
         .join(ExceptionBucketType, ExceptionTag.bucket_type_id == ExceptionBucketType.id)
         .join(Invoice, ExceptionTag.invoice_id == Invoice.id)
         .join(PartyCanonical, Invoice.canonical_id == PartyCanonical.id)
         .join(Entity, Invoice.entity_id == Entity.id)
         .join(User, ExceptionTag.tagged_by == User.id)
+        .outerjoin(excluder_user, ExceptionTag.excluded_by == excluder_user.id)
     )
+
+    # Default: hide excluded rows; include_excluded=True shows all
+    if not include_excluded:
+        query = query.where(ExceptionTag.excluded_at.is_(None))
 
     # ANALYST entity scope
     if current_user.role == Role.ANALYST and current_user.entity_id_scope is not None:
@@ -337,12 +355,27 @@ def list_exceptions(
         .limit(page_size)
     ).all()
 
+    today = datetime.now(tz=UTC).date()
+    stale_cutoff = today - timedelta(days=7)
+
     items = []
     for r in rows:
         fu_date, fu_channel = _last_follow_up_for_canonical(
             canonical_id=r.canonical_id,
             invoice_id=r.invoice_id,
             db=db,
+        )
+        # D12 stale flag: ACTIVE, not excluded, and either:
+        #   - has a follow-up but it's older than 7 days, OR
+        #   - no follow-up and tagged more than 7 days ago (grace period)
+        tagged_date = r.tagged_at.date() if r.tagged_at else None
+        is_stale = (
+            r.status == "ACTIVE"
+            and r.excluded_at is None
+            and (
+                (fu_date is not None and fu_date < stale_cutoff)
+                or (fu_date is None and tagged_date is not None and tagged_date < stale_cutoff)
+            )
         )
         items.append(
             ExceptionListRow(
@@ -362,6 +395,11 @@ def list_exceptions(
                 resolved_at=r.resolved_at,
                 last_follow_up_date=fu_date,
                 last_follow_up_channel=fu_channel,
+                excluded_at=r.excluded_at,
+                excluded_reason=r.excluded_reason,
+                excluded_reason_note=r.excluded_reason_note,
+                excluded_by_email=r.excluded_by_email,
+                is_stale=is_stale,
             )
         )
 
@@ -371,3 +409,125 @@ def list_exceptions(
         page=page,
         page_size=page_size,
     )
+
+
+def exclude_exception(
+    exception_id: uuid.UUID,
+    body: ExceptionExcludeRequest,
+    current_user: UserModel,
+    db: Session,
+) -> ExceptionExcludeResponse:
+    """Mark an ACTIVE exception as excluded (Task A.1).
+
+    RBAC: ANALYST (entity-scoped) or ADMIN. CFO/PENDING must be rejected at
+    the route layer.
+
+    Raises:
+        404: Exception not found.
+        403: ANALYST cross-entity scope violation.
+        409: Exception already excluded.
+    """
+    tag = db.get(ExceptionTag, exception_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail=f"Exception {exception_id} not found.")
+
+    invoice = db.get(Invoice, tag.invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=500, detail="Invoice not found for exception tag.")
+    _check_entity_scope(current_user, invoice, db)
+
+    if tag.excluded_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXCEPTION_ALREADY_EXCLUDED",
+                "detail": "Exception is already excluded. Un-exclude it first.",
+            },
+        )
+
+    now_utc = datetime.now(tz=UTC)
+    tag.excluded_at = now_utc
+    tag.excluded_reason = body.reason
+    tag.excluded_reason_note = body.reason_note
+    tag.excluded_by = current_user.id
+
+    audit = AuditLog(
+        action="EXCEPTION_EXCLUDED",
+        entity_type="exception_tags",
+        entity_id=exception_id,
+        actor_user_id=current_user.id,
+        before={"excluded_at": None},
+        after={
+            "excluded_at": now_utc.isoformat(),
+            "excluded_reason": body.reason,
+        },
+    )
+    db.add(audit)
+    db.commit()
+
+    log.info(
+        "exception_service.exclude",
+        tag_id=str(exception_id),
+        reason=body.reason,
+    )
+
+    return ExceptionExcludeResponse(
+        id=tag.id,
+        excluded_at=tag.excluded_at,
+        excluded_reason=tag.excluded_reason,
+        excluded_reason_note=tag.excluded_reason_note,
+        excluded_by_email=current_user.email,
+    )
+
+
+def unexclude_exception(
+    exception_id: uuid.UUID,
+    current_user: UserModel,
+    db: Session,
+) -> ExceptionUnexcludeResponse:
+    """Clear exclusion from an exception (ADMIN only — enforced at route layer).
+
+    Raises:
+        404: Exception not found.
+        409: Exception is not currently excluded.
+    """
+    tag = db.get(ExceptionTag, exception_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail=f"Exception {exception_id} not found.")
+
+    if tag.excluded_at is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXCEPTION_NOT_EXCLUDED",
+                "detail": "Exception is not currently excluded.",
+            },
+        )
+
+    before_state = {
+        "excluded_at": tag.excluded_at.isoformat() if tag.excluded_at else None,
+        "excluded_reason": tag.excluded_reason,
+    }
+
+    tag.excluded_at = None
+    tag.excluded_reason = None
+    tag.excluded_reason_note = None
+    tag.excluded_by = None
+
+    audit = AuditLog(
+        action="EXCEPTION_UNEXCLUDED",
+        entity_type="exception_tags",
+        entity_id=exception_id,
+        actor_user_id=current_user.id,
+        before=before_state,
+        after={"excluded_at": None},
+    )
+    db.add(audit)
+    db.commit()
+
+    log.info(
+        "exception_service.unexclude",
+        tag_id=str(exception_id),
+    )
+
+    return ExceptionUnexcludeResponse(id=tag.id)

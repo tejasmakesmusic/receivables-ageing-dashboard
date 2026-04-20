@@ -6,9 +6,8 @@ real implementation returns — confirmed against existing tests, not only
 spec text.
 
 Actual behavior notes (confirmed from implementation + existing tests):
-- GET /snapshots/:id/staging → _allowed = ANALYST+ADMIN only. CFO gets 403.
-  Spec §10 implies read-only CFO access, but code shipped without it (Task 4).
-  Matrix reflects real behavior; deviation flagged in test docstring.
+- GET /snapshots/:id/staging → now uses _read_allowed = ANALYST+ADMIN+CFO.
+  Deviation from spec §10 closed in A.6: CFO now gets 200 (matches §9 pattern).
 - GET /config/credit-period and GET /config/aliases → ANALYST any-entity can
   call them; the service filters to own entity. Wrong-entity ANALYST gets 200
   (filtered list), not 403.
@@ -402,15 +401,13 @@ def test_rbac_post_snapshots_discard(
 # GET /snapshots/:id/staging
 # ---------------------------------------------------------------------------
 #
-# Implementation note: route uses _allowed = ANALYST+ADMIN only.
-# CFO gets 403 (implementation does NOT grant CFO read on staging — confirmed
-# in test_staging_api.py::TestStagingGetRbac::test_cfo_gets_403).
-# Spec §10 intended CFO read-only but code shipped ANALYST+ADMIN. Flagged.
+# Route uses _read_allowed = ANALYST+ADMIN+CFO (A.6: §9 deviation closed).
+# CFO is read-only across the board; ANALYST entity-scope enforced in service.
 #
 # ANALYST own-entity  → 200
 # ANALYST wrong-entity → 403
 # ADMIN               → 200
-# CFO                 → 403  (DEVIATION from spec §10 — code shipped ANALYST+ADMIN only)
+# CFO                 → 200  (now matches §9 — deviation closed in A.6)
 # PENDING             → 403
 # UNAUTHENTICATED     → 401
 
@@ -421,7 +418,7 @@ def test_rbac_post_snapshots_discard(
         ("ANALYST", "IND", "rbac_staging_get_analyst_ind@emb.global", 200),
         ("ANALYST", "UAE", "rbac_staging_get_analyst_uae@emb.global", 403),
         ("ADMIN", None, "tejaswa.sharma@emb.global", 200),
-        ("CFO", None, "rbac_staging_get_cfo@emb.global", 403),
+        ("CFO", None, "rbac_staging_get_cfo@emb.global", 200),
         ("PENDING", None, "rbac_staging_get_pending@emb.global", 403),
         ("UNAUTHENTICATED", None, "", 401),
     ],
@@ -435,7 +432,10 @@ def test_rbac_get_snapshot_staging(
     email: str,
     expected: int,
 ) -> None:
-    """GET /snapshots/:id/staging — paginated staging view."""
+    """GET /snapshots/:id/staging — paginated staging view.
+
+    CFO now gets 200 (§9 deviation closed in A.6 — route moved to _read_allowed).
+    """
     snapshot_id = rbac_resources["snapshot_id"]
     _setup_role(client, db_session, role, entity_scope, email)
 

@@ -27,6 +27,7 @@ from app.core.logging import get_logger
 from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
 from app.db.models.email_outbox import EmailOutbox
+from app.db.models.email_rule import EmailRule
 from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.user import User
 from app.schemas.admin import (
@@ -41,6 +42,7 @@ from app.schemas.admin import (
     ExceptionBucketPatchRequest,
     ExceptionBucketRow,
 )
+from app.schemas.email_rule import EmailRuleListResponse, EmailRulePatchRequest, EmailRuleRow
 
 log = get_logger(__name__)
 router = APIRouter()
@@ -553,4 +555,131 @@ def mark_email_sent(
         id=outbox.id,
         status=outbox.status,
         sent_at=outbox.sent_at,
+    )
+
+
+# ===========================================================================
+# Email rules (A2 extension) — Task A.3
+# ===========================================================================
+
+
+@router.get(
+    "/email-rules",
+    response_model=EmailRuleListResponse,
+    status_code=200,
+    summary="List email rules (ANALYST/ADMIN/CFO read, A2)",
+    tags=["admin"],
+)
+def list_email_rules(
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[
+        User, Depends(require_role(Role.ANALYST, Role.ADMIN, Role.CFO))
+    ] = ...,  # type: ignore[assignment]
+) -> EmailRuleListResponse:
+    """List all email_rules rows. All non-PENDING roles can read.
+
+    Returns:
+        200 with EmailRuleListResponse.
+    """
+    rows = session.scalars(select(EmailRule).order_by(EmailRule.created_at)).all()
+
+    items = [
+        EmailRuleRow(
+            id=r.id,
+            rule_type=r.rule_type,
+            recipients_json=r.recipients_json or [],
+            cron_schedule=r.cron_schedule,
+            is_active=r.is_active,
+            entity_filter=r.entity_filter,
+            notes=r.notes,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+            updated_by=r.updated_by,
+        )
+        for r in rows
+    ]
+
+    return EmailRuleListResponse(items=items, total=len(items))
+
+
+@router.patch(
+    "/email-rules/{rule_id}",
+    response_model=EmailRuleRow,
+    status_code=200,
+    summary="Update email rule recipients/schedule/active (ADMIN only, A2)",
+    tags=["admin"],
+)
+def patch_email_rule(
+    rule_id: uuid.UUID,
+    body: EmailRulePatchRequest,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_admin_only)] = ...,  # type: ignore[assignment]
+) -> EmailRuleRow:
+    """Partial update of an email rule. ADMIN only.
+
+    rule_type is immutable — identity is selected by path param.
+    Writes an audit_log row with action='EMAIL_RULE_UPDATED'.
+
+    Returns:
+        200 with updated EmailRuleRow.
+
+    Raises:
+        404: Rule not found.
+    """
+    rule = session.get(EmailRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail=f"Email rule {rule_id} not found.")
+
+    before = {
+        "recipients_json": rule.recipients_json,
+        "cron_schedule": rule.cron_schedule,
+        "is_active": rule.is_active,
+        "entity_filter": rule.entity_filter,
+        "notes": rule.notes,
+    }
+
+    if body.recipients_json is not None:
+        rule.recipients_json = body.recipients_json
+    if body.cron_schedule is not None:
+        rule.cron_schedule = body.cron_schedule
+    if body.is_active is not None:
+        rule.is_active = body.is_active
+    if body.entity_filter is not None:
+        rule.entity_filter = body.entity_filter
+    if body.notes is not None:
+        rule.notes = body.notes
+    rule.updated_by = current_user.id
+
+    after = {
+        "recipients_json": rule.recipients_json,
+        "cron_schedule": rule.cron_schedule,
+        "is_active": rule.is_active,
+        "entity_filter": rule.entity_filter,
+        "notes": rule.notes,
+    }
+
+    audit = AuditLog(
+        action="EMAIL_RULE_UPDATED",
+        entity_type="email_rules",
+        entity_id=rule_id,
+        actor_user_id=current_user.id,
+        before=before,
+        after=after,
+    )
+    session.add(audit)
+    session.commit()
+
+    log.info("admin.email_rule_update", rule_id=str(rule_id), rule_type=rule.rule_type)
+
+    return EmailRuleRow(
+        id=rule.id,
+        rule_type=rule.rule_type,
+        recipients_json=rule.recipients_json or [],
+        cron_schedule=rule.cron_schedule,
+        is_active=rule.is_active,
+        entity_filter=rule.entity_filter,
+        notes=rule.notes,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+        updated_by=rule.updated_by,
     )

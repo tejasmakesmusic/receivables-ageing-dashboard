@@ -1,23 +1,26 @@
 """Config routes — /config/credit-period, /config/aliases, /config/fx-rates CRUD.
 
 RBAC summary:
-  GET  credit-period:  ANALYST (own entity), ADMIN, CFO. PENDING → 403.
-  POST credit-period:  ANALYST (own entity), ADMIN. CFO/PENDING → 403.
-  PATCH credit-period: ADMIN only. Everyone else → 403.
-  DELETE credit-period: 405 Method Not Allowed (versioning model).
-  GET  aliases:        ANALYST (own entity), ADMIN, CFO. PENDING → 403.
-  POST aliases:        ANALYST (own entity), ADMIN. CFO/PENDING → 403.
-  PATCH aliases:       ADMIN only. Everyone else → 403.
-  DELETE aliases:      ADMIN only. Everyone else → 403.
-  GET  fx-rates:       All non-PENDING read.
-  POST fx-rates:       ADMIN only. Immutable rows per D15.
+  GET  credit-period:                 ANALYST (own entity), ADMIN, CFO. PENDING → 403.
+  GET  credit-period/default-parties: ANALYST, ADMIN, CFO. PENDING → 403. (A.4)
+  POST credit-period:                 ANALYST (own entity), ADMIN. CFO/PENDING → 403.
+  PATCH credit-period:                ADMIN only. Everyone else → 403.
+  DELETE credit-period:               405 Method Not Allowed (versioning model).
+  GET  aliases:                       ANALYST (own entity), ADMIN, CFO. PENDING → 403.
+  POST aliases:                       ANALYST (own entity), ADMIN. CFO/PENDING → 403.
+  PATCH aliases:                      ADMIN only. Everyone else → 403.
+  DELETE aliases:                     ADMIN only. Everyone else → 403.
+  GET  fx-rates:                      All non-PENDING read.
+  POST fx-rates:                      ADMIN only. Immutable rows per D15.
 
-All business logic delegated to config_service / fx_rate_service.
+All business logic delegated to config_service / fx_rate_service /
+default_cp_nudge_service (read-only for the report endpoint).
 """
 
 from __future__ import annotations
 
 import uuid  # noqa: TCH003 — used at runtime in path/query parameter type annotations
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -39,20 +42,26 @@ from app.schemas.config import (
     AliasPatchRequest,
     AliasRow,
     CreditPeriodCreateRequest,
+    CreditPeriodEditRequest,
+    CreditPeriodEditResponse,
     CreditPeriodListResponse,
     CreditPeriodPatchRequest,
     CreditPeriodRow,
+    DefaultCpPartyReportRow,
+    DefaultCpReportResponse,
 )
 from app.schemas.fx_rate import FxRateCreateRequest, FxRateListResponse, FxRateRow
 from app.services.config_service import (
     create_alias,
     create_credit_period,
     delete_alias,
+    edit_credit_period,
     list_aliases,
     list_credit_periods,
     patch_alias,
     patch_credit_period,
 )
+from app.services.default_cp_nudge_service import compute_default_cp_payload
 
 router = APIRouter()
 
@@ -70,6 +79,81 @@ _admin_only = require_role(Role.ADMIN)
 # ===========================================================================
 # Credit-period config
 # ===========================================================================
+
+
+@router.get(
+    "/credit-period/default-parties",
+    response_model=DefaultCpReportResponse,
+    status_code=200,
+    summary="Parties on entity-default credit period (spec §13 #5, A.4)",
+    tags=["config"],
+)
+def get_default_cp_parties(
+    entity_code: Annotated[
+        str, Query(description="Entity to report on: IND or UAE")
+    ],
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_read_allowed)] = ...,  # type: ignore[assignment]
+) -> DefaultCpReportResponse:
+    """Return the list of parties whose open invoices use the entity-default credit period.
+
+    Re-uses ``compute_default_cp_payload`` from ``default_cp_nudge_service`` —
+    the same data that drives the weekly analyst nudge email (spec §13 #5) is now
+    surfaced on S3 so analysts can act immediately.
+
+    RBAC: ANALYST / ADMIN / CFO read. PENDING → 403.
+
+    Raises:
+        422: entity_code not in ('IND', 'UAE').
+        404: Entity not found or no published snapshot for that entity.
+    """
+    import structlog as _structlog
+
+    _log = _structlog.get_logger(__name__)
+
+    if entity_code not in ("IND", "UAE"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_ENTITY_CODE",
+                "detail": "entity_code must be 'IND' or 'UAE'.",
+            },
+        )
+
+    try:
+        payload = compute_default_cp_payload(entity_code, session)
+    except ValueError as exc:
+        _log.info(
+            "config.default_cp_report.no_data",
+            entity_code=entity_code,
+            reason=str(exc),
+        )
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "NO_PUBLISHED_SNAPSHOT",
+                "detail": str(exc),
+            },
+        ) from exc
+
+    parties = [
+        DefaultCpPartyReportRow(
+            canonical_id=p.canonical_id,
+            canonical_name=p.canonical_name,
+            total_outstanding=str(p.total_outstanding),
+            n_open_invoices=p.n_open_invoices,
+        )
+        for p in payload.top_parties
+    ]
+
+    return DefaultCpReportResponse(
+        entity_code=entity_code,  # type: ignore[arg-type]
+        as_of_date=payload.as_of_date,
+        snapshot_id=payload.snapshot_id,
+        currency_display=payload.currency_display,
+        total_parties_on_default=payload.total_parties_on_default,
+        parties=parties,
+    )
 
 
 @router.get(
@@ -184,6 +268,42 @@ def delete_credit_period_route(
         status_code=405,
         media_type="application/json",
         headers={"Allow": "GET, POST, PATCH"},
+    )
+
+
+@router.post(
+    "/credit-period/{canonical_id}",
+    response_model=CreditPeriodEditResponse,
+    status_code=200,
+    summary="Analyst-facing one-off edit for a canonical's credit period (ADR-0005 D3)",
+    tags=["config"],
+)
+def edit_credit_period_route(
+    canonical_id: uuid.UUID,
+    body: CreditPeriodEditRequest,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_write_allowed)] = ...,  # type: ignore[assignment]
+) -> CreditPeriodEditResponse:
+    """Supersede the active credit_period_config for a canonical party.
+
+    RBAC: ANALYST (own entity), ADMIN (any). CFO/PENDING → 403.
+
+    Idempotency (ADR-0005 D3):
+      - Same (days, reason_note) as active config → 200 {result='noop'} — no DB writes.
+      - Differing values → supersede: old row closed (valid_to = today - 1 day),
+        new row inserted (valid_from = today, valid_to = NULL).
+      - No active config → insert directly.
+
+    Response result field: 'inserted' | 'superseded' | 'noop'.
+    Audit log action: CREDIT_PERIOD_EDITED.
+    """
+    today = datetime.now(tz=UTC).date()
+    return edit_credit_period(
+        db=session,
+        canonical_id=canonical_id,
+        body=body,
+        current_user=current_user,
+        today=today,
     )
 
 

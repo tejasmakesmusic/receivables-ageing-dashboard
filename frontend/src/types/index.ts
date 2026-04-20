@@ -278,6 +278,8 @@ export interface DashboardResponse {
 // Exceptions
 // ---------------------------------------------------------------------------
 
+export type ExcludeReason = "LEGAL_HOLD" | "NEGOTIATION" | "AGREED_WRITE_OFF" | "OTHER";
+
 export interface ExceptionListRow {
   id: string;
   invoice_id: string;
@@ -295,6 +297,13 @@ export interface ExceptionListRow {
   resolved_at: string | null;
   last_follow_up_date: string | null;
   last_follow_up_channel: string | null;
+  // Exclusion fields (Task A.1)
+  excluded_at: string | null;
+  excluded_reason: ExcludeReason | null;
+  excluded_reason_note: string | null;
+  excluded_by_email: string | null;
+  // Stale flag (D12 / Task A.5)
+  is_stale: boolean;
 }
 
 export interface ExceptionListResponse {
@@ -329,6 +338,27 @@ export interface CreditPeriodListResponse {
     total: number;
     total_pages: number;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Config — default-CP report (A.4 spec §13 #5)
+// ---------------------------------------------------------------------------
+
+export interface DefaultCpPartyReportRow {
+  canonical_id: string;
+  canonical_name: string;
+  /** Decimal serialised as string */
+  total_outstanding: string;
+  n_open_invoices: number;
+}
+
+export interface DefaultCpReportResponse {
+  entity_code: EntityCode;
+  as_of_date: string;
+  snapshot_id: string;
+  currency_display: string;
+  total_parties_on_default: number;
+  parties: DefaultCpPartyReportRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -442,6 +472,38 @@ export interface EmailOutboxListResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+// ---------------------------------------------------------------------------
+// Admin — email rules (Task A.3)
+// ---------------------------------------------------------------------------
+
+export type EntityFilterLiteral = "IND" | "UAE" | "ALL";
+
+export interface EmailRuleRow {
+  id: string;
+  rule_type: string;
+  recipients_json: string[];
+  cron_schedule: string | null;
+  is_active: boolean;
+  entity_filter: EntityFilterLiteral | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export interface EmailRuleListResponse {
+  items: EmailRuleRow[];
+  total: number;
+}
+
+export interface EmailRulePatchRequest {
+  recipients_json?: string[];
+  cron_schedule?: string;
+  is_active?: boolean;
+  entity_filter?: EntityFilterLiteral;
+  notes?: string;
 }
 
 // ---------------------------------------------------------------------------
