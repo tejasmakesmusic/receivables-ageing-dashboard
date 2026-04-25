@@ -136,12 +136,15 @@ def _compute_publish_diff(
 
     # New exception tags: count ACTIVE tags on invoices present in this snapshot.
     if effective_invoice_ids:
-        new_exc_count: int = db.scalar(
-            select(func.count(ExceptionTag.id)).where(
-                ExceptionTag.invoice_id.in_(effective_invoice_ids),
-                ExceptionTag.status == "ACTIVE",
+        new_exc_count: int = (
+            db.scalar(
+                select(func.count(ExceptionTag.id)).where(
+                    ExceptionTag.invoice_id.in_(effective_invoice_ids),
+                    ExceptionTag.status == "ACTIVE",
+                )
             )
-        ) or 0
+            or 0
+        )
     else:
         new_exc_count = 0
     diff.new_exceptions_count = new_exc_count

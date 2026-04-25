@@ -176,9 +176,7 @@ def _reconcile_snapshot_directly(db_session: Session, snapshot_id: str) -> None:
     admin = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert admin is not None
     existing = db_session.scalar(
-        select(ReconciliationEntry).where(
-            ReconciliationEntry.snapshot_id == uuid.UUID(snapshot_id)
-        )
+        select(ReconciliationEntry).where(ReconciliationEntry.snapshot_id == uuid.UUID(snapshot_id))
     )
     if existing is not None:
         existing.tally_xero_closing_ar = Decimal("0.00")
@@ -328,9 +326,7 @@ def test_render_publish_notif_html_empty_bucket_shifts_omits_section() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_publish_notif_email_no_prior_snapshot(
-    client: TestClient, db_session: Session
-) -> None:
+def test_publish_notif_email_no_prior_snapshot(client: TestClient, db_session: Session) -> None:
     """First TALLY publish for an entity enqueues an outbox row with first-publish body."""
     _login_as_admin(client)
     _set_entity_default_credit_days(db_session, "IND", 30)
@@ -370,9 +366,7 @@ def test_publish_notif_email_no_prior_snapshot(
 # ---------------------------------------------------------------------------
 
 
-def test_publish_notif_email_with_prior_snapshot(
-    client: TestClient, db_session: Session
-) -> None:
+def test_publish_notif_email_with_prior_snapshot(client: TestClient, db_session: Session) -> None:
     """Second TALLY publish renders diff body with new/settled counts vs prior snapshot."""
     _login_as_admin(client)
     _set_entity_default_credit_days(db_session, "IND", 30)

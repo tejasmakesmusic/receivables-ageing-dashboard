@@ -1521,9 +1521,7 @@ def test_concurrent_publish_serialised_via_row_lock(
     seed_factory = ThreadSessionFactory(branch_dsn)
     seed_session = seed_factory.make()
     try:
-        admin = seed_session.scalar(
-            select(User).where(User.email == "tejaswa.sharma@emb.global")
-        )
+        admin = seed_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
         assert admin is not None, "Admin user not found — check migration 0002 seed"
 
         # Use UAE so the concurrent publish does not accidentally SETTLE the 291
@@ -1560,9 +1558,7 @@ def test_concurrent_publish_serialised_via_row_lock(
 
         # Upload the snapshot via service (writes parse_result_json + STAGED status)
         xlsx_bytes = _make_tally_xlsx(
-            data_rows=[
-                [_date(2026, 2, 1), inv_ref, party_name, 5000.0, 5000.0, None, None]
-            ]
+            data_rows=[[_date(2026, 2, 1), inv_ref, party_name, 5000.0, 5000.0, None, None]]
         )
         create_resp = upload_snapshot(
             db=seed_session,
@@ -1579,9 +1575,7 @@ def test_concurrent_publish_serialised_via_row_lock(
         snapshot_row = seed_session.scalar(select(Snapshot).where(Snapshot.id == snap_uuid))
         assert snapshot_row is not None
         pr = snapshot_row.parse_result_json or {}
-        warning_codes = sorted(
-            {w.get("code") for w in pr.get("warnings", []) if w.get("code")}
-        )
+        warning_codes = sorted({w.get("code") for w in pr.get("warnings", []) if w.get("code")})
         if warning_codes:
             ack_warnings(
                 db=seed_session,
@@ -1662,33 +1656,21 @@ def test_concurrent_publish_serialised_via_row_lock(
             cleanup_session.execute(
                 delete(InvoiceSnapshot).where(InvoiceSnapshot.snapshot_id == snap_uuid)
             )
+            cleanup_session.execute(delete(AuditLog).where(AuditLog.entity_id == snap_uuid))
+            cleanup_session.execute(delete(EmailOutbox).where(EmailOutbox.snapshot_id == snap_uuid))
             cleanup_session.execute(
-                delete(AuditLog).where(AuditLog.entity_id == snap_uuid)
+                delete(ReconciliationEntry).where(ReconciliationEntry.snapshot_id == snap_uuid)
             )
-            cleanup_session.execute(
-                delete(EmailOutbox).where(EmailOutbox.snapshot_id == snap_uuid)
-            )
-            cleanup_session.execute(
-                delete(ReconciliationEntry).where(
-                    ReconciliationEntry.snapshot_id == snap_uuid
-                )
-            )
-            cleanup_session.execute(
-                delete(Invoice).where(Invoice.invoice_ref == inv_ref)
-            )
+            cleanup_session.execute(delete(Invoice).where(Invoice.invoice_ref == inv_ref))
             cleanup_session.execute(delete(Snapshot).where(Snapshot.id == snap_uuid))
             cleanup_session.execute(
                 delete(PartyAlias).where(PartyAlias.canonical_id == canonical_id)
             )
-            cleanup_session.execute(
-                delete(PartyCanonical).where(PartyCanonical.id == canonical_id)
-            )
+            cleanup_session.execute(delete(PartyCanonical).where(PartyCanonical.id == canonical_id))
             # Restore entity.default_credit_days to NULL so other tests that
             # set it themselves are not contaminated by our committed seed value.
             cleanup_session.execute(
-                update(Entity)
-                .where(Entity.code == "UAE")
-                .values(default_credit_days=None)
+                update(Entity).where(Entity.code == "UAE").values(default_credit_days=None)
             )
             cleanup_session.commit()
         except Exception as exc:

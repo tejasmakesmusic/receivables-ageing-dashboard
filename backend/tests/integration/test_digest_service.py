@@ -510,7 +510,7 @@ def test_scheduler_trigger_ist_09_00() -> None:
     hour_field = next(f for f in trigger.fields if f.name == "hour")
     minute_field = next(f for f in trigger.fields if f.name == "minute")
 
-    assert hour_field.expressions[0].first == hour    # RangeExpression.first
+    assert hour_field.expressions[0].first == hour  # RangeExpression.first
     assert minute_field.expressions[0].first == minute
 
     # Assert timezone is Asia/Kolkata

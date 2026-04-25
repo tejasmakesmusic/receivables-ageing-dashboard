@@ -63,9 +63,7 @@ def _login_as_analyst(
     db_session.flush()
 
 
-def _login_as_cfo(
-    client: TestClient, db_session: Session, email: str = "cfo@emb.global"
-) -> None:
+def _login_as_cfo(client: TestClient, db_session: Session, email: str = "cfo@emb.global") -> None:
     _login(client, email)
     user = db_session.scalar(select(User).where(User.email == email))
     assert user is not None
@@ -176,9 +174,7 @@ def test_get_party_404_unknown(client: TestClient, db_session: Session) -> None:
 
 def test_get_party_includes_invoices(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    cid = _make_canonical_with_invoices(
-        db_session, canonical_name="DrillPartyB", num_invoices=3
-    )
+    cid = _make_canonical_with_invoices(db_session, canonical_name="DrillPartyB", num_invoices=3)
 
     resp = client.get(f"/parties/{cid}")
     assert resp.status_code == 200
@@ -189,9 +185,7 @@ def test_get_party_includes_invoices(client: TestClient, db_session: Session) ->
 
 def test_get_party_invoice_fields(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    cid = _make_canonical_with_invoices(
-        db_session, canonical_name="DrillPartyC", num_invoices=1
-    )
+    cid = _make_canonical_with_invoices(db_session, canonical_name="DrillPartyC", num_invoices=1)
 
     resp = client.get(f"/parties/{cid}")
     body = resp.json()
@@ -214,9 +208,7 @@ def test_get_party_cfo_can_read(client: TestClient, db_session: Session) -> None
     assert resp.status_code == 200
 
 
-def test_get_party_analyst_out_of_scope_403(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_party_analyst_out_of_scope_403(client: TestClient, db_session: Session) -> None:
     """Analyst scoped to IND cannot see UAE canonical party."""
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code="IND")
     uae_cid = _make_canonical_with_invoices(
@@ -228,9 +220,7 @@ def test_get_party_analyst_out_of_scope_403(
 
 def test_get_party_shows_entity_code(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
-    cid = _make_canonical_with_invoices(
-        db_session, entity_code="IND", canonical_name="DrillPartyF"
-    )
+    cid = _make_canonical_with_invoices(db_session, entity_code="IND", canonical_name="DrillPartyF")
     resp = client.get(f"/parties/{cid}")
     body = resp.json()
     assert body["entity_code"] == "IND"

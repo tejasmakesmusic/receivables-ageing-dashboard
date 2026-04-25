@@ -111,7 +111,15 @@ def _make_tally_xlsx(invoices: list[tuple[str, str, int]]) -> bytes:
     ws.append(["Details of:", "Pending Bills", None, None, None, None, None])
     ws.append([None] * 7)
     ws.append(
-        ["Date", "Ref. No.", "Party's Name", "Opening Amount", "Pending Amount", "Due On", "Overdue"]
+        [
+            "Date",
+            "Ref. No.",
+            "Party's Name",
+            "Opening Amount",
+            "Pending Amount",
+            "Due On",
+            "Overdue",
+        ]
     )
     ws.append([None, None, None, "Amount", "Amount", None, "by days"])  # sub-header (row 4)
     grand_total = 0
@@ -135,7 +143,9 @@ def _make_tally_xlsx(invoices: list[tuple[str, str, int]]) -> bytes:
     return buf.getvalue()
 
 
-def _make_cp_xlsx(ind_rows: list[tuple[str, int]], uae_rows: list[tuple[str, int, str | None]]) -> bytes:
+def _make_cp_xlsx(
+    ind_rows: list[tuple[str, int]], uae_rows: list[tuple[str, int, str | None]]
+) -> bytes:
     """Build a minimal Credit Period master workbook.
 
     ind_rows: (client_name, credit_period_days)
@@ -198,7 +208,13 @@ def test_bulk_create_canonicals_unmapped_only(
     )
     resp = client.post(
         "/snapshots",
-        files={"file": ("GrpBills.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "GrpBills.xlsx",
+                xlsx,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
         data={"entity_code": "IND", "source_hint": "TALLY", "as_of_date": "2026-03-31"},
         headers=_csrf_headers(client),
     )
@@ -230,9 +246,7 @@ def test_bulk_create_canonicals_unmapped_only(
         )
     ).all()
     assert {c.name for c in cans} == set(names)
-    aliases = db_session.scalars(
-        select(PartyAlias).where(PartyAlias.alias_text.in_(names))
-    ).all()
+    aliases = db_session.scalars(select(PartyAlias).where(PartyAlias.alias_text.in_(names))).all()
     assert len(aliases) == 3
     assert {a.source for a in aliases} == {"MANUAL"}
 
@@ -284,7 +298,13 @@ def test_bulk_create_canonicals_include_fuzzy(
     )
     resp = client.post(
         "/snapshots",
-        files={"file": ("GrpBills.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "GrpBills.xlsx",
+                xlsx,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
         data={"entity_code": "IND", "source_hint": "TALLY", "as_of_date": "2026-03-31"},
         headers=_csrf_headers(client),
     )
@@ -299,9 +319,7 @@ def test_bulk_create_canonicals_include_fuzzy(
         headers=_csrf_headers(client),
     ).json()
     # The Webify canonical must NOT have been created by the UNMAPPED-only call.
-    webify_before = db_session.scalar(
-        select(PartyCanonical).where(PartyCanonical.name == raw_name)
-    )
+    webify_before = db_session.scalar(select(PartyCanonical).where(PartyCanonical.name == raw_name))
     assert webify_before is None
     assert bulk1["publish_gate"]["unmapped_parties_count"] >= 2  # 2 fuzzy rows still blocking
 
@@ -313,9 +331,7 @@ def test_bulk_create_canonicals_include_fuzzy(
     ).json()
     assert bulk2["publish_gate"]["unmapped_parties_count"] == 0
 
-    webify_after = db_session.scalar(
-        select(PartyCanonical).where(PartyCanonical.name == raw_name)
-    )
+    webify_after = db_session.scalar(select(PartyCanonical).where(PartyCanonical.name == raw_name))
     assert webify_after is not None
     assert webify_after.id != seeded.id
 
@@ -637,13 +653,13 @@ def test_full_transactional_golden_path(
     assert dash_resp.status_code == 200, dash_resp.text
     dash = dash_resp.json()
     # kpis.total_outstanding must be positive (we published 1_000_000 worth of invoices).
-    assert float(dash["kpis"]["total_outstanding"]) > 0, (
-        "Dashboard kpis.total_outstanding should be > 0 after publish"
-    )
+    assert (
+        float(dash["kpis"]["total_outstanding"]) > 0
+    ), "Dashboard kpis.total_outstanding should be > 0 after publish"
     # top_parties must include our 2 distinct parties (party_a, party_b).
-    assert len(dash["top_parties"]) >= 2, (
-        f"Expected at least 2 top_parties, got {len(dash['top_parties'])}"
-    )
+    assert (
+        len(dash["top_parties"]) >= 2
+    ), f"Expected at least 2 top_parties, got {len(dash['top_parties'])}"
 
     # ------------------------------------------------------------------
     # Step 5: Email enqueue — QUEUED PUBLISH_NOTIF row in email_outbox

@@ -613,7 +613,9 @@ class TestParseErrorsBlockSnapshot:
         # Build a minimal XLSX with no "Sundry Debtors" sheet.
         wb = openpyxl.Workbook()
         wb.active.title = "WrongSheet"  # openpyxl: active is non-None on a fresh workbook
-        wb.active.append(["some", "data", "here"])  # openpyxl: active is non-None on a fresh workbook
+        wb.active.append(
+            ["some", "data", "here"]
+        )  # openpyxl: active is non-None on a fresh workbook
         buf = io.BytesIO()
         wb.save(buf)
         file_bytes = buf.getvalue()

@@ -20,12 +20,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-import pytest
 from sqlalchemy import select
 
 from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
-from app.db.models.email_outbox import EmailOutbox
 from app.db.models.entity import Entity
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_snapshot import InvoiceSnapshot

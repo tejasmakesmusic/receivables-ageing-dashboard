@@ -289,9 +289,7 @@ def test_gate_passes_when_no_prior_published_snapshot(
     assert resp.status_code == 200, resp.json()
 
 
-def test_gate_passes_when_prior_is_matched(
-    client: TestClient, db_session: Session
-) -> None:
+def test_gate_passes_when_prior_is_matched(client: TestClient, db_session: Session) -> None:
     """Prior snapshot exists with MATCHED reconciliation → allow new publish."""
     _login_as_admin(client)
 
@@ -320,9 +318,7 @@ def test_gate_passes_when_prior_is_matched(
     assert resp.status_code == 200, resp.json()
 
 
-def test_gate_blocks_when_prior_is_unreconciled(
-    client: TestClient, db_session: Session
-) -> None:
+def test_gate_blocks_when_prior_is_unreconciled(client: TestClient, db_session: Session) -> None:
     """Prior snapshot exists but has NO reconciliation entry → 422."""
     _login_as_admin(client)
 
@@ -351,9 +347,7 @@ def test_gate_blocks_when_prior_is_unreconciled(
     assert resp.json()["detail"]["prior_status"] == "UNRECONCILED"
 
 
-def test_gate_blocks_when_prior_is_mismatched(
-    client: TestClient, db_session: Session
-) -> None:
+def test_gate_blocks_when_prior_is_mismatched(client: TestClient, db_session: Session) -> None:
     """Prior snapshot has MISMATCHED reconciliation → 422."""
     _login_as_admin(client)
 
@@ -411,9 +405,7 @@ def test_gate_error_body_contains_prior_snapshot_id(
     assert "2026-02-28" in detail["prior_snapshot_as_of_date"]
 
 
-def test_gate_skips_credit_period_prior_snapshot(
-    client: TestClient, db_session: Session
-) -> None:
+def test_gate_skips_credit_period_prior_snapshot(client: TestClient, db_session: Session) -> None:
     """A CREDIT_PERIOD snapshot must not be picked as "prior" by the §13 #6 gate.
 
     Scenario: TALLY @ D1 (MATCHED) -> CP @ D2 (no recon, as expected) ->

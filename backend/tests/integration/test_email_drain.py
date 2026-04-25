@@ -308,9 +308,7 @@ class TestDrainBatch:
 
     # -- FOR UPDATE SKIP LOCKED double-send prevention -----------------------
 
-    def test_skip_locked_row_locked_by_inflight_transaction(
-        self, db_session: Session
-    ) -> None:
+    def test_skip_locked_row_locked_by_inflight_transaction(self, db_session: Session) -> None:
         """FOR UPDATE SKIP LOCKED: a row locked by session A is skipped by session B.
 
         We simulate concurrent drain competition by:
@@ -365,9 +363,9 @@ class TestDrainBatch:
                 # Session B: runs SKIP LOCKED while A holds the lock — must get 0 rows.
                 with SessionLocal() as sess_b:
                     skipped_rows = list(sess_b.scalars(_lock_query).all())
-                    assert len(skipped_rows) == 0, (
-                        f"Session B must skip the locked row; got {len(skipped_rows)}"
-                    )
+                    assert (
+                        len(skipped_rows) == 0
+                    ), f"Session B must skip the locked row; got {len(skipped_rows)}"
 
                 # Commit session A — row is unlocked.
                 sess_a.commit()
@@ -376,9 +374,9 @@ class TestDrainBatch:
                 # (It's still QUEUED because we didn't mutate it — just verified locking.)
                 with SessionLocal() as sess_c:
                     visible_rows = list(sess_c.scalars(_lock_query).all())
-                    assert len(visible_rows) == 1, (
-                        "After A commits, session C must see the unlocked row"
-                    )
+                    assert (
+                        len(visible_rows) == 1
+                    ), "After A commits, session C must see the unlocked row"
             finally:
                 sess_a.close()
         finally:

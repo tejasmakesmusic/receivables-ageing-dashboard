@@ -266,20 +266,14 @@ class TestCpDiffHappyPath:
 
     def test_all_three_categories(self, client: TestClient, db_session: Session) -> None:
         _login_as_admin(client)
-        admin = db_session.scalar(
-            select(User).where(User.email == "tejaswa.sharma@emb.global")
-        )
+        admin = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
         assert admin is not None
 
         # Seed existing canonicals + configs
         # "ExistingMatch" in India — days=30, will be UNCHANGED (CP has 30 too)
-        _seed_canonical_and_config(
-            db_session, "ExistingMatch Ltd", "IND", 30, None, admin.id
-        )
+        _seed_canonical_and_config(db_session, "ExistingMatch Ltd", "IND", 30, None, admin.id)
         # "ExistingDiffer" in India — days=45, will be SUPERSEDED (CP has 60)
-        _seed_canonical_and_config(
-            db_session, "ExistingDiffer Ltd", "IND", 45, None, admin.id
-        )
+        _seed_canonical_and_config(db_session, "ExistingDiffer Ltd", "IND", 45, None, admin.id)
         # "NewClient" in India — no existing canonical → ADDED
 
         # Build CP xlsx:
@@ -312,18 +306,12 @@ class TestCpDiffHappyPath:
         assert "ExistingDiffer Ltd" in superseded_names
         assert "ExistingMatch Ltd" in unchanged_names
 
-    def test_superseded_entry_has_prior_days(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_superseded_entry_has_prior_days(self, client: TestClient, db_session: Session) -> None:
         _login_as_admin(client)
-        admin = db_session.scalar(
-            select(User).where(User.email == "tejaswa.sharma@emb.global")
-        )
+        admin = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
         assert admin is not None
 
-        _seed_canonical_and_config(
-            db_session, "OldTerms Ltd", "IND", 45, "legacy", admin.id
-        )
+        _seed_canonical_and_config(db_session, "OldTerms Ltd", "IND", 45, "legacy", admin.id)
         india_rows = [["OldTerms Ltd", 60]]
         cp_bytes = _make_cp_xlsx(india_rows=india_rows)
         upload_resp = _upload_cp(client, cp_bytes)
@@ -337,13 +325,11 @@ class TestCpDiffHappyPath:
         assert len(body["superseded"]) == 1
         entry = body["superseded"][0]
         assert entry["canonical_name"] == "OldTerms Ltd"
-        assert entry["days"] == 60          # new
-        assert entry["prior_days"] == 45    # was
+        assert entry["days"] == 60  # new
+        assert entry["prior_days"] == 45  # was
         assert entry["prior_reason_note"] == "legacy"
 
-    def test_added_entry_has_null_prior(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_added_entry_has_null_prior(self, client: TestClient, db_session: Session) -> None:
         _login_as_admin(client)
         india_rows = [["BrandNewClient Ltd", 30]]
         cp_bytes = _make_cp_xlsx(india_rows=india_rows)
@@ -362,9 +348,7 @@ class TestCpDiffHappyPath:
 
 
 class TestCpDiffErrors:
-    def test_422_for_non_cp_snapshot(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_422_for_non_cp_snapshot(self, client: TestClient, db_session: Session) -> None:
         """Returns 422 when snapshot.source_hint != CREDIT_PERIOD."""
         _login_as_admin(client)
         tally_bytes = _make_tally_xlsx_minimal()
@@ -377,9 +361,7 @@ class TestCpDiffErrors:
         body = resp.json()
         assert body["detail"]["code"] == "NOT_CREDIT_PERIOD_SNAPSHOT"
 
-    def test_404_for_unknown_snapshot(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_404_for_unknown_snapshot(self, client: TestClient, db_session: Session) -> None:
         """Returns 404 for a snapshot UUID that does not exist."""
         _login_as_admin(client)
         fake_id = str(uuid.uuid4())
@@ -390,9 +372,7 @@ class TestCpDiffErrors:
 class TestCpDiffRbac:
     """RBAC matrix tests for cp-diff endpoint."""
 
-    def _upload_cp_snapshot(
-        self, client: TestClient, db_session: Session
-    ) -> str:
+    def _upload_cp_snapshot(self, client: TestClient, db_session: Session) -> str:
         """Upload a CP snapshot as admin, return snapshot_id."""
         _login_as_admin(client)
         india_rows = [["SomeClient Ltd", 30]]
@@ -401,39 +381,27 @@ class TestCpDiffRbac:
         assert upload_resp.status_code == 201, upload_resp.text
         return cast(str, upload_resp.json()["snapshot_id"])
 
-    def test_analyst_in_scope_allowed(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_analyst_in_scope_allowed(self, client: TestClient, db_session: Session) -> None:
         """ANALYST with entity_id_scope == snapshot.entity_id gets 200."""
         snapshot_id = self._upload_cp_snapshot(client, db_session)
 
         # Fetch snapshot entity to set scope correctly
-        snapshot = db_session.scalar(
-            select(Snapshot).where(Snapshot.id == uuid.UUID(snapshot_id))
-        )
+        snapshot = db_session.scalar(select(Snapshot).where(Snapshot.id == uuid.UUID(snapshot_id)))
         assert snapshot is not None
-        entity = db_session.scalar(
-            select(Entity).where(Entity.id == snapshot.entity_id)
-        )
+        entity = db_session.scalar(select(Entity).where(Entity.id == snapshot.entity_id))
         assert entity is not None
 
         _login_as_analyst(client, db_session, "analyst_inscope@emb.global", entity.code)
         resp = _get_cp_diff(client, snapshot_id)
         assert resp.status_code == 200
 
-    def test_analyst_out_of_scope_forbidden(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_analyst_out_of_scope_forbidden(self, client: TestClient, db_session: Session) -> None:
         """ANALYST scoped to the other entity gets 403."""
         snapshot_id = self._upload_cp_snapshot(client, db_session)
 
-        snapshot = db_session.scalar(
-            select(Snapshot).where(Snapshot.id == uuid.UUID(snapshot_id))
-        )
+        snapshot = db_session.scalar(select(Snapshot).where(Snapshot.id == uuid.UUID(snapshot_id)))
         assert snapshot is not None
-        entity = db_session.scalar(
-            select(Entity).where(Entity.id == snapshot.entity_id)
-        )
+        entity = db_session.scalar(select(Entity).where(Entity.id == snapshot.entity_id))
         assert entity is not None
         # Pick the opposite entity
         other_code = "UAE" if entity.code == "IND" else "IND"
@@ -442,18 +410,14 @@ class TestCpDiffRbac:
         resp = _get_cp_diff(client, snapshot_id)
         assert resp.status_code == 403
 
-    def test_cfo_read_allowed(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_cfo_read_allowed(self, client: TestClient, db_session: Session) -> None:
         """CFO role gets 200 on cp-diff (read-only route)."""
         snapshot_id = self._upload_cp_snapshot(client, db_session)
         _login_as_cfo(client, db_session, "cfo_cpdiff@emb.global")
         resp = _get_cp_diff(client, snapshot_id)
         assert resp.status_code == 200
 
-    def test_pending_role_forbidden(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_pending_role_forbidden(self, client: TestClient, db_session: Session) -> None:
         """PENDING role gets 403."""
         snapshot_id = self._upload_cp_snapshot(client, db_session)
         _login_as_pending(client, db_session, "pending_cpdiff@emb.global")

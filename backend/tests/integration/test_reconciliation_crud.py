@@ -67,9 +67,7 @@ def _login_as_analyst(
     db_session.flush()
 
 
-def _login_as_cfo(
-    client: TestClient, db_session: Session, email: str = "cfo@emb.global"
-) -> None:
+def _login_as_cfo(client: TestClient, db_session: Session, email: str = "cfo@emb.global") -> None:
     _login(client, email)
     user = db_session.scalar(select(User).where(User.email == email))
     assert user is not None
@@ -169,9 +167,7 @@ def _add_active_exception(
     assert inv_snap is not None
 
     bucket = db_session.scalar(
-        select(ExceptionBucketType).where(
-            ExceptionBucketType.active.is_(True)
-        )
+        select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True))
     )
     assert bucket is not None
 
@@ -206,9 +202,7 @@ def test_get_reconciliation_unreconciled_for_published_snapshot(
     assert Decimal(str(body["dashboard_ar"])) > 0
 
 
-def test_get_reconciliation_404_unknown_snapshot(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_reconciliation_404_unknown_snapshot(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     resp = client.get(f"/snapshots/{uuid.uuid4()}/reconciliation")
     assert resp.status_code == 404
@@ -220,7 +214,14 @@ def test_get_reconciliation_409_non_published_snapshot(
     _login_as_admin(client)
     entity_id = _entity_id(db_session)
     admin = _admin_id(db_session)
-    snap = Snapshot(entity_id=entity_id, as_of_date=date(2026, 3, 31), status="STAGED", source_hint="TALLY", upload_file_sha256=uuid.uuid4().hex, uploaded_by=admin)
+    snap = Snapshot(
+        entity_id=entity_id,
+        as_of_date=date(2026, 3, 31),
+        status="STAGED",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
+        uploaded_by=admin,
+    )
     db_session.add(snap)
     db_session.flush()
 
@@ -229,9 +230,7 @@ def test_get_reconciliation_409_non_published_snapshot(
     assert resp.json()["detail"]["code"] == "SNAPSHOT_NOT_PUBLISHED"
 
 
-def test_get_reconciliation_analyst_can_read(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_reconciliation_analyst_can_read(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global")
     snap_id = _build_published_snapshot(db_session, snap_ref="GR02")
 
@@ -239,9 +238,7 @@ def test_get_reconciliation_analyst_can_read(
     assert resp.status_code == 200
 
 
-def test_get_reconciliation_cfo_can_read(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_reconciliation_cfo_can_read(client: TestClient, db_session: Session) -> None:
     _login_as_cfo(client, db_session, "cfo@emb.global")
     snap_id = _build_published_snapshot(db_session, snap_ref="GR03")
 
@@ -286,9 +283,7 @@ def _post_reconciliation(
     )
 
 
-def test_post_reconciliation_matched_status(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_matched_status(client: TestClient, db_session: Session) -> None:
     """dashboard_ar=10000, exception_bucket=0, tally=10000 → delta=0 → MATCHED."""
     _login_as_admin(client)
     snap_id = _build_published_snapshot(
@@ -316,9 +311,7 @@ def test_post_reconciliation_matched_within_tolerance(
     assert resp.json()["status"] == "MATCHED"
 
 
-def test_post_reconciliation_mismatched_status(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_mismatched_status(client: TestClient, db_session: Session) -> None:
     """Delta > 100 → MISMATCHED."""
     _login_as_admin(client)
     snap_id = _build_published_snapshot(
@@ -332,9 +325,7 @@ def test_post_reconciliation_mismatched_status(
     assert Decimal(str(body["delta"])) == Decimal("1000")
 
 
-def test_post_reconciliation_delta_formula_d19(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_delta_formula_d19(client: TestClient, db_session: Session) -> None:
     """delta = dashboard_ar + exception_bucket_total - tally_xero_closing_ar (D19)."""
     _login_as_admin(client)
     snap_id = _build_published_snapshot(
@@ -371,9 +362,11 @@ def test_post_reconciliation_upsert_updates_existing(
     assert r2.json()["status"] == "MATCHED"
 
     # DB should have only one entry
-    count = db_session.query(ReconciliationEntry).filter(
-        ReconciliationEntry.snapshot_id == snap_id
-    ).count()
+    count = (
+        db_session.query(ReconciliationEntry)
+        .filter(ReconciliationEntry.snapshot_id == snap_id)
+        .count()
+    )
     assert count == 1
 
 
@@ -416,9 +409,7 @@ def test_post_reconciliation_403_for_analyst_out_of_scope(
     assert resp.status_code == 403
 
 
-def test_post_reconciliation_403_for_cfo(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_403_for_cfo(client: TestClient, db_session: Session) -> None:
     """ADR-0006: CFO is read-only — POST returns 403."""
     _login_as_cfo(client, db_session, "cfo@emb.global")
     snap_id = _build_published_snapshot(db_session, snap_ref="PR07")
@@ -427,13 +418,18 @@ def test_post_reconciliation_403_for_cfo(
     assert resp.status_code == 403
 
 
-def test_post_reconciliation_409_non_published(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_409_non_published(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     entity_id = _entity_id(db_session)
     admin = _admin_id(db_session)
-    snap = Snapshot(entity_id=entity_id, as_of_date=date(2026, 3, 31), status="STAGED", source_hint="TALLY", upload_file_sha256=uuid.uuid4().hex, uploaded_by=admin)
+    snap = Snapshot(
+        entity_id=entity_id,
+        as_of_date=date(2026, 3, 31),
+        status="STAGED",
+        source_hint="TALLY",
+        upload_file_sha256=uuid.uuid4().hex,
+        uploaded_by=admin,
+    )
     db_session.add(snap)
     db_session.flush()
 
@@ -441,17 +437,13 @@ def test_post_reconciliation_409_non_published(
     assert resp.status_code == 409
 
 
-def test_post_reconciliation_404_unknown_snapshot(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_404_unknown_snapshot(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     resp = _post_reconciliation(client, uuid.uuid4(), tally_ar=10000.0)
     assert resp.status_code == 404
 
 
-def test_post_reconciliation_with_notes(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_with_notes(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     snap_id = _build_published_snapshot(db_session, snap_ref="PR08")
 
@@ -460,9 +452,7 @@ def test_post_reconciliation_with_notes(
     assert resp.json()["notes"] == "Checked manually"
 
 
-def test_post_reconciliation_populates_entered_by(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_reconciliation_populates_entered_by(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     snap_id = _build_published_snapshot(db_session, snap_ref="PR09")
 

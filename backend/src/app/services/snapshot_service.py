@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import UTC, date, datetime  # noqa: TCH003 — used at runtime in function signatures
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import openpyxl
@@ -339,7 +339,9 @@ def upload_snapshot(
         # CREDIT_PERIOD: the master has no natural date embedded in the sheet.
         # Accept a form value if provided (sets valid_from on config rows per
         # ADR-0005 D2); otherwise default to today UTC so publish doesn't 422.
-        effective_date = as_of_date_form if as_of_date_form is not None else datetime.now(tz=UTC).date()
+        effective_date = (
+            as_of_date_form if as_of_date_form is not None else datetime.now(tz=UTC).date()
+        )
 
     # 6. Partition pre-flight (TALLY + XERO only).
     if effective_date is not None:

@@ -189,9 +189,7 @@ def _seed_fx_rate(
 
 def _add_active_exception(db_session: Session, invoice_id: uuid.UUID) -> None:
     admin = _admin_id(db_session)
-    bt = db_session.scalar(
-        select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True))
-    )
+    bt = db_session.scalar(select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True)))
     assert bt is not None
     tag = ExceptionTag(
         invoice_id=invoice_id,
@@ -541,9 +539,7 @@ def test_dashboard_all_entity_missing_fx_rate_422(client: TestClient, db_session
 # ---------------------------------------------------------------------------
 
 
-def test_dashboard_top_party_tally_overdue_present(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_top_party_tally_overdue_present(client: TestClient, db_session: Session) -> None:
     """tally_overdue_days_max is populated when raw_row_json carries overdue_days."""
     _login_as_admin(client)
     admin = _admin_id(db_session)
@@ -608,9 +604,9 @@ def test_dashboard_top_party_tally_overdue_present(
     # Find our seeded party
     match = next((p for p in top_parties if "TallyOverdue" in p["canonical_name"]), None)
     assert match is not None, "Seeded TallyOverdue-Party not in top_parties"
-    assert match["tally_overdue_days_max"] == 45, (
-        f"Expected tally_overdue_days_max=45, got {match['tally_overdue_days_max']}"
-    )
+    assert (
+        match["tally_overdue_days_max"] == 45
+    ), f"Expected tally_overdue_days_max=45, got {match['tally_overdue_days_max']}"
 
 
 def test_dashboard_all_entity_fx_tooltip_fields_populated(
@@ -624,9 +620,7 @@ def test_dashboard_all_entity_fx_tooltip_fields_populated(
         db_session,
         entity_code="IND",
         as_of_date=date(2026, 3, 31),
-        invoices=[
-            {"ref": "FXTT-IND", "amount": 10000, "currency": "INR", "bucket": "NOT_DUE"}
-        ],
+        invoices=[{"ref": "FXTT-IND", "amount": 10000, "currency": "INR", "bucket": "NOT_DUE"}],
         suffix="fxtt-ind",
     )
     _build_published_snapshot(
@@ -650,19 +644,19 @@ def test_dashboard_all_entity_fx_tooltip_fields_populated(
     kpis = resp.json()["kpis"]
 
     # New tooltip fields
-    assert kpis["fx_rate_effective_from"] == "2026-01-01", (
-        f"Expected fx_rate_effective_from='2026-01-01', got {kpis['fx_rate_effective_from']!r}"
-    )
-    assert kpis["fx_rate_from_ccy"] == "AED", (
-        f"Expected fx_rate_from_ccy='AED', got {kpis['fx_rate_from_ccy']!r}"
-    )
-    assert kpis["fx_rate_to_ccy"] == "INR", (
-        f"Expected fx_rate_to_ccy='INR', got {kpis['fx_rate_to_ccy']!r}"
-    )
+    assert (
+        kpis["fx_rate_effective_from"] == "2026-01-01"
+    ), f"Expected fx_rate_effective_from='2026-01-01', got {kpis['fx_rate_effective_from']!r}"
+    assert (
+        kpis["fx_rate_from_ccy"] == "AED"
+    ), f"Expected fx_rate_from_ccy='AED', got {kpis['fx_rate_from_ccy']!r}"
+    assert (
+        kpis["fx_rate_to_ccy"] == "INR"
+    ), f"Expected fx_rate_to_ccy='INR', got {kpis['fx_rate_to_ccy']!r}"
     # Existing rate field still correct
-    assert Decimal(str(kpis["fx_rate_used"])) == Decimal("22.75"), (
-        f"Expected fx_rate_used=22.75, got {kpis['fx_rate_used']!r}"
-    )
+    assert Decimal(str(kpis["fx_rate_used"])) == Decimal(
+        "22.75"
+    ), f"Expected fx_rate_used=22.75, got {kpis['fx_rate_used']!r}"
 
 
 def test_dashboard_ind_entity_fx_tooltip_fields_are_none(
@@ -674,9 +668,7 @@ def test_dashboard_ind_entity_fx_tooltip_fields_are_none(
         db_session,
         entity_code="IND",
         as_of_date=date(2026, 3, 31),
-        invoices=[
-            {"ref": "FXTT-IND-NONE", "amount": 5000, "currency": "INR", "bucket": "NOT_DUE"}
-        ],
+        invoices=[{"ref": "FXTT-IND-NONE", "amount": 5000, "currency": "INR", "bucket": "NOT_DUE"}],
         suffix="fxtt-ind-none",
     )
 
@@ -684,20 +676,18 @@ def test_dashboard_ind_entity_fx_tooltip_fields_are_none(
     assert resp.status_code == 200
     kpis = resp.json()["kpis"]
 
-    assert kpis["fx_rate_effective_from"] is None, (
-        f"Expected fx_rate_effective_from=None for IND, got {kpis['fx_rate_effective_from']!r}"
-    )
-    assert kpis["fx_rate_from_ccy"] is None, (
-        f"Expected fx_rate_from_ccy=None for IND, got {kpis['fx_rate_from_ccy']!r}"
-    )
-    assert kpis["fx_rate_to_ccy"] is None, (
-        f"Expected fx_rate_to_ccy=None for IND, got {kpis['fx_rate_to_ccy']!r}"
-    )
+    assert (
+        kpis["fx_rate_effective_from"] is None
+    ), f"Expected fx_rate_effective_from=None for IND, got {kpis['fx_rate_effective_from']!r}"
+    assert (
+        kpis["fx_rate_from_ccy"] is None
+    ), f"Expected fx_rate_from_ccy=None for IND, got {kpis['fx_rate_from_ccy']!r}"
+    assert (
+        kpis["fx_rate_to_ccy"] is None
+    ), f"Expected fx_rate_to_ccy=None for IND, got {kpis['fx_rate_to_ccy']!r}"
 
 
-def test_dashboard_top_party_tally_overdue_absent(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_top_party_tally_overdue_absent(client: TestClient, db_session: Session) -> None:
     """tally_overdue_days_max is None when raw_row_json has no overdue_days key."""
     _login_as_admin(client)
     admin = _admin_id(db_session)
@@ -751,9 +741,9 @@ def test_dashboard_top_party_tally_overdue_absent(
     top_parties = resp.json()["top_parties"]
     match = next((p for p in top_parties if "NoTallyOvd" in p["canonical_name"]), None)
     assert match is not None, "Seeded NoTallyOvd-Party not in top_parties"
-    assert match["tally_overdue_days_max"] is None, (
-        f"Expected tally_overdue_days_max=None, got {match['tally_overdue_days_max']}"
-    )
+    assert (
+        match["tally_overdue_days_max"] is None
+    ), f"Expected tally_overdue_days_max=None, got {match['tally_overdue_days_max']}"
 
 
 # ---------------------------------------------------------------------------
@@ -772,9 +762,7 @@ def test_dashboard_trend_weekly_empty_when_no_snapshots(
     assert resp.status_code == 404
 
 
-def test_dashboard_trend_weekly_three_weeks(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_trend_weekly_three_weeks(client: TestClient, db_session: Session) -> None:
     """trend_weekly contains one entry per distinct week, sorted ascending.
 
     We seed 3 snapshots across 3 *distinct* weeks and assert the 3 seeded
@@ -786,7 +774,7 @@ def test_dashboard_trend_weekly_three_weeks(
     _login_as_admin(client)
 
     # Use weeks well in the past and unique enough to avoid collisions
-    week1 = date(2026, 1, 5)   # Mon 2026-W02
+    week1 = date(2026, 1, 5)  # Mon 2026-W02
     week2 = date(2026, 1, 12)  # Mon 2026-W03
     week3 = date(2026, 1, 19)  # Mon 2026-W04
 
@@ -855,9 +843,7 @@ def test_dashboard_trend_weekly_three_weeks(
     assert Decimal(str(w3_row["ninety_plus"])) == Decimal("7000")
 
 
-def test_dashboard_trend_weekly_latest_per_week(
-    client: TestClient, db_session: Session
-) -> None:
+def test_dashboard_trend_weekly_latest_per_week(client: TestClient, db_session: Session) -> None:
     """When two snapshots fall in the same week, only the later one is used.
 
     We seed two snapshots for the same ISO week (Mon + Thu 2026-W06) and
@@ -868,8 +854,8 @@ def test_dashboard_trend_weekly_latest_per_week(
     """
     _login_as_admin(client)
 
-    mon = date(2026, 2, 2)   # Monday  2026-W06
-    thu = date(2026, 2, 5)   # Thursday 2026-W06 (same ISO week)
+    mon = date(2026, 2, 2)  # Monday  2026-W06
+    thu = date(2026, 2, 5)  # Thursday 2026-W06 (same ISO week)
 
     _build_published_snapshot(
         db_session,
@@ -892,13 +878,13 @@ def test_dashboard_trend_weekly_latest_per_week(
 
     # The week 2026-02-02 (Monday of W06) must appear exactly once
     week_rows = [r for r in trend if r["week_start"] == "2026-02-02"]
-    assert len(week_rows) == 1, (
-        f"Expected 1 row for week 2026-02-02, got {len(week_rows)}: {week_rows}"
-    )
+    assert (
+        len(week_rows) == 1
+    ), f"Expected 1 row for week 2026-02-02, got {len(week_rows)}: {week_rows}"
     # Must use the Thursday snapshot (9000), not Monday (8000)
-    assert Decimal(str(week_rows[0]["total_outstanding"])) == Decimal("9000"), (
-        f"Expected 9000 (Thu snapshot), got {week_rows[0]['total_outstanding']}"
-    )
+    assert Decimal(str(week_rows[0]["total_outstanding"])) == Decimal(
+        "9000"
+    ), f"Expected 9000 (Thu snapshot), got {week_rows[0]['total_outstanding']}"
 
 
 # ---------------------------------------------------------------------------
@@ -947,14 +933,15 @@ def test_dashboard_latest_skips_credit_period_snapshot(
     assert resp.status_code == 200
     body = resp.json()
 
-    assert body["snapshot_id"] != str(cp_snap.id), (
-        "Dashboard picked the CREDIT_PERIOD snapshot — should skip non-invoice sources"
-    )
+    assert body["snapshot_id"] != str(
+        cp_snap.id
+    ), "Dashboard picked the CREDIT_PERIOD snapshot — should skip non-invoice sources"
     picked = db_session.get(Snapshot, uuid.UUID(body["snapshot_id"]))
     assert picked is not None
-    assert picked.source_hint in ("TALLY", "XERO"), (
-        f"Dashboard picked source_hint={picked.source_hint!r}; must be TALLY or XERO"
-    )
+    assert picked.source_hint in (
+        "TALLY",
+        "XERO",
+    ), f"Dashboard picked source_hint={picked.source_hint!r}; must be TALLY or XERO"
 
 
 # ---------------------------------------------------------------------------
@@ -981,9 +968,7 @@ def _add_follow_up(
     db_session.flush()
 
 
-def test_top_party_last_follow_up_populated(
-    client: TestClient, db_session: Session
-) -> None:
+def test_top_party_last_follow_up_populated(client: TestClient, db_session: Session) -> None:
     """last_follow_up_date and last_follow_up_channel are populated when a follow-up exists."""
     _login_as_admin(client)
     admin = _admin_id(db_session)
@@ -1041,17 +1026,15 @@ def test_top_party_last_follow_up_populated(
     top_parties = resp.json()["top_parties"]
     match = next((p for p in top_parties if "FU-Party-Present" in p["canonical_name"]), None)
     assert match is not None, "FU-Party-Present not found in top_parties"
-    assert match["last_follow_up_date"] == "2026-03-15", (
-        f"Expected last_follow_up_date=2026-03-15, got {match['last_follow_up_date']}"
-    )
-    assert match["last_follow_up_channel"] == "CALL", (
-        f"Expected last_follow_up_channel=CALL, got {match['last_follow_up_channel']}"
-    )
+    assert (
+        match["last_follow_up_date"] == "2026-03-15"
+    ), f"Expected last_follow_up_date=2026-03-15, got {match['last_follow_up_date']}"
+    assert (
+        match["last_follow_up_channel"] == "CALL"
+    ), f"Expected last_follow_up_channel=CALL, got {match['last_follow_up_channel']}"
 
 
-def test_top_party_last_follow_up_none_when_absent(
-    client: TestClient, db_session: Session
-) -> None:
+def test_top_party_last_follow_up_none_when_absent(client: TestClient, db_session: Session) -> None:
     """last_follow_up_date and last_follow_up_channel are None when no follow-up exists."""
     _login_as_admin(client)
     admin = _admin_id(db_session)
@@ -1108,12 +1091,12 @@ def test_top_party_last_follow_up_none_when_absent(
     top_parties = resp.json()["top_parties"]
     match = next((p for p in top_parties if "FU-Party-Absent" in p["canonical_name"]), None)
     assert match is not None, "FU-Party-Absent not found in top_parties"
-    assert match["last_follow_up_date"] is None, (
-        f"Expected last_follow_up_date=None, got {match['last_follow_up_date']}"
-    )
-    assert match["last_follow_up_channel"] is None, (
-        f"Expected last_follow_up_channel=None, got {match['last_follow_up_channel']}"
-    )
+    assert (
+        match["last_follow_up_date"] is None
+    ), f"Expected last_follow_up_date=None, got {match['last_follow_up_date']}"
+    assert (
+        match["last_follow_up_channel"] is None
+    ), f"Expected last_follow_up_channel=None, got {match['last_follow_up_channel']}"
 
 
 def test_top_party_last_follow_up_picks_most_recent(
@@ -1178,9 +1161,9 @@ def test_top_party_last_follow_up_picks_most_recent(
     top_parties = resp.json()["top_parties"]
     match = next((p for p in top_parties if "FU-Party-Multi" in p["canonical_name"]), None)
     assert match is not None, "FU-Party-Multi not found in top_parties"
-    assert match["last_follow_up_date"] == "2026-03-20", (
-        f"Expected 2026-03-20 (newest), got {match['last_follow_up_date']}"
-    )
-    assert match["last_follow_up_channel"] == "MEETING", (
-        f"Expected MEETING (newest), got {match['last_follow_up_channel']}"
-    )
+    assert (
+        match["last_follow_up_date"] == "2026-03-20"
+    ), f"Expected 2026-03-20 (newest), got {match['last_follow_up_date']}"
+    assert (
+        match["last_follow_up_channel"] == "MEETING"
+    ), f"Expected MEETING (newest), got {match['last_follow_up_channel']}"

@@ -331,7 +331,7 @@ def test_ageing_result_is_frozen() -> None:
         as_of_date=datetime.date(2025, 3, 5),
     )
     with pytest.raises(ValidationError):
-        result.bucket = AgeingBucket.NOT_DUE  # noqa: E501  # intentional: assignment to frozen model raises at runtime
+        result.bucket = AgeingBucket.NOT_DUE  # intentional: assignment to frozen model raises at runtime
 
 
 # ---------------------------------------------------------------------------

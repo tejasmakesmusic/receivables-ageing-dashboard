@@ -12,8 +12,7 @@ Seeds 3 snapshots:
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -97,7 +96,7 @@ def _add_reconciliation_entry(
         delta=delta,
         status=status,
         entered_by=admin,
-        entered_at=datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc),
+        entered_at=datetime(2026, 4, 1, 10, 0, 0, tzinfo=UTC),
     )
     db_session.add(entry)
     db_session.flush()
@@ -108,9 +107,7 @@ def _add_reconciliation_entry(
 # ---------------------------------------------------------------------------
 
 
-def test_list_snapshots_reconciliation_field_shape(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_snapshots_reconciliation_field_shape(client: TestClient, db_session: Session) -> None:
     """Three snapshots — MATCHED, MISMATCHED, no entry — reconciliation field correct."""
     _login_as_admin(client)
 
@@ -174,9 +171,7 @@ def test_list_snapshots_reconciliation_field_shape(
     assert row_n["reconciliation"] is None
 
 
-def test_list_snapshots_existing_tests_not_broken(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_snapshots_existing_tests_not_broken(client: TestClient, db_session: Session) -> None:
     """Basic sanity: list still returns expected top-level fields after schema change."""
     _login_as_admin(client)
     _make_published_snapshot(db_session, date(2026, 4, 15), tag="basic")

@@ -78,9 +78,7 @@ def _login_as_analyst(
     db_session.flush()
 
 
-def _login_as_cfo(
-    client: TestClient, db_session: Session, email: str = "cfo@emb.global"
-) -> None:
+def _login_as_cfo(client: TestClient, db_session: Session, email: str = "cfo@emb.global") -> None:
     _login(client, email)
     user = db_session.scalar(select(User).where(User.email == email))
     assert user is not None
@@ -475,9 +473,7 @@ def test_list_follow_ups_pagination(client: TestClient, db_session: Session) -> 
     _login_as_admin(client)
     canonical_id = _make_canonical(db_session)
     for i in range(5):
-        _post_follow_up(
-            client, canonical_id=canonical_id, fu_date=f"2026-0{i + 1}-01"
-        )
+        _post_follow_up(client, canonical_id=canonical_id, fu_date=f"2026-0{i + 1}-01")
 
     resp = client.get(f"/follow-ups?canonical_id={canonical_id}&page=1&page_size=3")
     assert resp.status_code == 200
@@ -728,9 +724,7 @@ def test_create_follow_up_via_party_route_unknown_canonical_404(
     assert resp.status_code == 404
 
 
-def test_create_follow_up_via_party_route_cfo_403(
-    client: TestClient, db_session: Session
-) -> None:
+def test_create_follow_up_via_party_route_cfo_403(client: TestClient, db_session: Session) -> None:
     _login_as_cfo(client, db_session)
     canonical_id = _make_canonical(db_session)
 

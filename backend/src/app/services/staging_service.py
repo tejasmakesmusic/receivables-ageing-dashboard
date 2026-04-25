@@ -975,9 +975,7 @@ def bulk_create_canonicals_for_unmapped(
       - CREDIT_PERIOD snapshot (no party aliases concept).
     409: not STAGED. 403: wrong role or entity scope.
     """
-    snapshot = db.scalar(
-        select(Snapshot).where(Snapshot.id == snapshot_id).with_for_update()
-    )
+    snapshot = db.scalar(select(Snapshot).where(Snapshot.id == snapshot_id).with_for_update())
     snapshot = _require_staged(snapshot, snapshot_id)
     _check_entity_scope(current_user, snapshot, db)
 
@@ -994,9 +992,7 @@ def bulk_create_canonicals_for_unmapped(
 
     raw_names = [inv.get("party_name_raw", "") for inv in invoice_rows_all]
     resolutions = resolve_aliases_batch(raw_names, snapshot.entity_id, db)
-    resolutions_by_raw = {
-        name: res for name, res in zip(raw_names, resolutions, strict=False)
-    }
+    resolutions_by_raw = {name: res for name, res in zip(raw_names, resolutions, strict=False)}
 
     # Group distinct non-EXACT raw names → first row_index.
     # Default: UNMAPPED only. include_fuzzy: also FUZZY_HIGH + FUZZY_LOW.

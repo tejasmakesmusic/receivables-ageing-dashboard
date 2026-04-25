@@ -595,13 +595,11 @@ def get_snapshot(
 
         flag_invoice_ids = [_uuid.UUID(f["invoice_id"]) for f in raw_flags]
         rows = session.execute(
-            select(Invoice.id, Invoice.invoice_ref, PartyCanonical.name).join(
-                PartyCanonical, Invoice.canonical_id == PartyCanonical.id
-            ).where(Invoice.id.in_(flag_invoice_ids))
+            select(Invoice.id, Invoice.invoice_ref, PartyCanonical.name)
+            .join(PartyCanonical, Invoice.canonical_id == PartyCanonical.id)
+            .where(Invoice.id.in_(flag_invoice_ids))
         ).all()
-        lookup: dict[_uuid.UUID, tuple[str, str]] = {
-            r.id: (r.invoice_ref, r.name) for r in rows
-        }
+        lookup: dict[_uuid.UUID, tuple[str, str]] = {r.id: (r.invoice_ref, r.name) for r in rows}
         enriched_flags = []
         for f in raw_flags:
             inv_id = _uuid.UUID(f["invoice_id"])
@@ -785,7 +783,11 @@ def get_cp_diff(
 
     # ANALYST entity scope check — CP snapshots span both entities, but the
     # analyst is allowed if their scope matches either entity or is unrestricted.
-    if current_user.role == Role.ANALYST and current_user.entity_id_scope is not None and current_user.entity_id_scope != snapshot.entity_id:
+    if (
+        current_user.role == Role.ANALYST
+        and current_user.entity_id_scope is not None
+        and current_user.entity_id_scope != snapshot.entity_id
+    ):
         raise HTTPException(
             status_code=403,
             detail="Analyst scope does not include this snapshot's entity.",

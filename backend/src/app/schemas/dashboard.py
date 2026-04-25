@@ -38,7 +38,9 @@ class TopPartyRow(BaseModel):
     outstanding: Decimal
     overdue_bucket: str  # the worst (most overdue) bucket for this party
     active_exception_count: int
-    tally_overdue_days_max: int | None = None  # max Tally overdue_days across OPEN invoices (spec §13 #4)
+    tally_overdue_days_max: int | None = (
+        None  # max Tally overdue_days across OPEN invoices (spec §13 #4)
+    )
     last_follow_up_date: date | None = None
     last_follow_up_channel: str | None = None
 

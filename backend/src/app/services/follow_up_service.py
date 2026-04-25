@@ -62,9 +62,7 @@ def _resolve_entity_id_for_target(
     if body.invoice_id is not None:
         invoice = db.get(Invoice, body.invoice_id)
         if invoice is None:
-            raise HTTPException(
-                status_code=404, detail=f"Invoice {body.invoice_id} not found."
-            )
+            raise HTTPException(status_code=404, detail=f"Invoice {body.invoice_id} not found.")
         return invoice.canonical_id, body.invoice_id, invoice.invoice_ref
 
     # anchor on canonical_id
@@ -72,9 +70,7 @@ def _resolve_entity_id_for_target(
     assert canonical_id is not None  # type narrowing
     canonical = db.get(PartyCanonical, canonical_id)
     if canonical is None:
-        raise HTTPException(
-            status_code=404, detail=f"Party {canonical_id} not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Party {canonical_id} not found.")
     return canonical_id, None, None
 
 
@@ -205,9 +201,7 @@ def list_follow_ups(
     total = db.scalar(count_query) or 0
 
     rows = db.execute(
-        query.order_by(FollowUp.logged_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        query.order_by(FollowUp.logged_at.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
 
     items = [

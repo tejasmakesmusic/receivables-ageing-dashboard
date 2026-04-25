@@ -231,9 +231,7 @@ def _make_queued_email(db_session: Session) -> uuid.UUID:
 
 
 def _get_active_bucket_id(db_session: Session) -> uuid.UUID:
-    bt = db_session.scalar(
-        select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True))
-    )
+    bt = db_session.scalar(select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True)))
     assert bt is not None, "No active ExceptionBucketType seeded"
     return cast(uuid.UUID, bt.id)
 
@@ -581,9 +579,7 @@ def test_create_exception_pending_403(client: TestClient, db_session: Session) -
     _login_as_admin(client)
     invoice_id = _make_open_invoice(db_session, entity_code="IND")
 
-    bt = db_session.scalar(
-        select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True))
-    )
+    bt = db_session.scalar(select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True)))
     assert bt is not None
 
     _login_as_pending(client, db_session, "pending_exc_gap@emb.global")

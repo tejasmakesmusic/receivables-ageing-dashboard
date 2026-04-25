@@ -148,9 +148,7 @@ def compute_default_cp_payload(entity_code: str, db: Session) -> DefaultCpPayloa
 
     snapshot = _resolve_latest_published_snapshot(entity.id, db)
     if snapshot is None:
-        raise ValueError(
-            f"No published invoice snapshot for entity '{entity_code}'."
-        )
+        raise ValueError(f"No published invoice snapshot for entity '{entity_code}'.")
 
     currency_display = "INR" if entity_code == "IND" else "AED"
     as_of_date: date = snapshot.as_of_date  # type: ignore[assignment]
@@ -475,9 +473,7 @@ def run_weekly_default_cp_nudge(db: Session) -> list[EmailOutbox]:
 
 if __name__ == "__main__":
     if "--once" not in sys.argv:
-        print(
-            "Usage: uv run python -m app.services.default_cp_nudge_service --once"
-        )
+        print("Usage: uv run python -m app.services.default_cp_nudge_service --once")
         sys.exit(1)
 
     # Import here so this module is importable without triggering DB setup.

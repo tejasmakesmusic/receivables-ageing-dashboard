@@ -196,12 +196,8 @@ def test_mark_sent_writes_audit_log(client: TestClient, db_session: Session) -> 
     from app.db.models.audit_log import AuditLog
 
     eid = _seed_outbox(db_session, status="QUEUED")
-    before = db_session.query(AuditLog).filter(
-        AuditLog.action == "email_outbox.mark_sent"
-    ).count()
+    before = db_session.query(AuditLog).filter(AuditLog.action == "email_outbox.mark_sent").count()
 
     client.post(f"/admin/email-outbox/{eid}/mark-sent", json={}, headers=_headers(client))
-    after = db_session.query(AuditLog).filter(
-        AuditLog.action == "email_outbox.mark_sent"
-    ).count()
+    after = db_session.query(AuditLog).filter(AuditLog.action == "email_outbox.mark_sent").count()
     assert after == before + 1

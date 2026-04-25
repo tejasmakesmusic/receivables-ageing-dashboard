@@ -49,9 +49,7 @@ def _login_as_analyst(
     db_session.flush()
 
 
-def _login_as_cfo(
-    client: TestClient, db_session: Session, email: str = "cfo@emb.global"
-) -> None:
+def _login_as_cfo(client: TestClient, db_session: Session, email: str = "cfo@emb.global") -> None:
     _login(client, email)
     user = db_session.scalar(select(User).where(User.email == email))
     assert user is not None
@@ -95,9 +93,7 @@ def test_d9_seeds_present(client: TestClient, db_session: Session) -> None:
 def test_d9_seeds_active_by_default(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     for code in ("LEGAL", "DISPUTED", "CN_PENDING", "WRITTEN_OFF"):
-        bt = db_session.scalar(
-            select(ExceptionBucketType).where(ExceptionBucketType.code == code)
-        )
+        bt = db_session.scalar(select(ExceptionBucketType).where(ExceptionBucketType.code == code))
         assert bt is not None
         assert bt.active is True, f"{code} should be active"
 
@@ -143,9 +139,7 @@ def test_post_exception_bucket_201_admin(client: TestClient, db_session: Session
     assert body["active"] is True
 
 
-def test_post_exception_bucket_duplicate_code_409(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_exception_bucket_duplicate_code_409(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     _post_bucket(client, code="DUPLICATE_CODE", name="First")
     resp = _post_bucket(client, code="DUPLICATE_CODE", name="Second")
@@ -165,19 +159,13 @@ def test_post_exception_bucket_cfo_403(client: TestClient, db_session: Session) 
     assert resp.status_code == 403
 
 
-def test_post_exception_bucket_writes_audit_log(
-    client: TestClient, db_session: Session
-) -> None:
+def test_post_exception_bucket_writes_audit_log(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     from app.db.models.audit_log import AuditLog
 
-    before = db_session.query(AuditLog).filter(
-        AuditLog.action == "exception_bucket.create"
-    ).count()
+    before = db_session.query(AuditLog).filter(AuditLog.action == "exception_bucket.create").count()
     _post_bucket(client, code="AUDIT_BUCKET", name="Audit test")
-    after = db_session.query(AuditLog).filter(
-        AuditLog.action == "exception_bucket.create"
-    ).count()
+    after = db_session.query(AuditLog).filter(AuditLog.action == "exception_bucket.create").count()
     assert after == before + 1
 
 
@@ -192,9 +180,7 @@ def _get_bucket_id(db_session: Session, code: str) -> uuid.UUID:
     return cast(uuid.UUID, bt.id)
 
 
-def test_patch_exception_bucket_toggle_inactive(
-    client: TestClient, db_session: Session
-) -> None:
+def test_patch_exception_bucket_toggle_inactive(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     _post_bucket(client, code="TOGGLE_ME", name="Toggle")
     bt_id = _get_bucket_id(db_session, "TOGGLE_ME")
@@ -217,9 +203,7 @@ def test_patch_exception_bucket_toggle_inactive(
     assert resp2.json()["active"] is True
 
 
-def test_patch_exception_bucket_update_name(
-    client: TestClient, db_session: Session
-) -> None:
+def test_patch_exception_bucket_update_name(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     _post_bucket(client, code="RENAME_ME", name="OldName")
     bt_id = _get_bucket_id(db_session, "RENAME_ME")
@@ -233,9 +217,7 @@ def test_patch_exception_bucket_update_name(
     assert resp.json()["name"] == "NewName"
 
 
-def test_patch_exception_bucket_code_not_changed(
-    client: TestClient, db_session: Session
-) -> None:
+def test_patch_exception_bucket_code_not_changed(client: TestClient, db_session: Session) -> None:
     """Passing a code field to PATCH does not change the immutable code."""
     _login_as_admin(client)
     _post_bucket(client, code="IMMUT_CODE", name="ImmutCode")

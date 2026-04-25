@@ -59,9 +59,7 @@ def _login_as_analyst(
     db_session.flush()
 
 
-def _login_as_cfo(
-    client: TestClient, db_session: Session, email: str = "cfo@emb.global"
-) -> None:
+def _login_as_cfo(client: TestClient, db_session: Session, email: str = "cfo@emb.global") -> None:
     _login(client, email)
     user = db_session.scalar(select(User).where(User.email == email))
     assert user is not None
@@ -159,9 +157,7 @@ def test_list_snapshots_filter_by_status(client: TestClient, db_session: Session
     assert all(i["status"] == "PUBLISHED" for i in items)
 
 
-def test_list_snapshots_analyst_entity_scope(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_snapshots_analyst_entity_scope(client: TestClient, db_session: Session) -> None:
     """ANALYST scoped to IND can only see IND snapshots."""
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code="IND")
     _make_snapshot(db_session, entity_code="IND", as_of_date=date(2026, 3, 31))
@@ -219,27 +215,21 @@ def test_get_snapshot_detail_404_unknown(client: TestClient, db_session: Session
     assert resp.status_code == 404
 
 
-def test_get_snapshot_detail_analyst_can_read(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_snapshot_detail_analyst_can_read(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global")
     snap_id = _make_snapshot(db_session)
     resp = client.get(f"/snapshots/{snap_id}")
     assert resp.status_code == 200
 
 
-def test_get_snapshot_detail_cfo_can_read(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_snapshot_detail_cfo_can_read(client: TestClient, db_session: Session) -> None:
     _login_as_cfo(client, db_session, "cfo@emb.global")
     snap_id = _make_snapshot(db_session)
     resp = client.get(f"/snapshots/{snap_id}")
     assert resp.status_code == 200
 
 
-def test_get_snapshot_detail_analyst_scoped_403(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_snapshot_detail_analyst_scoped_403(client: TestClient, db_session: Session) -> None:
     """ANALYST scoped to IND cannot see UAE snapshot."""
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code="IND")
     uae_snap_id = _make_snapshot(db_session, entity_code="UAE")

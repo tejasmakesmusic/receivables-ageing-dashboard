@@ -50,9 +50,7 @@ _admin_only = require_role(Role.ADMIN)
     tags=["follow-ups"],
 )
 def list_follow_ups_route(
-    entity: Annotated[
-        str | None, Query(description="Filter by entity code: IND or UAE")
-    ] = None,
+    entity: Annotated[str | None, Query(description="Filter by entity code: IND or UAE")] = None,
     canonical_id: Annotated[
         uuid.UUID | None, Query(description="Filter by canonical party UUID")
     ] = None,

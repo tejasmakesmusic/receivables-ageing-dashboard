@@ -207,9 +207,7 @@ class TestMaterialChangeBannerRoute:
         assert flag["new_amount"] == "892000.00"
         assert flag["delta_pct"] == "5.62"
 
-    def test_flags_none_when_empty(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_flags_none_when_empty(self, client: TestClient, db_session: Session) -> None:
         """When material_change_flags_json is empty, the field is None in the response."""
         _login_as_admin(client)
 
@@ -235,9 +233,7 @@ class TestMaterialChangeBannerRoute:
         # Empty flags → field should be null (None), not an empty list
         assert body["material_change_flags"] is None
 
-    def test_flags_none_for_staged_snapshot(
-        self, client: TestClient, db_session: Session
-    ) -> None:
+    def test_flags_none_for_staged_snapshot(self, client: TestClient, db_session: Session) -> None:
         """STAGED snapshots have no flags — field is None."""
         _login_as_admin(client)
 

@@ -32,25 +32,18 @@ _BUCKET_DISPLAY: dict[str, str] = {
     "90_PLUS": "90+ days",
 }
 
-_TABLE = (
-    'style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;"'
-)
+_TABLE = 'style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;"'
 _TH = (
     'style="background-color:#003366;color:#ffffff;padding:8px 12px;'
     'text-align:left;border:1px solid #cccccc;"'
 )
 _TD = 'style="padding:7px 12px;border:1px solid #cccccc;vertical-align:top;"'
-_TD_R = (
-    'style="padding:7px 12px;border:1px solid #cccccc;'
-    'text-align:right;vertical-align:top;"'
-)
+_TD_R = 'style="padding:7px 12px;border:1px solid #cccccc;' 'text-align:right;vertical-align:top;"'
 _H3 = (
     'style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;'
     'color:#003366;margin:20px 0 6px 0;border-bottom:2px solid #003366;padding-bottom:4px;"'
 )
-_NOTE = (
-    'style="font-family:Arial,sans-serif;font-size:12px;color:#666666;margin-top:20px;"'
-)
+_NOTE = 'style="font-family:Arial,sans-serif;font-size:12px;color:#666666;margin-top:20px;"'
 
 
 # ---------------------------------------------------------------------------
@@ -64,19 +57,17 @@ def _totals_section(
     total_prior: str | None,
 ) -> list[str]:
     parts: list[str] = [
-        f'<p {_H3}>Outstanding Totals</p>',
-        f'<table {_TABLE}>',
+        f"<p {_H3}>Outstanding Totals</p>",
+        f"<table {_TABLE}>",
         f'<tr><th {_TH}>Period</th><th {_TH} style="text-align:right;">Amount</th></tr>',
     ]
     if has_prior and total_prior is not None:
-        parts.append(
-            f'<tr><td {_TD}>Prior snapshot</td><td {_TD_R}>{total_prior}</td></tr>'
-        )
+        parts.append(f"<tr><td {_TD}>Prior snapshot</td><td {_TD_R}>{total_prior}</td></tr>")
     now_label = "This snapshot" if has_prior else "Outstanding now"
     now_display = total_now if total_now is not None else "0.00"
     parts.append(
-        f'<tr><td {_TD}><strong>{now_label}</strong></td>'
-        f'<td {_TD_R}><strong>{now_display}</strong></td></tr>'
+        f"<tr><td {_TD}><strong>{now_label}</strong></td>"
+        f"<td {_TD_R}><strong>{now_display}</strong></td></tr>"
     )
     parts.append("</table>")
     return parts
@@ -90,13 +81,13 @@ def _movement_section(
     bucket_shifts: dict[str, int],
 ) -> list[str]:
     parts: list[str] = [
-        f'<p {_H3}>Invoice Movement vs Prior Snapshot</p>',
-        f'<table {_TABLE}>',
+        f"<p {_H3}>Invoice Movement vs Prior Snapshot</p>",
+        f"<table {_TABLE}>",
         f'<tr><th {_TH}>Metric</th><th {_TH} style="text-align:right;">Count</th></tr>',
-        f'<tr><td {_TD}>New invoices (first seen this snapshot)</td><td {_TD_R}>{new_inv}</td></tr>',
-        f'<tr><td {_TD}>Settled invoices</td><td {_TD_R}>{settled_inv}</td></tr>',
-        f'<tr><td {_TD}>New exception tags</td><td {_TD_R}>{new_exc}</td></tr>',
-        f'<tr><td {_TD}>Material amount changes (&gt;5%)</td><td {_TD_R}>{material}</td></tr>',
+        f"<tr><td {_TD}>New invoices (first seen this snapshot)</td><td {_TD_R}>{new_inv}</td></tr>",
+        f"<tr><td {_TD}>Settled invoices</td><td {_TD_R}>{settled_inv}</td></tr>",
+        f"<tr><td {_TD}>New exception tags</td><td {_TD_R}>{new_exc}</td></tr>",
+        f"<tr><td {_TD}>Material amount changes (&gt;5%)</td><td {_TD_R}>{material}</td></tr>",
         "</table>",
     ]
     if bucket_shifts:
@@ -106,13 +97,13 @@ def _movement_section(
 
 def _bucket_shifts_section(bucket_shifts: dict[str, int]) -> list[str]:
     parts: list[str] = [
-        f'<p {_H3}>Bucket Shifts</p>',
-        f'<table {_TABLE}>',
-        f'<tr>'
-        f'<th {_TH}>From bucket</th>'
-        f'<th {_TH}>To bucket</th>'
+        f"<p {_H3}>Bucket Shifts</p>",
+        f"<table {_TABLE}>",
+        f"<tr>"
+        f"<th {_TH}>From bucket</th>"
+        f"<th {_TH}>To bucket</th>"
         f'<th {_TH} style="text-align:right;">Invoices</th>'
-        f'</tr>',
+        f"</tr>",
     ]
     for shift_key, count in sorted(bucket_shifts.items()):
         key_parts = shift_key.split("\u2192")  # → separator
@@ -123,11 +114,11 @@ def _bucket_shifts_section(bucket_shifts: dict[str, int]) -> list[str]:
             from_b = shift_key
             to_b = ""
         parts.append(
-            f'<tr>'
-            f'<td {_TD}>{from_b}</td>'
-            f'<td {_TD}>{to_b}</td>'
-            f'<td {_TD_R}>{count}</td>'
-            f'</tr>'
+            f"<tr>"
+            f"<td {_TD}>{from_b}</td>"
+            f"<td {_TD}>{to_b}</td>"
+            f"<td {_TD_R}>{count}</td>"
+            f"</tr>"
         )
     parts.append("</table>")
     return parts
@@ -136,11 +127,11 @@ def _bucket_shifts_section(bucket_shifts: dict[str, int]) -> list[str]:
 def _first_publish_section(new_inv: int, entity_code: str) -> list[str]:
     return [
         f'<p style="font-family:Arial,sans-serif;font-size:13px;color:#555555;">'
-        f'This is the first published snapshot for entity <strong>{entity_code}</strong>. '
-        f'Diff metrics will appear from the second publish onward.</p>',
-        f'<table {_TABLE}>',
+        f"This is the first published snapshot for entity <strong>{entity_code}</strong>. "
+        f"Diff metrics will appear from the second publish onward.</p>",
+        f"<table {_TABLE}>",
         f'<tr><th {_TH}>Metric</th><th {_TH} style="text-align:right;">Count</th></tr>',
-        f'<tr><td {_TD}>Invoices ingested</td><td {_TD_R}>{new_inv}</td></tr>',
+        f"<tr><td {_TD}>Invoices ingested</td><td {_TD_R}>{new_inv}</td></tr>",
         "</table>",
     ]
 
@@ -187,9 +178,9 @@ def render_publish_notif_html(
         '<h2 style="font-family:Arial,sans-serif;font-size:18px;color:#003366;'
         'margin-bottom:4px;">[EMB AR] Snapshot Published</h2>',
         f'<p style="font-family:Arial,sans-serif;font-size:13px;color:#333333;margin-top:0;">'
-        f'Entity: <strong>{entity_code}</strong> &nbsp;|&nbsp; '
-        f'As-of date: <strong>{as_of_str}</strong> &nbsp;|&nbsp; '
-        f'Snapshot: <code>{snapshot_id}</code></p>',
+        f"Entity: <strong>{entity_code}</strong> &nbsp;|&nbsp; "
+        f"As-of date: <strong>{as_of_str}</strong> &nbsp;|&nbsp; "
+        f"Snapshot: <code>{snapshot_id}</code></p>",
         f'<p style="font-family:Arial,sans-serif;font-size:13px;">'
         f'<a href="/dashboard?entity={entity_code}" '
         f'style="color:#0066cc;">View dashboard &rarr;</a></p>',
@@ -203,8 +194,8 @@ def render_publish_notif_html(
         html_parts.extend(_first_publish_section(new_inv, entity_code))
 
     html_parts.append(
-        f'<p {_NOTE}>This is an automated notification from the EMB AR '
-        f'Receivables Ageing Dashboard. Do not reply directly to this email.</p>'
+        f"<p {_NOTE}>This is an automated notification from the EMB AR "
+        f"Receivables Ageing Dashboard. Do not reply directly to this email.</p>"
     )
     html_parts.append("</div>")
 

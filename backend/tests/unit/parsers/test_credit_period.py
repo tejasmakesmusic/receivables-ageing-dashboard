@@ -211,9 +211,9 @@ def test_real_fixture_exact_error_counts(credit_period_file_bytes: bytes) -> Non
     dup_errs = [e for e in result.errors if e.code == "DUPLICATE_CLIENT"]
     invalid_errs = [e for e in result.errors if e.code == "UNPARSEABLE_CREDIT_DAYS"]
 
-    assert len(dup_errs) == 0, (
-        f"Expected 0 DUPLICATE_CLIENT errors on cleansed fixture; got {len(dup_errs)}."
-    )
+    assert (
+        len(dup_errs) == 0
+    ), f"Expected 0 DUPLICATE_CLIENT errors on cleansed fixture; got {len(dup_errs)}."
     assert len(invalid_errs) == 0, (
         f"Expected 0 UNPARSEABLE_CREDIT_DAYS errors on cleansed fixture; "
         f"got {len(invalid_errs)}."

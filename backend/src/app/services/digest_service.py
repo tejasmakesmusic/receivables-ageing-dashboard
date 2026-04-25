@@ -234,9 +234,7 @@ def compute_digest(
     )
 
     # ---- Top 10 worst parties (90+ bucket, by outstanding) ----
-    sorted_90plus = sorted(party_outstanding_90plus.items(), key=lambda x: x[1], reverse=True)[
-        :10
-    ]
+    sorted_90plus = sorted(party_outstanding_90plus.items(), key=lambda x: x[1], reverse=True)[:10]
 
     top_worst: list[TopWorstPartyRow] = []
     for cid, outstanding in sorted_90plus:
@@ -266,9 +264,7 @@ def compute_digest(
 
     # ---- Net-new exceptions since last digest snapshot ----
     prior_snapshot = _resolve_prior_published_snapshot(entity.id, as_of_date, db)
-    prior_cutoff: datetime | None = (
-        prior_snapshot.published_at if prior_snapshot else None
-    )
+    prior_cutoff: datetime | None = prior_snapshot.published_at if prior_snapshot else None
 
     exc_query = (
         select(
@@ -288,9 +284,7 @@ def compute_digest(
     if prior_cutoff is not None:
         exc_query = exc_query.where(ExceptionTag.tagged_at > prior_cutoff)
 
-    exc_rows = db.execute(
-        exc_query.order_by(ExceptionTag.tagged_at.desc()).limit(10)
-    ).all()
+    exc_rows = db.execute(exc_query.order_by(ExceptionTag.tagged_at.desc()).limit(10)).all()
 
     # Fetch bucket_type_code for each — join isn't in main query to keep it simple
     from app.db.models.exception_bucket_type import ExceptionBucketType  # local to avoid cycle
@@ -584,10 +578,7 @@ def run_daily_digest(db: Session) -> list[EmailOutbox]:
             rule_type="DAILY_DIGEST",
             snapshot_id=snapshot.id,
             recipients_json=recipients,
-            subject=(
-                f"[EMB AR] Daily Digest — {entity_code} "
-                f"({as_of_date.isoformat()})"
-            ),
+            subject=(f"[EMB AR] Daily Digest — {entity_code} " f"({as_of_date.isoformat()})"),
             body_html=body_html,
             status="QUEUED",
         )
