@@ -443,6 +443,10 @@ def list_snapshots(
         list[str] | None,
         Query(description="Filter by status: STAGED, PUBLISHED, DISCARDED"),
     ] = None,
+    source_hint: Annotated[
+        str | None,
+        Query(description="Filter by source: TALLY, XERO, CREDIT_PERIOD"),
+    ] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
     session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
@@ -484,6 +488,8 @@ def list_snapshots(
         query = query.where(Entity.code == entity_code)
     if status:
         query = query.where(Snapshot.status.in_(status))
+    if source_hint:
+        query = query.where(Snapshot.source_hint == source_hint)
 
     count_q = select(func.count()).select_from(query.subquery())
     total = session.scalar(count_q) or 0

@@ -240,7 +240,7 @@ describe("D1DashboardPage", () => {
       expect(screen.getByText(/5 parties using entity default credit period/i)).toBeInTheDocument();
     });
     const reviewLink = screen.getByRole("link", { name: /review credit config/i });
-    expect(reviewLink).toHaveAttribute("href", "/credit-period");
+    expect(reviewLink).toHaveAttribute("href", "/config/credit-period");
   });
 
   it("renders Tally overdue days when tally_overdue_days_max is present", async () => {
