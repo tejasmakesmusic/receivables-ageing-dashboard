@@ -1,11 +1,23 @@
 /**
  * S5 — Exceptions list
  * Route: /exceptions   Roles: ANALYST, ADMIN
+ *
+ * Optional query param: ?snapshot_id=<uuid>
+ * When present, fetches the snapshot's material_change_flags and renders
+ * the orange collapsible banner above the main table (spec §13 #2, M5).
  */
 import { useState } from "react";
+import { useSearchParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/api/client";
-import type { ExceptionListResponse, ExceptionListRow, ExceptionBucketListResponse } from "@/types";
+import type {
+  ExceptionListResponse,
+  ExceptionListRow,
+  ExceptionBucketListResponse,
+  MaterialChangeFlag,
+  SnapshotDetailResponse,
+} from "@/types";
+import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Input } from "@/components/ui/Input";
@@ -13,8 +25,248 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal, ModalFooter } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { formatISTDate } from "@/lib/format";
+import { Card } from "@/components/ui/Card";
+import { formatISTDate, formatISTDateTime, formatINR } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Known seed bucket codes per spec D9 / migration 0003_m3_ingestion
+// ---------------------------------------------------------------------------
+
+const SEED_CODES = new Set(["LEGAL", "DISPUTED", "CN_PENDING", "WRITTEN_OFF"]);
+
+// ---------------------------------------------------------------------------
+// Bucket summary cards
+// ---------------------------------------------------------------------------
+
+interface BucketSummaryCardsProps {
+  buckets: ExceptionBucketListResponse | undefined;
+  exceptions: ExceptionListResponse | undefined;
+  activeFilter: string;
+  onFilter: (code: string) => void;
+}
+
+function BucketSummaryCards({
+  buckets,
+  exceptions,
+  activeFilter,
+  onFilter,
+}: BucketSummaryCardsProps) {
+  if (!buckets || buckets.items.length === 0) return null;
+
+  // Build per-bucket aggregates from ACTIVE exception rows currently loaded.
+  // NOTE: the page fetches /exceptions filtered by status=ACTIVE by default;
+  // the cards count only rows present in the current page fetch — this gives
+  // correct summary context while reusing the already-fetched data with no
+  // extra network call.
+  const activeRows = (exceptions?.items ?? []).filter((r) => r.status === "ACTIVE");
+
+  const summary = new Map<string, { count: number; outstanding: number }>();
+  for (const bucket of buckets.items) {
+    summary.set(bucket.code, { count: 0, outstanding: 0 });
+  }
+  for (const row of activeRows) {
+    const entry = summary.get(row.bucket_type_code);
+    if (entry) {
+      entry.count += 1;
+      // outstanding_amount is not on ExceptionListRow; fall back to 0
+    }
+  }
+
+  const activeBuckets = buckets.items.filter((b) => b.active);
+
+  return (
+    <div
+      className="mb-5 flex gap-3 overflow-x-auto pb-1"
+      data-testid="bucket-summary-row"
+      role="list"
+      aria-label="Exception type summary"
+    >
+      {activeBuckets.map((bucket) => {
+        const isPreSeeded = bucket.pre_seeded ?? SEED_CODES.has(bucket.code);
+        const agg = summary.get(bucket.code) ?? { count: 0, outstanding: 0 };
+        const isActive = activeFilter === bucket.code;
+
+        return (
+          <button
+            key={bucket.code}
+            role="listitem"
+            data-testid={`bucket-card-${bucket.code}`}
+            aria-pressed={isActive}
+            onClick={() => onFilter(isActive ? "" : bucket.code)}
+            className={cn(
+              "flex min-w-[140px] flex-shrink-0 flex-col items-center rounded-lg border p-3 text-center transition-shadow",
+              isActive
+                ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-300"
+                : "border-gray-200 bg-white hover:border-indigo-200 hover:shadow-sm",
+            )}
+          >
+            <div className="mb-1.5 flex items-center gap-1.5 justify-center">
+              <span className="text-xs font-medium text-slate-700 leading-tight">
+                {bucket.name}
+              </span>
+              <Badge
+                variant={isPreSeeded ? "muted" : "info"}
+                data-testid={
+                  isPreSeeded
+                    ? `badge-preseeded-${bucket.code}`
+                    : `badge-admin-${bucket.code}`
+                }
+              >
+                {isPreSeeded ? "system" : "admin"}
+              </Badge>
+            </div>
+            <div className="text-xl font-bold text-slate-800">{agg.count}</div>
+            <div className="mt-0.5 text-xs text-slate-400">ACTIVE tags</div>
+          </button>
+        );
+      })}
+
+      {activeFilter && (
+        <div className="flex items-center">
+          <button
+            onClick={() => onFilter("")}
+            className="text-xs text-indigo-600 hover:underline whitespace-nowrap"
+            data-testid="bucket-filter-clear"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Material-change banner (M5 — spec §13 #2)
+// ---------------------------------------------------------------------------
+
+interface MaterialChangeBannerProps {
+  flags: MaterialChangeFlag[];
+}
+
+function MaterialChangeBanner({ flags }: MaterialChangeBannerProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (flags.length === 0) return null;
+
+  return (
+    <>
+      {/* Header card */}
+      <div className="mb-3 flex items-center justify-between rounded-lg border border-orange-300 bg-orange-50 px-5 py-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xl text-orange-500" aria-hidden>&#9888;</span>
+          <div>
+            <div className="text-sm font-medium text-orange-800">
+              {flags.length} exception{flags.length !== 1 ? "s" : ""} flagged for review — invoice
+              amount changed &gt;5% since tagged
+            </div>
+            <div className="mt-0.5 text-xs text-orange-600">
+              Per spec consequence #2: exceptions on materially-changed invoices require analyst
+              review. They remain ACTIVE until you confirm or resolve.
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex-shrink-0 rounded border border-orange-300 bg-orange-100 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-200"
+          aria-expanded={expanded}
+          aria-controls="material-change-panel"
+        >
+          {expanded ? "Hide affected \u2191" : "Show affected \u2193"}
+        </button>
+      </div>
+
+      {/* Expandable details table */}
+      {expanded && (
+        <div
+          id="material-change-panel"
+          className="mb-5 rounded-lg border border-orange-200 bg-orange-50 px-5 py-3"
+        >
+          <table className="w-full text-xs" data-testid="material-change-table">
+            <thead>
+              <tr className="border-b border-orange-100 uppercase tracking-wide text-gray-500">
+                <th className="py-2 text-left font-medium">Invoice</th>
+                <th className="py-2 text-left font-medium">Party</th>
+                <th className="py-2 text-right font-medium">Original amount</th>
+                <th className="py-2 text-right font-medium">Current amount</th>
+                <th className="py-2 text-right font-medium">Change %</th>
+                <th className="py-2 text-left font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-orange-100">
+              {flags.map((f) => (
+                <tr key={f.invoice_id}>
+                  <td className="py-1.5 font-mono text-gray-600">{f.invoice_ref}</td>
+                  <td className="max-w-[160px] truncate py-1.5 text-gray-700">{f.canonical_name}</td>
+                  <td className="py-1.5 text-right">{f.prior_amount}</td>
+                  <td className="py-1.5 text-right font-medium text-orange-700">{f.new_amount}</td>
+                  <td className="py-1.5 text-right text-orange-700">+{f.delta_pct}%</td>
+                  <td className="py-1.5">
+                    <Link
+                      to={`/invoice/${f.invoice_id}`}
+                      className="text-indigo-600 hover:underline"
+                    >
+                      Review exception
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Exceptions vs follow-ups explainer banner
+// ---------------------------------------------------------------------------
+
+const EXPLAINER_DISMISSED_KEY = "s5-explainer-dismissed";
+
+function ExplainerBanner() {
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(EXPLAINER_DISMISSED_KEY) === "true",
+  );
+
+  if (dismissed) return null;
+
+  function handleDismiss() {
+    localStorage.setItem(EXPLAINER_DISMISSED_KEY, "true");
+    setDismissed(true);
+  }
+
+  return (
+    <Card
+      className="mb-4 border-indigo-200 bg-indigo-50 p-4"
+      data-testid="s5-explainer-banner"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-semibold text-indigo-900">
+            Exceptions vs follow-ups — what's the difference?
+          </p>
+          <p className="text-xs text-indigo-800">
+            <strong>Exception</strong> = structural issue on an invoice (dispute, legal, credit note
+            pending, write-off). Tagged with a bucket; auto-resolves on settlement.{" "}
+            <strong>Follow-up</strong> = a logged conversation/email/call with a party. Doesn't
+            change invoice state.
+          </p>
+        </div>
+        <button
+          onClick={handleDismiss}
+          aria-label="Dismiss explainer"
+          data-testid="s5-explainer-dismiss"
+          className="flex-shrink-0 text-indigo-400 hover:text-indigo-700"
+        >
+          &times;
+        </button>
+      </div>
+    </Card>
+  );
+}
 
 function statusBadge(status: string) {
   const map: Record<string, "warning" | "success" | "muted"> = {
@@ -147,14 +399,128 @@ function ResolveModal({ exception, open, onClose }: ResolveModalProps) {
 // Main page
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Exception notes side panel
+// ---------------------------------------------------------------------------
+
+interface ExceptionNoteRow {
+  id: string;
+  exception_tag_id: string;
+  body: string;
+  author_email: string | null;
+  created_at: string;
+}
+
+function ExceptionNotesPanel({
+  exception,
+  onClose,
+}: {
+  exception: ExceptionListRow;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [body, setBody] = useState("");
+
+  const notesQ = useQuery<ExceptionNoteRow[]>({
+    queryKey: ["exception-notes", exception.id],
+    queryFn: () => api.get<ExceptionNoteRow[]>(`/exceptions/${exception.id}/notes`),
+  });
+
+  const mutation = useMutation({
+    mutationFn: () => api.post(`/exceptions/${exception.id}/notes`, { body }),
+    onSuccess: () => {
+      setBody("");
+      void queryClient.invalidateQueries({ queryKey: ["exception-notes", exception.id] });
+      void queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+    },
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="flex h-full w-96 flex-col border-l border-gray-200 bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Exception notes</p>
+            <p className="text-xs text-slate-400">{exception.invoice_ref} · {exception.bucket_type_code}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close notes panel"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Notes list */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {notesQ.isLoading && <Skeleton className="h-16 w-full" />}
+          {(notesQ.data ?? []).map((n) => (
+            <div key={n.id} className="rounded bg-slate-50 p-3 text-sm">
+              <p className="mb-1 text-xs text-slate-400">
+                {n.author_email ?? "Unknown"} · {formatISTDateTime(n.created_at)}
+              </p>
+              <p className="whitespace-pre-wrap text-slate-700">{n.body}</p>
+            </div>
+          ))}
+          {!notesQ.isLoading && (notesQ.data ?? []).length === 0 && (
+            <p className="py-8 text-center text-sm text-slate-400">No notes yet</p>
+          )}
+        </div>
+
+        {/* Add note */}
+        <div className="border-t border-gray-200 p-4 space-y-2">
+          <textarea
+            className="w-full resize-none rounded border border-gray-200 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            rows={3}
+            placeholder="Add a note…"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            maxLength={5000}
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            className="w-full"
+            disabled={!body.trim() || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? "Adding…" : "Add note"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 export function S5ExceptionsPage() {
+  const [searchParams] = useSearchParams();
+  const snapshotId = searchParams.get("snapshot_id");
+
   const [page, setPage] = useState(1);
   const [entityFilter, setEntityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("ACTIVE");
   const [bucketFilter, setBucketFilter] = useState("");
   const [tagTarget, setTagTarget] = useState<string | null>(null);
   const [resolveTarget, setResolveTarget] = useState<ExceptionListRow | null>(null);
+  const [notesTarget, setNotesTarget] = useState<ExceptionListRow | null>(null);
   const PAGE_SIZE = 25;
+
+  // Fetch snapshot detail (for material-change banner) only when snapshot_id is present
+  const { data: snapshotDetail } = useQuery<SnapshotDetailResponse>({
+    queryKey: ["snapshot-detail", snapshotId],
+    queryFn: () => api.get<SnapshotDetailResponse>(`/snapshots/${snapshotId}`),
+    enabled: !!snapshotId,
+    staleTime: 60_000,
+  });
+
+  const materialFlags: MaterialChangeFlag[] = snapshotDetail?.material_change_flags ?? [];
 
   const params = new URLSearchParams({
     page: String(page),
@@ -184,6 +550,23 @@ export function S5ExceptionsPage() {
           Exceptions are distinct from follow-ups — they flag invoice anomalies for review.
         </p>
       </div>
+
+      {/* Material-change banner (only rendered when flags exist) */}
+      {materialFlags.length > 0 && <MaterialChangeBanner flags={materialFlags} />}
+
+      {/* Exceptions vs follow-ups explainer */}
+      <ExplainerBanner />
+
+      {/* Per-bucket summary cards */}
+      <BucketSummaryCards
+        buckets={buckets}
+        exceptions={data}
+        activeFilter={bucketFilter}
+        onFilter={(code) => {
+          setBucketFilter(code);
+          setPage(1);
+        }}
+      />
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap gap-3">
@@ -248,10 +631,12 @@ export function S5ExceptionsPage() {
                 <th className="px-3 py-2 text-left font-medium">Party</th>
                 <th className="px-3 py-2 text-left font-medium">Entity</th>
                 <th className="px-3 py-2 text-left font-medium">Type</th>
+                <th className="px-3 py-2 text-right font-medium">Amount</th>
                 <th className="px-3 py-2 text-left font-medium">Reason</th>
                 <th className="px-3 py-2 text-left font-medium">Status</th>
                 <th className="px-3 py-2 text-left font-medium">Tagged</th>
                 <th className="px-3 py-2 text-left font-medium">Res. by</th>
+                <th className="px-3 py-2 text-left font-medium">Last follow-up</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -272,8 +657,16 @@ export function S5ExceptionsPage() {
                   <td className="px-3 py-2">
                     <Badge variant="info">{ex.bucket_type_code}</Badge>
                   </td>
-                  <td className="px-3 py-2 max-w-[180px] truncate text-xs text-slate-600">
-                    {ex.reason}
+                  <td className="px-3 py-2 text-right text-xs font-mono text-slate-700">
+                    {ex.outstanding_amount != null ? formatINR(ex.outstanding_amount) : "—"}
+                  </td>
+                  <td className="px-3 py-2 max-w-[180px] text-xs text-slate-600">
+                    <span className="truncate block">{ex.reason}</span>
+                    {ex.notes_count > 0 && (
+                      <Badge variant="neutral" className="mt-0.5">
+                        {ex.notes_count} notes
+                      </Badge>
+                    )}
                   </td>
                   <td className="px-3 py-2">{statusBadge(ex.status)}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">
@@ -284,8 +677,27 @@ export function S5ExceptionsPage() {
                       ? formatISTDate(ex.expected_resolution_date)
                       : "—"}
                   </td>
+                  <td className="px-3 py-2 text-xs text-slate-500" data-testid={`last-fu-exc-${ex.id}`}>
+                    {ex.last_follow_up_date ? (
+                      <span className="flex items-center gap-1">
+                        {formatISTDate(ex.last_follow_up_date)}
+                        <Badge variant="muted">{ex.last_follow_up_channel}</Badge>
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex gap-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setTagTarget(ex.invoice_id)}
+                        data-testid="tag-btn"
+                        aria-label="Tag exception"
+                      >
+                        Tag
+                      </Button>
                       {ex.status === "ACTIVE" && (
                         <button
                           onClick={() => setResolveTarget(ex)}
@@ -295,13 +707,20 @@ export function S5ExceptionsPage() {
                           Resolve
                         </button>
                       )}
+                      <button
+                        onClick={() => setNotesTarget(ex)}
+                        className="text-xs text-slate-500 hover:underline"
+                        aria-label="View notes"
+                      >
+                        Notes{ex.notes_count > 0 ? ` (${ex.notes_count})` : ""}
+                      </button>
                     </div>
                   </td>
                 </tr>
               ))}
               {(!data?.items || data.items.length === 0) && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-xs text-slate-400">
+                  <td colSpan={11} className="px-3 py-8 text-center text-xs text-slate-400">
                     No exceptions matching filters
                   </td>
                 </tr>
@@ -332,6 +751,14 @@ export function S5ExceptionsPage() {
           open={!!tagTarget}
           onClose={() => setTagTarget(null)}
           buckets={buckets}
+        />
+      )}
+
+      {/* Exception notes side panel */}
+      {notesTarget && (
+        <ExceptionNotesPanel
+          exception={notesTarget}
+          onClose={() => setNotesTarget(null)}
         />
       )}
     </div>

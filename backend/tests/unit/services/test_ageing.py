@@ -237,7 +237,7 @@ def test_string_invoice_date_raises_type_error() -> None:
     bad: object = "2025-01-01"
     with pytest.raises(TypeError, match="invoice_date must be datetime.date"):
         compute_ageing(
-            invoice_date=bad,  # type: ignore[arg-type]
+            invoice_date=bad,
             credit_days=30,
             as_of_date=datetime.date(2025, 2, 1),
         )
@@ -248,7 +248,7 @@ def test_datetime_invoice_date_raises_type_error() -> None:
     bad: object = datetime.datetime(2025, 1, 1, 12, 0)
     with pytest.raises(TypeError, match="invoice_date must be datetime.date"):
         compute_ageing(
-            invoice_date=bad,  # type: ignore[arg-type]
+            invoice_date=bad,
             credit_days=30,
             as_of_date=datetime.date(2025, 2, 1),
         )
@@ -259,7 +259,7 @@ def test_none_invoice_date_raises_type_error() -> None:
     bad: object = None
     with pytest.raises(TypeError, match="invoice_date must be datetime.date"):
         compute_ageing(
-            invoice_date=bad,  # type: ignore[arg-type]
+            invoice_date=bad,
             credit_days=30,
             as_of_date=datetime.date(2025, 2, 1),
         )
@@ -272,7 +272,7 @@ def test_string_as_of_date_raises_type_error() -> None:
         compute_ageing(
             invoice_date=datetime.date(2025, 1, 1),
             credit_days=30,
-            as_of_date=bad,  # type: ignore[arg-type]
+            as_of_date=bad,
         )
 
 
@@ -283,7 +283,7 @@ def test_datetime_as_of_date_raises_type_error() -> None:
         compute_ageing(
             invoice_date=datetime.date(2025, 1, 1),
             credit_days=30,
-            as_of_date=bad,  # type: ignore[arg-type]
+            as_of_date=bad,
         )
 
 
@@ -331,7 +331,9 @@ def test_ageing_result_is_frozen() -> None:
         as_of_date=datetime.date(2025, 3, 5),
     )
     with pytest.raises(ValidationError):
-        result.bucket = AgeingBucket.NOT_DUE  # type: ignore[misc]  # frozen model assignment
+        result.bucket = (
+            AgeingBucket.NOT_DUE
+        )  # intentional: assignment to frozen model raises at runtime
 
 
 # ---------------------------------------------------------------------------

@@ -6,10 +6,10 @@ the build_rate_cache helper. Uses in-process DB via db_session fixture.
 
 from __future__ import annotations
 
-import uuid  # noqa: TCH003
+import uuid
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from fastapi import HTTPException
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 def _admin_id(db_session: Session) -> uuid.UUID:
     user = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert user is not None
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _seed_rate(
@@ -73,7 +73,9 @@ def test_lookup_rate_returns_rate_for_exact_date(db_session: Session) -> None:
 
 def test_lookup_rate_pins_by_invoice_date_not_today(db_session: Session) -> None:
     """Rate on 2026-01-01 applies to invoice_date 2026-01-15, not a newer rate."""
-    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 1, 31))
+    _seed_rate(
+        db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 1, 31)
+    )
     _seed_rate(db_session, "AED", "INR", Decimal("23.00"), date(2026, 2, 1))
     # Invoice dated 2026-01-15 → must use the 2026-01-01 rate
     result = lookup_rate("AED", "INR", date(2026, 1, 15), db_session)
@@ -83,8 +85,17 @@ def test_lookup_rate_pins_by_invoice_date_not_today(db_session: Session) -> None
 def test_lookup_rate_uses_most_recent_rate_on_or_before_invoice_date(
     db_session: Session,
 ) -> None:
-    _seed_rate(db_session, "AED", "INR", Decimal("21.00"), date(2025, 6, 1), effective_to=date(2025, 12, 31))
-    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 3, 31))
+    _seed_rate(
+        db_session,
+        "AED",
+        "INR",
+        Decimal("21.00"),
+        date(2025, 6, 1),
+        effective_to=date(2025, 12, 31),
+    )
+    _seed_rate(
+        db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 3, 31)
+    )
     _seed_rate(db_session, "AED", "INR", Decimal("24.00"), date(2026, 4, 1))
     # Invoice dated exactly on the 2026-01-01 boundary
     result = lookup_rate("AED", "INR", date(2026, 1, 1), db_session)
@@ -126,10 +137,11 @@ def test_missing_fx_rate_error_to_http_422() -> None:
     exc = err.to_http_422()
     assert isinstance(exc, HTTPException)
     assert exc.status_code == 422
-    assert exc.detail["code"] == "FX_RATE_MISSING"
-    assert exc.detail["from_ccy"] == "AED"
-    assert exc.detail["to_ccy"] == "INR"
-    assert "2026-01-15" in exc.detail["invoice_date"]
+    detail = cast(dict[str, Any], exc.detail)
+    assert detail["code"] == "FX_RATE_MISSING"
+    assert detail["from_ccy"] == "AED"
+    assert detail["to_ccy"] == "INR"
+    assert "2026-01-15" in detail["invoice_date"]
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +182,9 @@ def test_convert_to_inr_decimal_precision(db_session: Session) -> None:
 
 
 def test_build_rate_cache_returns_rates_by_date(db_session: Session) -> None:
-    _seed_rate(db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 1, 31))
+    _seed_rate(
+        db_session, "AED", "INR", Decimal("22.50"), date(2026, 1, 1), effective_to=date(2026, 1, 31)
+    )
     _seed_rate(db_session, "AED", "INR", Decimal("23.00"), date(2026, 2, 1))
 
     # build_rate_cache expects list of dicts with 'invoice_date' key

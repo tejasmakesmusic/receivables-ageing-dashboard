@@ -33,7 +33,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -52,9 +52,7 @@ def _login_as_analyst(
     db_session.flush()
 
 
-def _login_as_cfo(
-    client: TestClient, db_session: Session, email: str = "cfo@emb.global"
-) -> None:
+def _login_as_cfo(client: TestClient, db_session: Session, email: str = "cfo@emb.global") -> None:
     _login(client, email)
     user = db_session.scalar(select(User).where(User.email == email))
     assert user is not None
@@ -151,13 +149,9 @@ def test_post_fx_rate_writes_audit_log(client: TestClient, db_session: Session) 
     _login_as_admin(client)
     from app.db.models.audit_log import AuditLog
 
-    before_count = db_session.query(AuditLog).filter(
-        AuditLog.action == "fx_rate.create"
-    ).count()
+    before_count = db_session.query(AuditLog).filter(AuditLog.action == "fx_rate.create").count()
     _post_rate(client, from_ccy="AED", to_ccy="INR", valid_from="2026-05-01")
-    after_count = db_session.query(AuditLog).filter(
-        AuditLog.action == "fx_rate.create"
-    ).count()
+    after_count = db_session.query(AuditLog).filter(AuditLog.action == "fx_rate.create").count()
     assert after_count == before_count + 1
 
 

@@ -19,7 +19,7 @@ import io
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import openpyxl
 from sqlalchemy import select
@@ -47,7 +47,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -67,13 +67,13 @@ def _headers(client: TestClient) -> dict[str, str]:
 def _admin_id(db_session: Session) -> uuid.UUID:
     u = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert u is not None
-    return u.id
+    return cast(uuid.UUID, u.id)
 
 
 def _entity_id(db_session: Session, code: str = "IND") -> uuid.UUID:
     e = db_session.scalar(select(Entity).where(Entity.code == code))
     assert e is not None
-    return e.id
+    return cast(uuid.UUID, e.id)
 
 
 def _build_published_snapshot_with_invoice(
@@ -132,7 +132,7 @@ def _build_published_snapshot_with_invoice(
     )
     db_session.add(inv_snap)
     db_session.flush()
-    return snapshot.id
+    return cast(uuid.UUID, snapshot.id)
 
 
 def _add_reconciliation_entry(
@@ -232,7 +232,7 @@ def _create_canonical_and_alias(
     )
     db_session.add(alias)
     db_session.flush()
-    return canonical.id
+    return cast(uuid.UUID, canonical.id)
 
 
 def _ack_warnings(client: TestClient, db_session: Session, snapshot_id: str) -> None:
@@ -289,9 +289,7 @@ def test_gate_passes_when_no_prior_published_snapshot(
     assert resp.status_code == 200, resp.json()
 
 
-def test_gate_passes_when_prior_is_matched(
-    client: TestClient, db_session: Session
-) -> None:
+def test_gate_passes_when_prior_is_matched(client: TestClient, db_session: Session) -> None:
     """Prior snapshot exists with MATCHED reconciliation → allow new publish."""
     _login_as_admin(client)
 
@@ -320,9 +318,7 @@ def test_gate_passes_when_prior_is_matched(
     assert resp.status_code == 200, resp.json()
 
 
-def test_gate_blocks_when_prior_is_unreconciled(
-    client: TestClient, db_session: Session
-) -> None:
+def test_gate_blocks_when_prior_is_unreconciled(client: TestClient, db_session: Session) -> None:
     """Prior snapshot exists but has NO reconciliation entry → 422."""
     _login_as_admin(client)
 
@@ -351,9 +347,7 @@ def test_gate_blocks_when_prior_is_unreconciled(
     assert resp.json()["detail"]["prior_status"] == "UNRECONCILED"
 
 
-def test_gate_blocks_when_prior_is_mismatched(
-    client: TestClient, db_session: Session
-) -> None:
+def test_gate_blocks_when_prior_is_mismatched(client: TestClient, db_session: Session) -> None:
     """Prior snapshot has MISMATCHED reconciliation → 422."""
     _login_as_admin(client)
 
@@ -409,3 +403,48 @@ def test_gate_error_body_contains_prior_snapshot_id(
     detail = resp.json()["detail"]
     assert str(prior_id) == detail["prior_snapshot_id"]
     assert "2026-02-28" in detail["prior_snapshot_as_of_date"]
+
+
+def test_gate_skips_credit_period_prior_snapshot(client: TestClient, db_session: Session) -> None:
+    """A CREDIT_PERIOD snapshot must not be picked as "prior" by the §13 #6 gate.
+
+    Scenario: TALLY @ D1 (MATCHED) -> CP @ D2 (no recon, as expected) ->
+    new TALLY @ D3 should publish cleanly. Without the source_hint filter
+    on the prior-lookup, the CP snapshot gets chosen, has no reconciliation
+    entry, and the publish 422s with PRIOR_SNAPSHOT_UNRECONCILED even though
+    the real prior invoice snapshot was MATCHED.
+    """
+    _login_as_admin(client)
+
+    # Prior TALLY @ D1, MATCHED
+    prior_id = _build_published_snapshot_with_invoice(
+        db_session, as_of_date=date(2026, 2, 28), ref_suffix="CP-GATE-PRIOR"
+    )
+    _add_reconciliation_entry(db_session, prior_id, "MATCHED")
+
+    # CP @ D2 — between prior TALLY and new TALLY. No ReconciliationEntry (by design).
+    cp_snap = Snapshot(
+        entity_id=_entity_id(db_session, "IND"),
+        as_of_date=date(2026, 3, 15),
+        status="PUBLISHED",
+        source_hint="CREDIT_PERIOD",
+        upload_file_sha256=uuid.uuid4().hex,
+        uploaded_by=_admin_id(db_session),
+    )
+    db_session.add(cp_snap)
+    db_session.flush()
+
+    # New TALLY @ D3 via the API — gate must look past CP and see MATCHED prior.
+    _set_entity_credit_days(db_session, "IND", 30)
+    party_name = "CPGateParty"
+    _create_canonical_and_alias(db_session, "IND", party_name)
+    xlsx = _make_tally_xlsx(party_name=party_name, inv_ref="CP-GATE-001")
+    upload_resp = _upload(client, xlsx, entity_code="IND", as_of_date="2026-03-31")
+    assert upload_resp.status_code == 201, upload_resp.json()
+    snap_id = upload_resp.json()["snapshot_id"]
+
+    _ack_warnings(client, db_session, snap_id)
+    csrf_token = _csrf(client)
+    headers = {"X-CSRF-Token": csrf_token} if csrf_token else {}
+    resp = client.post(f"/snapshots/{snap_id}/publish", json={}, headers=headers)
+    assert resp.status_code == 200, resp.json()

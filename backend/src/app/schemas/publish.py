@@ -29,17 +29,30 @@ class UserRef(BaseModel):
 
 
 class PublishResult(BaseModel):
-    """Counts from a single publish operation."""
+    """Counts from a single publish operation.
+
+    Invoice-path fields (from Tally/Xero publishes) default to 0 so a
+    CREDIT_PERIOD publish can populate only the CP-path fields without
+    leaving the invoice counters as sentinel values — and vice versa.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    invoices_inserted: int
-    invoices_updated: int
-    invoices_settled: int
-    invoice_snapshots_written: int
-    exceptions_auto_resolved: int
-    exceptions_material_change_flagged: int
-    publish_notif_enqueued: bool
+    # Invoice-path counters (Tally/Xero)
+    invoices_inserted: int = 0
+    invoices_updated: int = 0
+    invoices_settled: int = 0
+    invoice_snapshots_written: int = 0
+    exceptions_auto_resolved: int = 0
+    exceptions_material_change_flagged: int = 0
+    publish_notif_enqueued: bool = False
+
+    # CP-path counters (per ADR-0005)
+    credit_period_configs_inserted: int = 0
+    credit_period_configs_superseded: int = 0
+    credit_period_configs_noop: int = 0
+    canonicals_auto_created: int = 0
+    aliases_auto_created: int = 0
 
 
 # ---------------------------------------------------------------------------

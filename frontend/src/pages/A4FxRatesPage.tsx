@@ -54,6 +54,16 @@ export function A4FxRatesPage() {
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
+  // Compute the most-recent valid_from per currency pair across loaded items
+  const latestByPair = new Map<string, string>();
+  for (const row of data?.items ?? []) {
+    const key = `${row.from_ccy}/${row.to_ccy}`;
+    const prev = latestByPair.get(key);
+    if (!prev || row.valid_from > prev) {
+      latestByPair.set(key, row.valid_from);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between">
@@ -90,7 +100,14 @@ export function A4FxRatesPage() {
                   <td className="px-3 py-2 font-mono text-xs font-semibold">{row.from_ccy}</td>
                   <td className="px-3 py-2 font-mono text-xs font-semibold">{row.to_ccy}</td>
                   <td className="px-3 py-2 text-right font-mono text-xs">{row.rate}</td>
-                  <td className="px-3 py-2 text-xs">{formatISTDate(row.valid_from)}</td>
+                  <td className="px-3 py-2 text-xs">
+                    {formatISTDate(row.valid_from)}
+                    {latestByPair.get(`${row.from_ccy}/${row.to_ccy}`) === row.valid_from && (
+                      <span className="ml-1.5 rounded bg-green-100 px-1 py-0.5 text-xs font-medium text-green-700">
+                        current
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-xs text-slate-500">{row.source}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">{row.created_by_email ?? "—"}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">

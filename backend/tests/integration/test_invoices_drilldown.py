@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -38,7 +38,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -65,9 +65,7 @@ def _login_as_analyst(
     db_session.flush()
 
 
-def _login_as_cfo(
-    client: TestClient, db_session: Session, email: str = "cfo@emb.global"
-) -> None:
+def _login_as_cfo(client: TestClient, db_session: Session, email: str = "cfo@emb.global") -> None:
     _login(client, email)
     user = db_session.scalar(select(User).where(User.email == email))
     assert user is not None
@@ -79,13 +77,13 @@ def _login_as_cfo(
 def _admin_id(db_session: Session) -> uuid.UUID:
     u = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert u is not None
-    return u.id
+    return cast(uuid.UUID, u.id)
 
 
 def _entity_id(db_session: Session, code: str = "IND") -> uuid.UUID:
     e = db_session.scalar(select(Entity).where(Entity.code == code))
     assert e is not None
-    return e.id
+    return cast(uuid.UUID, e.id)
 
 
 # ---------------------------------------------------------------------------
@@ -153,14 +151,12 @@ def _make_invoice(
         db_session.add(inv_snap)
         db_session.flush()
 
-    return invoice.id
+    return cast(uuid.UUID, invoice.id)
 
 
 def _add_active_exception(db_session: Session, invoice_id: uuid.UUID) -> uuid.UUID:
     admin = _admin_id(db_session)
-    bt = db_session.scalar(
-        select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True))
-    )
+    bt = db_session.scalar(select(ExceptionBucketType).where(ExceptionBucketType.active.is_(True)))
     assert bt is not None
     tag = ExceptionTag(
         invoice_id=invoice_id,
@@ -171,7 +167,7 @@ def _add_active_exception(db_session: Session, invoice_id: uuid.UUID) -> uuid.UU
     )
     db_session.add(tag)
     db_session.flush()
-    return tag.id
+    return cast(uuid.UUID, tag.id)
 
 
 # ---------------------------------------------------------------------------
@@ -254,9 +250,7 @@ def test_list_invoices_filter_by_party_canonical_id(
     assert all(i["canonical_id"] == str(canonical_id) for i in items)
 
 
-def test_list_invoices_analyst_entity_scope(
-    client: TestClient, db_session: Session
-) -> None:
+def test_list_invoices_analyst_entity_scope(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code="IND")
     _make_invoice(db_session, entity_code="IND", ref="LIST-SC-IND")
     _make_invoice(db_session, entity_code="UAE", ref="LIST-SC-UAE")
@@ -333,18 +327,14 @@ def test_get_invoice_detail_includes_snapshot_history(
     assert "bucket" in hist
 
 
-def test_get_invoice_detail_analyst_can_read(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_invoice_detail_analyst_can_read(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global")
     inv_id = _make_invoice(db_session, ref="DETAIL-AN-001")
     resp = client.get(f"/invoices/{inv_id}")
     assert resp.status_code == 200
 
 
-def test_get_invoice_detail_analyst_scoped_403(
-    client: TestClient, db_session: Session
-) -> None:
+def test_get_invoice_detail_analyst_scoped_403(client: TestClient, db_session: Session) -> None:
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code="IND")
     uae_inv_id = _make_invoice(db_session, entity_code="UAE", ref="DETAIL-SCOPE-403")
     resp = client.get(f"/invoices/{uae_inv_id}")

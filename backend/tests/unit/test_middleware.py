@@ -126,7 +126,7 @@ class TestCsrfPostAdminWithValidTokenPasses:
         r = client.get("/admin/users")
         assert r.status_code == 200
         # Refresh csrf_token after this GET (middleware may rotate it)
-        csrf_token = client.cookies.get("csrf_token", csrf_token)
+        csrf_token = client.cookies.get("csrf_token") or csrf_token
 
         # Import here to avoid circular import issues at collection time
 

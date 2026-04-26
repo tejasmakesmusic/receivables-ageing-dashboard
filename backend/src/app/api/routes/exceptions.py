@@ -24,6 +24,15 @@ from app.schemas.exception import (
     ExceptionUpdateRequest,
     ExceptionUpdateResponse,
 )
+from app.schemas.exception_note import (
+    ExceptionNoteCreateRequest,
+    ExceptionNoteListResponse,
+    ExceptionNoteRow,
+)
+from app.services.exception_note_service import (
+    create_note,
+    list_notes,
+)
 from app.services.exception_service import (
     create_exception,
     list_exceptions,
@@ -150,4 +159,42 @@ def list_exceptions_route(
         page=page,
         page_size=page_size,
         current_user=current_user,
+    )
+
+
+@router.get(
+    "/exceptions/{exception_id}/notes",
+    response_model=ExceptionNoteListResponse,
+    status_code=200,
+    summary="List notes for an exception tag",
+    tags=["exceptions"],
+)
+def list_exception_notes_route(
+    exception_id: uuid.UUID,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_read_allowed)] = ...,  # type: ignore[assignment]
+) -> ExceptionNoteListResponse:
+    """Return notes for a specific exception tag."""
+    return list_notes(exception_id=exception_id, db=session)
+
+
+@router.post(
+    "/exceptions/{exception_id}/notes",
+    response_model=ExceptionNoteRow,
+    status_code=201,
+    summary="Create a note on an exception tag",
+    tags=["exceptions"],
+)
+def create_exception_note_route(
+    exception_id: uuid.UUID,
+    body: ExceptionNoteCreateRequest,
+    session: Annotated[Session, Depends(db_session)] = ...,  # type: ignore[assignment]
+    current_user: Annotated[User, Depends(_write_allowed)] = ...,  # type: ignore[assignment]
+) -> ExceptionNoteRow:
+    """Create a new note on an exception tag."""
+    return create_note(
+        exception_id=exception_id,
+        body=body,
+        current_user=current_user,
+        db=session,
     )

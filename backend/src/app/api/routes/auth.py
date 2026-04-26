@@ -276,7 +276,8 @@ async def google_callback(  # noqa: PLR0911
     session.commit()
 
     # --- determine redirect destination before constructing response ---
-    redirect_url = "/auth/pending" if user.role == Role.PENDING else "/"
+    dest = "/auth/pending" if user.role == Role.PENDING else "/"
+    redirect_url = settings.frontend_url.rstrip("/") + dest
     response = RedirectResponse(url=redirect_url, status_code=302)
 
     # --- issue session cookie ---
@@ -298,7 +299,7 @@ async def google_callback(  # noqa: PLR0911
 @router.get("/logout")
 def logout() -> RedirectResponse:
     """Clear the session cookie and redirect to /."""
-    response = RedirectResponse(url="/", status_code=302)
+    response = RedirectResponse(url=settings.frontend_url, status_code=302)
     clear_session_cookie(response)
     return response
 

@@ -26,7 +26,7 @@ from __future__ import annotations
 import io
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import openpyxl
 import pytest
@@ -54,7 +54,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _csrf_headers(client: TestClient) -> dict[str, str]:
@@ -84,7 +84,7 @@ def _login_as_analyst(
         user.entity_id_scope = None
     user.is_active = True
     db_session.flush()
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _login_as_cfo(client: TestClient, db_session: Session, email: str) -> None:
@@ -156,7 +156,7 @@ def _upload_tally(
         headers=headers,
     )
     assert resp.status_code == 201, f"Setup upload failed: {resp.json()}"
-    return resp.json()["snapshot_id"]
+    return str(resp.json()["snapshot_id"])
 
 
 def _get_entity(db_session: Session, entity_code: str) -> Entity:
@@ -177,7 +177,7 @@ def _create_canonical(db_session: Session, entity_code: str, name: str) -> uuid.
     c = PartyCanonical(entity_id=entity.id, name=name, created_by=admin.id)
     db_session.add(c)
     db_session.flush()
-    return c.id
+    return cast(uuid.UUID, c.id)
 
 
 def _create_alias(db_session: Session, canonical_id: uuid.UUID, alias_text: str) -> uuid.UUID:
@@ -191,7 +191,7 @@ def _create_alias(db_session: Session, canonical_id: uuid.UUID, alias_text: str)
     )
     db_session.add(a)
     db_session.flush()
-    return a.id
+    return cast(uuid.UUID, a.id)
 
 
 def _create_credit_period(
@@ -207,7 +207,7 @@ def _create_credit_period(
     )
     db_session.add(cfg)
     db_session.flush()
-    return cfg.id
+    return cast(uuid.UUID, cfg.id)
 
 
 def _set_entity_default_credit_days(db_session: Session, entity_code: str, days: int) -> None:

@@ -49,6 +49,14 @@ export interface SnapshotCreateResponse {
   parse_summary: ParseSummary;
 }
 
+export interface ReconciliationSummary {
+  status: "MATCHED" | "MISMATCHED" | "UNRECONCILED";
+  delta: string | null;
+  tally_xero_closing_ar: string | null;
+  dashboard_ar: string;
+  updated_at: string | null;
+}
+
 export interface SnapshotListRow {
   id: string;
   entity_code: string;
@@ -59,6 +67,7 @@ export interface SnapshotListRow {
   uploaded_by_email: string;
   row_count: number | null;
   total_outstanding: string | null;
+  reconciliation: ReconciliationSummary | null;
 }
 
 export interface SnapshotListResponse {
@@ -66,6 +75,18 @@ export interface SnapshotListResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface MaterialChangeFlag {
+  invoice_id: string;
+  invoice_ref: string;
+  canonical_name: string;
+  /** Decimal serialised as string on the wire */
+  prior_amount: string;
+  /** Decimal serialised as string on the wire */
+  new_amount: string;
+  /** Decimal serialised as string on the wire */
+  delta_pct: string;
 }
 
 export interface SnapshotDetailResponse {
@@ -81,6 +102,7 @@ export interface SnapshotDetailResponse {
   published_as: string | null;
   row_count: number | null;
   total_outstanding: string | null;
+  material_change_flags: MaterialChangeFlag[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,16 +114,16 @@ export type AliasConfidence = "EXACT" | "FUZZY_HIGH" | "FUZZY_LOW" | "UNMAPPED";
 export interface AliasCandidate {
   canonical_id: string;
   canonical_name: string;
-  score: number;
-  source: string;
+  ratio: number;
+  matched_on: "CANONICAL_NAME" | "ALIAS";
+  matched_text: string;
+  is_exact: boolean;
 }
 
 export interface AliasResolution {
-  confidence: AliasConfidence;
-  matched_canonical_id: string | null;
-  matched_canonical_name: string | null;
-  score: number | null;
-  candidates: AliasCandidate[];
+  resolution_state: AliasConfidence;
+  raw_name: string;
+  top_matches: AliasCandidate[];
 }
 
 export interface AnalystOverridesInvoice {
@@ -183,6 +205,15 @@ export interface WarningsAckResponse {
   publish_gate: PublishGate;
 }
 
+export interface BulkCreateCanonicalsResponse {
+  distinct_unmapped_names: number;
+  created_canonicals: number;
+  created_aliases: number;
+  skipped_existing_canonical: number;
+  skipped_existing_alias: number;
+  publish_gate: PublishGate;
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
@@ -193,6 +224,10 @@ export interface DashboardKPIs {
   parties_with_90plus_count: number;
   last_snapshot_date: string;
   fx_rate_used: string | null;
+  /** ISO date string — only populated for entity=ALL */
+  fx_rate_effective_from: string | null;
+  fx_rate_from_ccy: "AED" | null;
+  fx_rate_to_ccy: "INR" | null;
 }
 
 export interface TopPartyRow {
@@ -201,6 +236,9 @@ export interface TopPartyRow {
   outstanding: string;
   overdue_bucket: string;
   active_exception_count: number;
+  tally_overdue_days_max: number | null;
+  last_follow_up_date: string | null;
+  last_follow_up_channel: string | null;
 }
 
 export interface RecentExceptionRow {
@@ -214,6 +252,14 @@ export interface RecentExceptionRow {
   expected_resolution_date: string | null;
 }
 
+export interface DashboardTrendRow {
+  week_start: string;
+  /** Decimal serialised as string on the wire */
+  total_outstanding: string;
+  /** Decimal serialised as string on the wire */
+  ninety_plus: string;
+}
+
 export interface DashboardResponse {
   entity: EntityOrAll;
   as_of_date: string;
@@ -225,6 +271,7 @@ export interface DashboardResponse {
   top_parties: TopPartyRow[];
   recent_exceptions: RecentExceptionRow[];
   parties_on_default_credit_period_count: number;
+  trend_weekly: DashboardTrendRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +293,10 @@ export interface ExceptionListRow {
   tagged_by_email: string;
   expected_resolution_date: string | null;
   resolved_at: string | null;
+  last_follow_up_date: string | null;
+  last_follow_up_channel: string | null;
+  outstanding_amount: string | null;
+  notes_count: number;
 }
 
 export interface ExceptionListResponse {
@@ -317,6 +368,8 @@ export interface ExceptionBucketRow {
   name: string;
   description: string | null;
   active: boolean;
+  /** Not in the backend schema — derived on the frontend from the known seed set. */
+  pre_seeded?: boolean;
   created_at: string;
 }
 
@@ -391,6 +444,150 @@ export interface EmailOutboxListResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+// ---------------------------------------------------------------------------
+// Party drill-down (D2)
+// ---------------------------------------------------------------------------
+
+export interface PartyInvoiceRow {
+  invoice_id: string;
+  invoice_ref: string;
+  invoice_date: string;
+  amount: string;
+  currency: string;
+  due_date: string;
+  credit_days_applied: number;
+  credit_days_source: string;
+  status: string;
+  overdue_days: number | null;
+  bucket: string | null;
+  outstanding_amount: string | null;
+  active_exception_count: number;
+}
+
+export interface PartyResponse {
+  canonical_id: string;
+  canonical_name: string;
+  entity_code: string;
+  total_outstanding: string;
+  currency_display: string;
+  active_invoice_count: number;
+  active_exception_count: number;
+  invoices: PartyInvoiceRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Invoice drill-down (D3)
+// ---------------------------------------------------------------------------
+
+export interface ExceptionTagRow {
+  id: string;
+  bucket_type_code: string;
+  bucket_type_name: string;
+  reason: string;
+  tagged_at: string;
+  tagged_by_email: string;
+  status: string;
+  expected_resolution_date: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
+}
+
+export interface InvoiceSnapshotHistoryRow {
+  as_of_date: string;
+  snapshot_id: string;
+  outstanding_amount: string;
+  overdue_days: number;
+  bucket: string;
+}
+
+export interface InvoiceDetailResponse {
+  invoice_id: string;
+  invoice_ref: string;
+  invoice_date: string;
+  amount: string;
+  currency: string;
+  due_date: string;
+  credit_days_applied: number;
+  credit_days_source: string;
+  status: string;
+  canonical_id: string;
+  canonical_name: string;
+  entity_code: string;
+  first_seen_snapshot_id: string;
+  settled_snapshot_id: string | null;
+  exception_tags: ExceptionTagRow[];
+  snapshot_history: InvoiceSnapshotHistoryRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Follow-ups (S6)
+// ---------------------------------------------------------------------------
+
+export type FollowUpChannel = "EMAIL" | "CALL" | "WHATSAPP" | "MEETING";
+
+export interface FollowUpCreateRequest {
+  date: string; // ISO date YYYY-MM-DD
+  channel: FollowUpChannel;
+  contact_person?: string | null;
+  next_action_date?: string | null;
+  notes?: string | null;
+  /** Exactly one of invoice_id or canonical_id must be provided. */
+  invoice_id?: string | null;
+  canonical_id?: string | null;
+}
+
+export interface FollowUpUpdateRequest {
+  date?: string | null;
+  channel?: FollowUpChannel | null;
+  contact_person?: string | null;
+  next_action_date?: string | null;
+  notes?: string | null;
+}
+
+export interface FollowUpRow {
+  id: string;
+  invoice_id: string | null;
+  canonical_id: string;
+  date: string;
+  channel: FollowUpChannel;
+  contact_person: string | null;
+  next_action_date: string | null;
+  notes: string | null;
+  logged_by: string;
+  logged_by_email: string;
+  logged_at: string;
+  canonical_name: string;
+  invoice_ref: string | null;
+}
+
+export interface FollowUpListResponse {
+  items: FollowUpRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// ---------------------------------------------------------------------------
+// CP diff (Task 15 — GET /snapshots/:id/cp-diff)
+// ---------------------------------------------------------------------------
+
+export interface CpDiffEntry {
+  canonical_name: string;
+  entity_code: string;
+  days: number;
+  reason_note: string | null;
+  /** Populated for SUPERSEDED and UNCHANGED rows. */
+  prior_days: number | null;
+  prior_reason_note: string | null;
+}
+
+export interface CpDiffResponse {
+  snapshot_id: string;
+  added: CpDiffEntry[];
+  superseded: CpDiffEntry[];
+  unchanged: CpDiffEntry[];
 }
 
 // ---------------------------------------------------------------------------

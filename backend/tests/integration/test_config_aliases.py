@@ -12,7 +12,7 @@ Coverage:
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -37,7 +37,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -62,7 +62,7 @@ def _login_as_analyst(
         user.entity_id_scope = None
     user.is_active = True
     db_session.flush()
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _login_as_cfo(client: TestClient, db_session: Session, email: str) -> None:
@@ -100,7 +100,7 @@ def _create_canonical(
     canonical = PartyCanonical(entity_id=entity.id, name=name, created_by=admin.id)
     db_session.add(canonical)
     db_session.flush()
-    return canonical.id
+    return cast(uuid.UUID, canonical.id)
 
 
 def _create_alias(
@@ -119,7 +119,7 @@ def _create_alias(
     )
     db_session.add(alias)
     db_session.flush()
-    return alias.id
+    return cast(uuid.UUID, alias.id)
 
 
 def _csrf_headers(client: TestClient) -> dict[str, str]:

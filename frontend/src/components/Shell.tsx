@@ -9,9 +9,11 @@ const ENTITY_OPTIONS = [
 ];
 
 const NAV_LINKS = [
-  { to: "/dashboard", label: "Dashboard", roles: ["ANALYST", "CFO", "ADMIN"] as string[] },
   { to: "/upload", label: "Upload", roles: ["ANALYST", "ADMIN"] as string[] },
+  { to: "/snapshots", label: "Workspace", roles: ["ANALYST", "CFO", "ADMIN"] as string[] },
+  { to: "/dashboard", label: "Dashboard", roles: ["ANALYST", "CFO", "ADMIN"] as string[] },
   { to: "/exceptions", label: "Exceptions", roles: ["ANALYST", "ADMIN"] as string[] },
+  { to: "/follow-ups", label: "Follow-ups", roles: ["ANALYST", "ADMIN"] as string[] },
   { to: "/config/credit-period", label: "Credit Periods", roles: ["ANALYST", "ADMIN"] as string[] },
   { to: "/config/aliases", label: "Aliases", roles: ["ANALYST", "ADMIN"] as string[] },
 ];

@@ -106,7 +106,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"backend/tests/**/*.py" = ["PLR2004"]   # magic numbers are fine in assertions
+"backend/tests/**/*.py" = ["PLR2004", "PLR0915"]   # magic numbers and long test fns are fine
 # SQLAlchemy resolves Mapped[...] annotations at class creation time by
 # inspecting the class namespace. Moving uuid/datetime under TYPE_CHECKING
 # breaks that resolution — they must be runtime imports in model files.
@@ -166,4 +166,9 @@ markers = [
   "parser: parser tests against real sample files",
   "serial: must not run concurrently with other DB-mutating tests (e.g. downgrade/upgrade round-trips)",
   "slow: performance tests skipped in CI by default",
+]
+
+[dependency-groups]
+dev = [
+    "pytest-repeat>=0.9.4",
 ]

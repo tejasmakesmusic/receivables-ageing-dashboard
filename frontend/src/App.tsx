@@ -20,6 +20,8 @@ import { A2EmailOutboxPage } from "@/pages/A2EmailOutboxPage";
 import { D2PartyDetailPage } from "@/pages/D2PartyDetailPage";
 import { D3InvoiceDetailPage } from "@/pages/D3InvoiceDetailPage";
 import { S6FollowUpsPage } from "@/pages/S6FollowUpsPage";
+import { WorkspacePage } from "@/pages/WorkspacePage";
+import { SnapshotInvoicesPage } from "@/pages/SnapshotInvoicesPage";
 
 function AdminUsersRedirect() {
   // M1 users page lives at /admin/users on the Jinja side.
@@ -47,6 +49,10 @@ export default function App() {
 
         {/* Dashboard — all authenticated roles */}
         <Route path="/dashboard" element={<D1DashboardPage />} />
+
+        {/* Workspace — all authenticated roles */}
+        <Route path="/snapshots" element={<WorkspacePage />} />
+        <Route path="/snapshots/:id/invoices" element={<SnapshotInvoicesPage />} />
 
         {/* Stubs — all authenticated */}
         <Route path="/party/:canonical_id" element={<D2PartyDetailPage />} />

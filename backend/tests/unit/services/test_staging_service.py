@@ -44,7 +44,7 @@ def _make_resolution(state: str = "EXACT", raw_name: str = "TestParty") -> Alias
     cid = uuid.uuid4()
     return AliasResolution(
         raw_name=raw_name,
-        resolution_state=state,  # type: ignore[arg-type]
+        resolution_state=state,
         top_matches=(
             [
                 AliasCandidate(

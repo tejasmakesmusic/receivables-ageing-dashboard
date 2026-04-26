@@ -29,6 +29,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.entity import Entity
 from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.exception_tag import ExceptionTag
+from app.db.models.follow_up import FollowUp
 from app.db.models.invoice import Invoice
 from app.db.models.party import PartyCanonical
 from app.db.models.user import User
@@ -188,7 +189,7 @@ def update_exception(
     _check_entity_scope(current_user, invoice, db)
 
     now_utc = datetime.now(tz=UTC)
-    before_state = {"status": tag.status}
+    before_state = {"status": tag.status, "reason": tag.reason}
 
     if body.action == "RESOLVE":
         if tag.status != "ACTIVE":
@@ -208,9 +209,25 @@ def update_exception(
         tag.resolution_note = body.note
     elif body.action == "UPDATE_EXPECTED_RESOLUTION_DATE":
         tag.expected_resolution_date = body.expected_resolution_date
+    elif body.action == "EDIT_HEADLINE":
+        if body.reason is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "EXCEPTION_HEADLINE_REQUIRED",
+                    "detail": "Reason must be provided to edit the exception headline.",
+                },
+            )
+        tag.reason = body.reason
+
+    audit_action = (
+        "EXCEPTION_TAG_HEADLINE_EDITED"
+        if body.action == "EDIT_HEADLINE"
+        else "exception_tag.update"
+    )
 
     audit = AuditLog(
-        action="exception_tag.update",
+        action=audit_action,
         entity_type="exception_tags",
         entity_id=exception_id,
         actor_user_id=current_user.id,
@@ -218,6 +235,7 @@ def update_exception(
         after={
             "action": body.action,
             "status": tag.status,
+            "reason": tag.reason,
         },
     )
     db.add(audit)
@@ -239,6 +257,40 @@ def update_exception(
         note=tag.resolution_note if body.action == "UPDATE_NOTE" else None,
         expected_resolution_date=tag.expected_resolution_date,
     )
+
+
+def _last_follow_up_for_canonical(
+    canonical_id: uuid.UUID,
+    invoice_id: uuid.UUID | None,
+    db: Session,
+) -> tuple[None, None] | tuple[object, str]:
+    """Return (date, channel) of the most-recent follow-up for this exception row.
+
+    Prefer a follow-up logged against the specific invoice (invoice_id scoped);
+    fall back to any follow-up logged at the canonical level.
+    """
+    # Invoice-scoped first
+    if invoice_id is not None:
+        row = db.execute(
+            select(FollowUp.date, FollowUp.channel)
+            .where(FollowUp.invoice_id == invoice_id)
+            .order_by(FollowUp.date.desc())
+            .limit(1)
+        ).first()
+        if row is not None:
+            return row.date, row.channel
+
+    # Canonical-scoped fallback
+    row = db.execute(
+        select(FollowUp.date, FollowUp.channel)
+        .where(FollowUp.canonical_id == canonical_id)
+        .order_by(FollowUp.date.desc())
+        .limit(1)
+    ).first()
+    if row is not None:
+        return row.date, row.channel
+
+    return None, None
 
 
 def list_exceptions(
@@ -302,25 +354,33 @@ def list_exceptions(
         .limit(page_size)
     ).all()
 
-    items = [
-        ExceptionListRow(
-            id=r.id,
-            invoice_id=r.invoice_id,
-            invoice_ref=r.invoice_ref,
+    items = []
+    for r in rows:
+        fu_date, fu_channel = _last_follow_up_for_canonical(
             canonical_id=r.canonical_id,
-            canonical_name=r.canonical_name,
-            entity_code=r.entity_code,
-            bucket_type_code=r.bucket_code,
-            bucket_type_name=r.bucket_name,
-            reason=r.reason,
-            status=r.status,
-            tagged_at=r.tagged_at,
-            tagged_by_email=r.tagged_by_email,
-            expected_resolution_date=r.expected_resolution_date,
-            resolved_at=r.resolved_at,
+            invoice_id=r.invoice_id,
+            db=db,
         )
-        for r in rows
-    ]
+        items.append(
+            ExceptionListRow(
+                id=r.id,
+                invoice_id=r.invoice_id,
+                invoice_ref=r.invoice_ref,
+                canonical_id=r.canonical_id,
+                canonical_name=r.canonical_name,
+                entity_code=r.entity_code,
+                bucket_type_code=r.bucket_code,
+                bucket_type_name=r.bucket_name,
+                reason=r.reason,
+                status=r.status,
+                tagged_at=r.tagged_at,
+                tagged_by_email=r.tagged_by_email,
+                expected_resolution_date=r.expected_resolution_date,
+                resolved_at=r.resolved_at,
+                last_follow_up_date=fu_date,
+                last_follow_up_channel=fu_channel,
+            )
+        )
 
     return ExceptionListResponse(
         items=items,

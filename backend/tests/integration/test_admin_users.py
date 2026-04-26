@@ -15,7 +15,7 @@ NOTE on session ordering:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.core.rbac import Role
 from app.db.models.audit_log import AuditLog
@@ -23,6 +23,7 @@ from app.db.models.user import User
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
+    from httpx import Response
     from sqlalchemy.orm import Session
 
 
@@ -59,12 +60,12 @@ def _csrf_token(client: TestClient) -> str:
     Falls back to empty string — the test will then receive 403, which is
     intentional for negative tests.
     """
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
-def _post_with_csrf(client: TestClient, url: str, data: dict | None = None) -> object:
+def _post_with_csrf(client: TestClient, url: str, data: dict[str, Any] | None = None) -> Response:
     """POST with the csrf_token form field automatically injected."""
-    payload = dict(data or {})
+    payload: dict[str, Any] = dict(data or {})
     payload["csrf_token"] = _csrf_token(client)
     return client.post(url, data=payload, follow_redirects=False)
 

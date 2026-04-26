@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import select
 
@@ -20,6 +20,7 @@ from app.core.rbac import Role
 from app.db.models.entity import Entity
 from app.db.models.exception_bucket_type import ExceptionBucketType
 from app.db.models.exception_tag import ExceptionTag
+from app.db.models.follow_up import FollowUp
 from app.db.models.invoice import Invoice
 from app.db.models.party import PartyCanonical
 from app.db.models.snapshot import Snapshot
@@ -40,7 +41,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -89,13 +90,13 @@ def _headers(client: TestClient) -> dict[str, str]:
 def _admin_id(db_session: Session) -> uuid.UUID:
     u = db_session.scalar(select(User).where(User.email == "tejaswa.sharma@emb.global"))
     assert u is not None
-    return u.id
+    return cast(uuid.UUID, u.id)
 
 
 def _entity_id(db_session: Session, code: str) -> uuid.UUID:
     e = db_session.scalar(select(Entity).where(Entity.code == code))
     assert e is not None
-    return e.id
+    return cast(uuid.UUID, e.id)
 
 
 def _get_bucket_id(db_session: Session, code: str = "DISPUTED") -> uuid.UUID:
@@ -106,15 +107,13 @@ def _get_bucket_id(db_session: Session, code: str = "DISPUTED") -> uuid.UUID:
         )
     )
     assert bt is not None, f"ExceptionBucketType '{code}' not seeded or inactive"
-    return bt.id
+    return cast(uuid.UUID, bt.id)
 
 
 def _get_bucket_code(db_session: Session, code: str = "DISPUTED") -> str:
-    bt = db_session.scalar(
-        select(ExceptionBucketType).where(ExceptionBucketType.code == code)
-    )
+    bt = db_session.scalar(select(ExceptionBucketType).where(ExceptionBucketType.code == code))
     assert bt is not None, f"ExceptionBucketType '{code}' not seeded"
-    return bt.code
+    return cast(str, bt.code)
 
 
 def _make_open_invoice(
@@ -159,7 +158,7 @@ def _make_open_invoice(
     )
     db_session.add(invoice)
     db_session.flush()
-    return invoice.id
+    return cast(uuid.UUID, invoice.id)
 
 
 def _make_settled_invoice(
@@ -200,7 +199,7 @@ def _make_settled_invoice(
     )
     db_session.add(invoice)
     db_session.flush()
-    return invoice.id
+    return cast(uuid.UUID, invoice.id)
 
 
 def _post_exception(
@@ -245,16 +244,12 @@ def test_create_exception_with_expected_resolution_date(
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A02")
     bucket_code = _get_bucket_code(db_session, "DISPUTED")
 
-    resp = _post_exception(
-        client, invoice_id, bucket_code, expected_resolution_date="2026-04-30"
-    )
+    resp = _post_exception(client, invoice_id, bucket_code, expected_resolution_date="2026-04-30")
     assert resp.status_code == 201, resp.json()
     assert resp.json()["expected_resolution_date"] == "2026-04-30"
 
 
-def test_create_exception_409_on_settled_invoice(
-    client: TestClient, db_session: Session
-) -> None:
+def test_create_exception_409_on_settled_invoice(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     invoice_id = _make_settled_invoice(db_session, ref="INV-EX-A03")
     bucket_code = _get_bucket_code(db_session, "DISPUTED")
@@ -275,9 +270,7 @@ def test_create_exception_requires_non_empty_reason(
     assert resp.status_code == 422
 
 
-def test_create_exception_404_on_unknown_invoice(
-    client: TestClient, db_session: Session
-) -> None:
+def test_create_exception_404_on_unknown_invoice(client: TestClient, db_session: Session) -> None:
     _login_as_admin(client)
     bucket_code = _get_bucket_code(db_session, "DISPUTED")
     fake_id = uuid.uuid4()
@@ -286,9 +279,7 @@ def test_create_exception_404_on_unknown_invoice(
     assert resp.status_code == 404
 
 
-def test_create_exception_400_inactive_bucket(
-    client: TestClient, db_session: Session
-) -> None:
+def test_create_exception_400_inactive_bucket(client: TestClient, db_session: Session) -> None:
     """Using an inactive bucket type should be rejected."""
     _login_as_admin(client)
     invoice_id = _make_open_invoice(db_session, ref="INV-EX-A05")
@@ -325,9 +316,7 @@ def test_create_exception_cfo_forbidden(client: TestClient, db_session: Session)
     assert resp.status_code == 403
 
 
-def test_create_exception_analyst_out_of_scope_403(
-    client: TestClient, db_session: Session
-) -> None:
+def test_create_exception_analyst_out_of_scope_403(client: TestClient, db_session: Session) -> None:
     """Analyst scoped to UAE cannot tag IND invoices."""
     _login_as_analyst(client, db_session, "analyst@emb.global", entity_code="UAE")
     invoice_id = _make_open_invoice(db_session, entity_code="IND", ref="INV-EX-A08")
@@ -358,7 +347,7 @@ def _create_active_tag(
     )
     db_session.add(tag)
     db_session.flush()
-    return tag.id
+    return cast(uuid.UUID, tag.id)
 
 
 def test_resolve_exception_200(client: TestClient, db_session: Session) -> None:
@@ -530,3 +519,106 @@ def test_list_exceptions_pagination(client: TestClient, db_session: Session) -> 
     assert len(body["items"]) <= 2
     assert body["page"] == 1
     assert body["page_size"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 14 — last_follow_up_date / last_follow_up_channel on ExceptionListRow
+# ---------------------------------------------------------------------------
+
+
+def _get_canonical_id_for_invoice(db_session: Session, invoice_id: uuid.UUID) -> uuid.UUID:
+    inv = db_session.get(Invoice, invoice_id)
+    assert inv is not None
+    return cast(uuid.UUID, inv.canonical_id)
+
+
+def _add_follow_up(
+    db_session: Session,
+    canonical_id: uuid.UUID,
+    follow_up_date: date,
+    channel: str = "EMAIL",
+    invoice_id: uuid.UUID | None = None,
+) -> None:
+    admin = _admin_id(db_session)
+    fu = FollowUp(
+        canonical_id=canonical_id,
+        date=follow_up_date,
+        channel=channel,
+        logged_by=admin,
+        invoice_id=invoice_id,
+    )
+    db_session.add(fu)
+    db_session.flush()
+
+
+def test_exception_list_last_follow_up_populated_canonical(
+    client: TestClient, db_session: Session
+) -> None:
+    """last_follow_up_date/channel are populated when a canonical-level follow-up exists."""
+    _login_as_admin(client)
+    invoice_id = _make_open_invoice(db_session, ref="INV-FU-EX-C01")
+    _create_active_tag(db_session, invoice_id)
+    canonical_id = _get_canonical_id_for_invoice(db_session, invoice_id)
+
+    # Add a canonical-level follow-up
+    _add_follow_up(db_session, canonical_id, date(2026, 3, 25), channel="WHATSAPP")
+
+    resp = client.get(f"/exceptions?invoice_id={invoice_id}")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) >= 1
+    row = next(i for i in items if i["invoice_id"] == str(invoice_id))
+    assert (
+        row["last_follow_up_date"] == "2026-03-25"
+    ), f"Expected 2026-03-25, got {row['last_follow_up_date']}"
+    assert (
+        row["last_follow_up_channel"] == "WHATSAPP"
+    ), f"Expected WHATSAPP, got {row['last_follow_up_channel']}"
+
+
+def test_exception_list_last_follow_up_none_when_absent(
+    client: TestClient, db_session: Session
+) -> None:
+    """last_follow_up_date/channel are None when no follow-up exists."""
+    _login_as_admin(client)
+    invoice_id = _make_open_invoice(db_session, ref="INV-FU-EX-N01")
+    _create_active_tag(db_session, invoice_id)
+
+    # No follow-up seeded
+
+    resp = client.get(f"/exceptions?invoice_id={invoice_id}")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) >= 1
+    row = next(i for i in items if i["invoice_id"] == str(invoice_id))
+    assert row["last_follow_up_date"] is None, f"Expected None, got {row['last_follow_up_date']}"
+    assert (
+        row["last_follow_up_channel"] is None
+    ), f"Expected None, got {row['last_follow_up_channel']}"
+
+
+def test_exception_list_invoice_follow_up_preferred_over_canonical(
+    client: TestClient, db_session: Session
+) -> None:
+    """Invoice-scoped follow-up is preferred over canonical-scoped when both exist."""
+    _login_as_admin(client)
+    invoice_id = _make_open_invoice(db_session, ref="INV-FU-EX-P01")
+    _create_active_tag(db_session, invoice_id)
+    canonical_id = _get_canonical_id_for_invoice(db_session, invoice_id)
+
+    # Canonical-level follow-up (older)
+    _add_follow_up(db_session, canonical_id, date(2026, 2, 10), channel="EMAIL")
+    # Invoice-level follow-up (newer date, but invoice-scoped takes priority)
+    _add_follow_up(
+        db_session, canonical_id, date(2026, 3, 10), channel="CALL", invoice_id=invoice_id
+    )
+
+    resp = client.get(f"/exceptions?invoice_id={invoice_id}")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    row = next(i for i in items if i["invoice_id"] == str(invoice_id))
+    # Invoice-scoped CALL (2026-03-10) wins over canonical EMAIL (2026-02-10)
+    assert (
+        row["last_follow_up_channel"] == "CALL"
+    ), f"Expected CALL (invoice-scoped), got {row['last_follow_up_channel']}"
+    assert row["last_follow_up_date"] == "2026-03-10"

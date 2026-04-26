@@ -12,7 +12,7 @@ from __future__ import annotations
 import io
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import openpyxl
 from sqlalchemy import select
@@ -38,7 +38,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -63,7 +63,7 @@ def _login_as_analyst(
         user.entity_id_scope = None
     user.is_active = True
     db_session.flush()
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _login_as_cfo(client: TestClient, db_session: Session, email: str) -> None:
@@ -160,7 +160,7 @@ def _upload_staged(
     )
     resp = _upload(client, xlsx, entity_code=entity_code, filename=filename)
     assert resp.status_code == 201, resp.json()
-    return resp.json()["snapshot_id"]
+    return str(resp.json()["snapshot_id"])
 
 
 # ---------------------------------------------------------------------------

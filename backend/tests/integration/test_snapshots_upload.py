@@ -22,7 +22,7 @@ from __future__ import annotations
 import io
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import openpyxl
 from sqlalchemy import select, text
@@ -52,7 +52,7 @@ def _login(client: TestClient, email: str) -> None:
 
 
 def _csrf(client: TestClient) -> str:
-    return client.cookies.get("csrf_token", "")
+    return client.cookies.get("csrf_token") or ""
 
 
 def _login_as_admin(client: TestClient) -> None:
@@ -84,7 +84,7 @@ def _login_as_analyst(
 
     user.is_active = True
     db_session.flush()
-    return user.id
+    return cast(uuid.UUID, user.id)
 
 
 def _login_as_cfo(client: TestClient, db_session: Session, email: str) -> None:
@@ -187,7 +187,7 @@ def _make_xero_xlsx(
     ws.append([None] * 23)  # row 7 blank gap
 
     # Party header
-    party_header = [None] * 23
+    party_header: list[Any] = [None] * 23
     party_header[0] = party
     ws.append(party_header)
 
@@ -559,7 +559,7 @@ class TestSourceDetection:
         """File with unrecognized sheet names → 400."""
         _login_as_admin(client)
         wb = openpyxl.Workbook()
-        wb.active.title = "RandomSheet"  # type: ignore[union-attr]
+        wb.active.title = "RandomSheet"  # openpyxl: active is non-None on a fresh workbook
         buf = io.BytesIO()
         wb.save(buf)
         r = _upload(client, buf.getvalue(), "IND", source_hint=None, as_of_date="2026-01-31")
@@ -612,8 +612,10 @@ class TestParseErrorsBlockSnapshot:
 
         # Build a minimal XLSX with no "Sundry Debtors" sheet.
         wb = openpyxl.Workbook()
-        wb.active.title = "WrongSheet"  # type: ignore[union-attr]
-        wb.active.append(["some", "data", "here"])  # type: ignore[union-attr]
+        wb.active.title = "WrongSheet"  # openpyxl: active is non-None on a fresh workbook
+        wb.active.append(
+            ["some", "data", "here"]
+        )  # openpyxl: active is non-None on a fresh workbook
         buf = io.BytesIO()
         wb.save(buf)
         file_bytes = buf.getvalue()
