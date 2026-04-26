@@ -26,7 +26,7 @@ import { Modal, ModalFooter } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Card } from "@/components/ui/Card";
-import { formatISTDate, formatINR } from "@/lib/format";
+import { formatISTDate, formatISTDateTime, formatINR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -399,6 +399,106 @@ function ResolveModal({ exception, open, onClose }: ResolveModalProps) {
 // Main page
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Exception notes side panel
+// ---------------------------------------------------------------------------
+
+interface ExceptionNoteRow {
+  id: string;
+  exception_tag_id: string;
+  body: string;
+  author_email: string | null;
+  created_at: string;
+}
+
+function ExceptionNotesPanel({
+  exception,
+  onClose,
+}: {
+  exception: ExceptionListRow;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [body, setBody] = useState("");
+
+  const notesQ = useQuery<ExceptionNoteRow[]>({
+    queryKey: ["exception-notes", exception.id],
+    queryFn: () => api.get<ExceptionNoteRow[]>(`/exceptions/${exception.id}/notes`),
+  });
+
+  const mutation = useMutation({
+    mutationFn: () => api.post(`/exceptions/${exception.id}/notes`, { body }),
+    onSuccess: () => {
+      setBody("");
+      void queryClient.invalidateQueries({ queryKey: ["exception-notes", exception.id] });
+      void queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+    },
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="flex h-full w-96 flex-col border-l border-gray-200 bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Exception notes</p>
+            <p className="text-xs text-slate-400">{exception.invoice_ref} · {exception.bucket_type_code}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close notes panel"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Notes list */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {notesQ.isLoading && <Skeleton className="h-16 w-full" />}
+          {(notesQ.data ?? []).map((n) => (
+            <div key={n.id} className="rounded bg-slate-50 p-3 text-sm">
+              <p className="mb-1 text-xs text-slate-400">
+                {n.author_email ?? "Unknown"} · {formatISTDateTime(n.created_at)}
+              </p>
+              <p className="whitespace-pre-wrap text-slate-700">{n.body}</p>
+            </div>
+          ))}
+          {!notesQ.isLoading && (notesQ.data ?? []).length === 0 && (
+            <p className="py-8 text-center text-sm text-slate-400">No notes yet</p>
+          )}
+        </div>
+
+        {/* Add note */}
+        <div className="border-t border-gray-200 p-4 space-y-2">
+          <textarea
+            className="w-full resize-none rounded border border-gray-200 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            rows={3}
+            placeholder="Add a note…"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            maxLength={5000}
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            className="w-full"
+            disabled={!body.trim() || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? "Adding…" : "Add note"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 export function S5ExceptionsPage() {
   const [searchParams] = useSearchParams();
   const snapshotId = searchParams.get("snapshot_id");
@@ -409,6 +509,7 @@ export function S5ExceptionsPage() {
   const [bucketFilter, setBucketFilter] = useState("");
   const [tagTarget, setTagTarget] = useState<string | null>(null);
   const [resolveTarget, setResolveTarget] = useState<ExceptionListRow | null>(null);
+  const [notesTarget, setNotesTarget] = useState<ExceptionListRow | null>(null);
   const PAGE_SIZE = 25;
 
   // Fetch snapshot detail (for material-change banner) only when snapshot_id is present
@@ -606,6 +707,13 @@ export function S5ExceptionsPage() {
                           Resolve
                         </button>
                       )}
+                      <button
+                        onClick={() => setNotesTarget(ex)}
+                        className="text-xs text-slate-500 hover:underline"
+                        aria-label="View notes"
+                      >
+                        Notes{ex.notes_count > 0 ? ` (${ex.notes_count})` : ""}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -643,6 +751,14 @@ export function S5ExceptionsPage() {
           open={!!tagTarget}
           onClose={() => setTagTarget(null)}
           buckets={buckets}
+        />
+      )}
+
+      {/* Exception notes side panel */}
+      {notesTarget && (
+        <ExceptionNotesPanel
+          exception={notesTarget}
+          onClose={() => setNotesTarget(null)}
         />
       )}
     </div>
