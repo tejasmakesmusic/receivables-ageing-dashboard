@@ -389,7 +389,7 @@ function DefaultCreditPeriodBanner({ count }: { count: number }) {
           </p>
         </div>
       </div>
-      <Link to="/credit-period" className="flex-shrink-0">
+      <Link to="/config/credit-period" className="flex-shrink-0">
         <Button
           variant="secondary"
           size="sm"
