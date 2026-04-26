@@ -8,6 +8,7 @@ switch on them without parsing human-readable ``detail`` strings.
 from __future__ import annotations
 
 from datetime import date  # noqa: TCH003 — used at runtime in Pydantic field types
+from decimal import Decimal  # noqa: TCH003
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -92,3 +93,10 @@ class AsOfDateMissingError(BaseModel):
     model_config = ConfigDict(frozen=True)
     code: str = Field(default="AS_OF_DATE_MISSING", frozen=True)
     detail: str
+
+
+class SnapshotListRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    uploaded_by_email: str | None = None
+    outstanding_total: Decimal | None = None

@@ -189,7 +189,7 @@ def update_exception(
     _check_entity_scope(current_user, invoice, db)
 
     now_utc = datetime.now(tz=UTC)
-    before_state = {"status": tag.status}
+    before_state = {"status": tag.status, "reason": tag.reason}
 
     if body.action == "RESOLVE":
         if tag.status != "ACTIVE":
@@ -209,9 +209,25 @@ def update_exception(
         tag.resolution_note = body.note
     elif body.action == "UPDATE_EXPECTED_RESOLUTION_DATE":
         tag.expected_resolution_date = body.expected_resolution_date
+    elif body.action == "EDIT_HEADLINE":
+        if body.reason is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "EXCEPTION_HEADLINE_REQUIRED",
+                    "detail": "Reason must be provided to edit the exception headline.",
+                },
+            )
+        tag.reason = body.reason
+
+    audit_action = (
+        "EXCEPTION_TAG_HEADLINE_EDITED"
+        if body.action == "EDIT_HEADLINE"
+        else "exception_tag.update"
+    )
 
     audit = AuditLog(
-        action="exception_tag.update",
+        action=audit_action,
         entity_type="exception_tags",
         entity_id=exception_id,
         actor_user_id=current_user.id,
@@ -219,6 +235,7 @@ def update_exception(
         after={
             "action": body.action,
             "status": tag.status,
+            "reason": tag.reason,
         },
     )
     db.add(audit)

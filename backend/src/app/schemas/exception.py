@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime  # noqa: TCH003
+from decimal import Decimal  # noqa: TCH003
 from typing import Literal
 from uuid import UUID  # noqa: TCH003
 
@@ -46,10 +47,16 @@ class ExceptionCreateResponse(BaseModel):
 
 
 class ExceptionUpdateRequest(BaseModel):
-    action: Literal["RESOLVE", "UPDATE_NOTE", "UPDATE_EXPECTED_RESOLUTION_DATE"]
+    action: Literal[
+        "RESOLVE",
+        "UPDATE_NOTE",
+        "UPDATE_EXPECTED_RESOLUTION_DATE",
+        "EDIT_HEADLINE",
+    ]
     resolution_note: str | None = None
     note: str | None = None
     expected_resolution_date: date | None = None
+    reason: str | None = None
 
 
 class ExceptionUpdateResponse(BaseModel):
@@ -84,6 +91,8 @@ class ExceptionListRow(BaseModel):
     resolved_at: datetime | None
     last_follow_up_date: date | None = None
     last_follow_up_channel: str | None = None
+    outstanding_amount: Decimal | None = None
+    notes_count: int = 0
 
 
 class ExceptionListResponse(BaseModel):
