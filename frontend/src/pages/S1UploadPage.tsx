@@ -35,10 +35,11 @@ const TRANSACTIONAL_SOURCE_OPTIONS: { value: SourceHint; label: string }[] = [
 ];
 
 function statusBadge(status: string) {
-  const map: Record<string, "info" | "success" | "neutral" | "error"> = {
+  const map: Record<string, "info" | "success" | "neutral" | "error" | "warning"> = {
     STAGED: "info",
     PUBLISHED: "success",
     DISCARDED: "neutral",
+    PARSING: "warning",
   };
   return <Badge variant={map[status] ?? "neutral"}>{status}</Badge>;
 }
@@ -600,6 +601,7 @@ export function S1UploadPage() {
                   <th className="px-3 py-2 text-left font-medium">As-of</th>
                   <th className="px-3 py-2 text-left font-medium">Status</th>
                   <th className="px-3 py-2 text-left font-medium">Uploaded</th>
+                  <th className="px-3 py-2 text-left font-medium">Uploaded by</th>
                   <th className="px-3 py-2 text-left font-medium"></th>
                 </tr>
               </thead>
@@ -615,6 +617,9 @@ export function S1UploadPage() {
                     <td className="px-3 py-2">{statusBadge(row.status)}</td>
                     <td className="px-3 py-2 text-xs text-slate-500">
                       {formatISTDate(row.uploaded_at)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500">
+                      {row.uploaded_by_email ?? "—"}
                     </td>
                     <td className="px-3 py-2">
                       {row.status === "STAGED" && (
@@ -632,7 +637,7 @@ export function S1UploadPage() {
                 ))}
                 {(!snapshotsData?.items || snapshotsData.items.length === 0) && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-4 text-center text-xs text-slate-400">
+                    <td colSpan={8} className="px-3 py-4 text-center text-xs text-slate-400">
                       No snapshots yet
                     </td>
                   </tr>

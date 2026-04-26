@@ -295,6 +295,8 @@ export interface ExceptionListRow {
   resolved_at: string | null;
   last_follow_up_date: string | null;
   last_follow_up_channel: string | null;
+  outstanding_amount: string | null;
+  notes_count: number;
 }
 
 export interface ExceptionListResponse {

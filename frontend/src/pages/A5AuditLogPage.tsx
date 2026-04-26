@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { AuditLogListResponse } from "@/types";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Pagination } from "@/components/ui/Pagination";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
@@ -33,6 +34,18 @@ export function A5AuditLogPage() {
     queryFn: () => api.get<AuditLogListResponse>(`/admin/audit-log?${params}`),
   });
 
+  const { data: actionsData } = useQuery<{ action: string; count: number }[]>({
+    queryKey: ["audit-log-actions"],
+    queryFn: () => api.get<{ action: string; count: number }[]>("/admin/audit-log/actions"),
+    staleTime: 60_000,
+  });
+
+  const { data: actorsData } = useQuery<{ actor_email: string; count: number }[]>({
+    queryKey: ["audit-log-actors"],
+    queryFn: () => api.get<{ actor_email: string; count: number }[]>("/admin/audit-log/actors"),
+    staleTime: 60_000,
+  });
+
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   return (
@@ -41,20 +54,32 @@ export function A5AuditLogPage() {
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap gap-3">
-        <Input
-          label="Actor email"
+        <Select
+          label="Actor"
           value={actorEmail}
           onChange={(e) => { setActorEmail(e.target.value); setPage(1); }}
-          placeholder="user@emb.global"
-          className="w-48"
-        />
-        <Input
+          className="w-56"
+        >
+          <option value="">All actors</option>
+          {(actorsData ?? []).map((a) => (
+            <option key={a.actor_email} value={a.actor_email}>
+              {a.actor_email} ({a.count})
+            </option>
+          ))}
+        </Select>
+        <Select
           label="Action"
           value={action}
           onChange={(e) => { setAction(e.target.value); setPage(1); }}
-          placeholder="e.g. publish_snapshot"
-          className="w-48"
-        />
+          className="w-56"
+        >
+          <option value="">All actions</option>
+          {(actionsData ?? []).map((a) => (
+            <option key={a.action} value={a.action}>
+              {a.action} ({a.count})
+            </option>
+          ))}
+        </Select>
         <Input
           label="Entity type"
           value={entityType}

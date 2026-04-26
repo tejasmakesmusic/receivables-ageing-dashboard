@@ -300,6 +300,13 @@ describe("S1UploadPage — CP diff preview", () => {
 });
 
 describe("S1UploadPage — recent uploads table", () => {
+  it("recent uploads table has Uploaded by column header", async () => {
+    render(<Wrapper />);
+    await waitFor(() => {
+      expect(screen.getByText(/uploaded by/i)).toBeInTheDocument();
+    });
+  });
+
   it("renders recent uploads heading", async () => {
     render(<Wrapper />);
     await waitFor(() => {

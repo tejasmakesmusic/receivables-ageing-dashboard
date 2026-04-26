@@ -26,7 +26,7 @@ import { Modal, ModalFooter } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Card } from "@/components/ui/Card";
-import { formatISTDate } from "@/lib/format";
+import { formatISTDate, formatINR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -530,6 +530,7 @@ export function S5ExceptionsPage() {
                 <th className="px-3 py-2 text-left font-medium">Party</th>
                 <th className="px-3 py-2 text-left font-medium">Entity</th>
                 <th className="px-3 py-2 text-left font-medium">Type</th>
+                <th className="px-3 py-2 text-right font-medium">Amount</th>
                 <th className="px-3 py-2 text-left font-medium">Reason</th>
                 <th className="px-3 py-2 text-left font-medium">Status</th>
                 <th className="px-3 py-2 text-left font-medium">Tagged</th>
@@ -555,8 +556,16 @@ export function S5ExceptionsPage() {
                   <td className="px-3 py-2">
                     <Badge variant="info">{ex.bucket_type_code}</Badge>
                   </td>
-                  <td className="px-3 py-2 max-w-[180px] truncate text-xs text-slate-600">
-                    {ex.reason}
+                  <td className="px-3 py-2 text-right text-xs font-mono text-slate-700">
+                    {ex.outstanding_amount != null ? formatINR(ex.outstanding_amount) : "—"}
+                  </td>
+                  <td className="px-3 py-2 max-w-[180px] text-xs text-slate-600">
+                    <span className="truncate block">{ex.reason}</span>
+                    {ex.notes_count > 0 && (
+                      <Badge variant="neutral" className="mt-0.5">
+                        {ex.notes_count} notes
+                      </Badge>
+                    )}
                   </td>
                   <td className="px-3 py-2">{statusBadge(ex.status)}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">
@@ -603,7 +612,7 @@ export function S5ExceptionsPage() {
               ))}
               {(!data?.items || data.items.length === 0) && (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400">
+                  <td colSpan={11} className="px-3 py-8 text-center text-xs text-slate-400">
                     No exceptions matching filters
                   </td>
                 </tr>

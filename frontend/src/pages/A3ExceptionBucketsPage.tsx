@@ -69,6 +69,7 @@ export function A3ExceptionBucketsPage() {
                 <th className="px-3 py-2 text-left font-medium">Name</th>
                 <th className="px-3 py-2 text-left font-medium">Description</th>
                 <th className="px-3 py-2 text-left font-medium">Status</th>
+                <th className="px-3 py-2 text-right font-medium">Active exceptions</th>
                 <th className="px-3 py-2 text-left font-medium">Created</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -86,6 +87,7 @@ export function A3ExceptionBucketsPage() {
                       {row.active ? "Active" : "Inactive"}
                     </Badge>
                   </td>
+                  <td className="px-3 py-2 text-right text-xs text-slate-500">—</td>
                   <td className="px-3 py-2 text-xs text-slate-500">
                     {formatISTDate(row.created_at)}
                   </td>
@@ -102,7 +104,7 @@ export function A3ExceptionBucketsPage() {
               ))}
               {(!data?.items || data.items.length === 0) && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-xs text-slate-400">
+                  <td colSpan={7} className="px-3 py-6 text-center text-xs text-slate-400">
                     No buckets configured
                   </td>
                 </tr>

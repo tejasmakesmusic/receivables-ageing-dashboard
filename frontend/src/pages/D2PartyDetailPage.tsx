@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/api/client";
-import type { PartyResponse, PartyInvoiceRow } from "@/types";
+import type { PartyResponse, PartyInvoiceRow, FollowUpListResponse, ExceptionListResponse } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -144,11 +144,103 @@ function PageSkeleton() {
 // Main page
 // ---------------------------------------------------------------------------
 
+type TabId = "invoices" | "timeline" | "exceptions";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "invoices", label: "Invoices" },
+  { id: "timeline", label: "Follow-up timeline" },
+  { id: "exceptions", label: "Exceptions" },
+];
+
+function FollowUpTimeline({ canonicalId }: { canonicalId: string }) {
+  const { data, isLoading } = useQuery<FollowUpListResponse>({
+    queryKey: ["party-followups", canonicalId],
+    queryFn: () => api.get<FollowUpListResponse>(`/follow-ups?canonical_id=${canonicalId}&page_size=50`),
+  });
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (!data?.items.length)
+    return (
+      <p className="py-8 text-center text-sm text-slate-400">
+        No follow-ups logged for this party.
+      </p>
+    );
+  return (
+    <div className="relative space-y-4 pl-6 before:absolute before:left-2 before:top-0 before:bottom-0 before:w-px before:bg-gray-200">
+      {data.items.map((f) => (
+        <div key={f.id} className="relative">
+          <div className="absolute -left-4 top-1 h-2 w-2 rounded-full bg-blue-400" />
+          <p className="mb-0.5 text-xs text-slate-400">
+            {f.date} · <span className="font-medium">{f.channel}</span> · {f.logged_by_email}
+          </p>
+          <p className="text-sm text-slate-700">{f.notes ?? "—"}</p>
+          {f.next_action_date && (
+            <p className="mt-0.5 text-xs text-blue-600">Next action: {f.next_action_date}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PartyExceptionsTab({ canonicalId }: { canonicalId: string }) {
+  const { data, isLoading } = useQuery<ExceptionListResponse>({
+    queryKey: ["party-exceptions", canonicalId],
+    queryFn: () => api.get<ExceptionListResponse>(`/exceptions?canonical_id=${canonicalId}&page_size=50`),
+  });
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  const items = data?.items ?? [];
+  if (!items.length)
+    return (
+      <p className="py-8 text-center text-sm text-slate-400">No exceptions for this party.</p>
+    );
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="border-b border-gray-100 text-xs text-slate-500">
+          <tr>
+            <th className="py-2 pr-3 text-left font-medium">Invoice</th>
+            <th className="py-2 pr-3 text-left font-medium">Bucket</th>
+            <th className="py-2 pr-3 text-left font-medium">Reason</th>
+            <th className="py-2 pr-3 text-left font-medium">Status</th>
+            <th className="py-2 text-left font-medium">Tagged</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {items.map((ex) => (
+            <tr key={ex.id} className="hover:bg-slate-50">
+              <td className="py-2 pr-3 font-mono text-xs">
+                <Link to={`/invoice/${ex.invoice_id}`} className="text-blue-600 hover:underline">
+                  {ex.invoice_ref}
+                </Link>
+              </td>
+              <td className="py-2 pr-3">
+                <Badge variant="warning">{ex.bucket_type_code}</Badge>
+              </td>
+              <td className="py-2 pr-3 max-w-xs text-xs text-slate-700">{ex.reason}</td>
+              <td className="py-2 pr-3">
+                <Badge
+                  variant={
+                    ex.status === "ACTIVE" ? "info" : ex.status === "RESOLVED" ? "success" : "neutral"
+                  }
+                >
+                  {ex.status}
+                </Badge>
+              </td>
+              <td className="py-2 text-xs text-slate-400">{formatISTDate(ex.tagged_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function D2PartyDetailPage() {
   const { canonical_id } = useParams<{ canonical_id: string }>();
 
   const [sortKey, setSortKey] = useState<SortKey>("outstanding_amount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [tab, setTab] = useState<TabId>("invoices");
 
   const { data, isLoading, error } = useQuery<PartyResponse, ApiError>({
     queryKey: ["party", canonical_id],
@@ -236,7 +328,26 @@ export function D2PartyDetailPage() {
             </div>
           </div>
 
-          {/* Invoices table */}
+          {/* Tab bar */}
+          <div className="flex border-b border-gray-200">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "px-4 py-2 text-sm font-medium transition-colors",
+                  tab === t.id
+                    ? "border-b-2 border-blue-600 text-blue-600"
+                    : "text-slate-500 hover:text-slate-800",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Invoices tab */}
+          {tab === "invoices" && (
           <Card>
             <CardHeader>
               <CardTitle>Invoices ({data.invoices.length})</CardTitle>
@@ -334,6 +445,23 @@ export function D2PartyDetailPage() {
               </div>
             )}
           </Card>
+          )}
+
+          {/* Follow-up timeline tab */}
+          {tab === "timeline" && (
+            <Card>
+              <CardHeader><CardTitle>Follow-up timeline</CardTitle></CardHeader>
+              <FollowUpTimeline canonicalId={canonical_id!} />
+            </Card>
+          )}
+
+          {/* Exceptions tab */}
+          {tab === "exceptions" && (
+            <Card>
+              <CardHeader><CardTitle>Exceptions</CardTitle></CardHeader>
+              <PartyExceptionsTab canonicalId={canonical_id!} />
+            </Card>
+          )}
         </div>
       )}
     </div>

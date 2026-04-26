@@ -734,6 +734,13 @@ describe("S5ExceptionsPage — last follow-up column", () => {
     expect(cell.textContent).not.toBe("—");
   });
 
+  it("shows Amount column header", async () => {
+    renderPage("/exceptions");
+    await waitFor(() => {
+      expect(screen.getByText(/amount/i)).toBeInTheDocument();
+    });
+  });
+
   it("renders dash in follow-up column when no follow-up exists", async () => {
     const rowNoFollowUp = {
       ...MOCK_EXCEPTION_ROW_1,
