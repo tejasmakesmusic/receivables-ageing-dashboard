@@ -1,105 +1,185 @@
 # Runbook
 
-Operational procedures for the Receivables Ageing Dashboard on Railway.
+Operational procedures for the Receivables Ageing Dashboard on Vercel with Neon
+Postgres.
 
-Populated as M1 deploys skeleton → M8 cuts over. Until then, intentionally
-sparse. Sections to fill in:
+## Preview Deploy
 
-- Deploy / rollback (Railway)
-- DB migrations (`uv run alembic upgrade head`, rollback steps)
-- Restoring from Railway backup + weekly `pg_dump`
-- Resend / SendGrid failure mode (digest didn't fire, publish-notif stuck)
-- APScheduler double-fire debug
-- First-time admin seed (CLI)
-- SPF / DKIM / DMARC verification for `emb.global`
-- Google OAuth redirect URI rotation
-- FX rate incident (rate set wrong → consolidated view mis-stated)
-- Reconciliation mismatch (spec §13 consequence #6)
+1. Confirm the working tree contains only intentional changes.
+2. Set Vercel preview environment variables from `.env.example`.
+3. Run local checks:
 
-See also `02_HANDOFF_SPEC.md` §11 (non-functional requirements) and
-§13 (consequences 9–16 — deployment-specific).
-
----
-
-## Partitioning invoice_snapshots
-
-`invoice_snapshots` is partitioned `BY RANGE (as_of_date)` using quarterly
-partitions created per the naming convention:
-
-    invoice_snapshots_<YYYY>_q<N>
-
-where `N = 1` (Jan-Mar), `2` (Apr-Jun), `3` (Jul-Sep), `4` (Oct-Dec).
-
-Two partitions (2026-Q1, 2026-Q2) are seeded by migration `0003_m3_ingestion`.
-Before the first upload whose `as_of_date` falls into a **new** quarter, you
-must create the partition manually (or via a maintenance cron in M6).
-
-### DDL template
-
-```sql
--- Replace YYYY, QN, start_date (inclusive), end_date (exclusive).
-CREATE TABLE invoice_snapshots_YYYY_qN
-    PARTITION OF invoice_snapshots
-    FOR VALUES FROM ('YYYY-MM-DD') TO ('YYYY-MM-DD');
+```bash
+npm run typecheck
+npm run lint
+npm run build
 ```
 
-### Examples
+4. Deploy:
 
-```sql
--- Q3 2026: 2026-07-01 to 2026-09-30 (upper exclusive → 2026-10-01)
-CREATE TABLE invoice_snapshots_2026_q3
-    PARTITION OF invoice_snapshots
-    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-
--- Q4 2026: 2026-10-01 to 2026-12-31 (upper exclusive → 2027-01-01)
-CREATE TABLE invoice_snapshots_2026_q4
-    PARTITION OF invoice_snapshots
-    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-
--- Q1 2027:
-CREATE TABLE invoice_snapshots_2027_q1
-    PARTITION OF invoice_snapshots
-    FOR VALUES FROM ('2027-01-01') TO ('2027-04-01');
+```bash
+vercel deploy
 ```
 
-### Ownership
+5. Smoke-test:
+   - `/api/health`
+   - login / pending flow
+   - `/dashboard`
+   - `/party/:canonical_id`
+   - `/invoice/:invoice_id`
+   - `/follow-ups`
+   - `/api/reports/ageing`
 
-Partition creation is operational work, not application code. Until the
-M6 cron is in place (expected ~2026-06), **Tejaswa (project owner)** must
-manually create the next quarterly partition by the 25th of the month
-BEFORE the new quarter begins.
+## Production Promote
 
-Calendar reminders to set:
-- **2026-06-25** → create 2026-Q3 partition (covers 2026-07-01 to 2026-10-01)
-- **2026-09-25** → create 2026-Q4 partition (covers 2026-10-01 to 2027-01-01)
-- **2026-12-25** → create 2027-Q1 partition
+1. Complete the production launch checklist below.
+2. Verify the preview deployment.
+3. Apply any approved Prisma database migration using the direct Neon DSN.
+4. Promote the verified deployment:
 
-### What happens if you forget
-
-Postgres raises `no partition of relation "invoice_snapshots" found for row`
-on the first INSERT with an `as_of_date` outside all defined partition
-ranges.  If an INSERT arrives for an `as_of_date` outside all existing partition ranges, Postgres raises an error; the request fails with HTTP 500 until the partition is created. M3 Task 2 (`POST /snapshots`) will add a pre-flight check to surface this as an HTTP 422 with a clear message instead of a mid-transaction 500.  Create the partition and
-retry the upload.
-
-Follow-up: M3 Task 2 acceptance criteria includes "reject snapshot upload when no partition exists for the supplied as_of_date; return 422 with code=MISSING_PARTITION".
-
-### Quarter boundary dates
-
-| Quarter | FROM (inclusive) | TO (exclusive) |
-|---------|-----------------|----------------|
-| Q1      | YYYY-01-01      | YYYY-04-01     |
-| Q2      | YYYY-04-01      | YYYY-07-01     |
-| Q3      | YYYY-07-01      | YYYY-10-01     |
-| Q4      | YYYY-10-01      | YYYY+1-01-01   |
-
-### Dropping old partitions
-
-Partitions can be detached and archived independently once the data is
-beyond the retention window:
-
-```sql
--- Detach (keeps the table as a standalone, no FK constraints broken)
-ALTER TABLE invoice_snapshots DETACH PARTITION invoice_snapshots_2026_q1;
--- Archive / backup the detached table, then drop:
-DROP TABLE invoice_snapshots_2026_q1;
+```bash
+vercel promote <deployment-url>
 ```
+
+5. Verify `https://<domain>/api/health` and one authenticated dashboard load.
+
+## Production Launch Checklist
+
+Code-verifiable before launch:
+
+- `npm run typecheck` passes.
+- `npm run lint` passes.
+- `npm test` passes.
+- `npm run build` passes.
+- `npm run prisma:migrate:status` reports no pending migrations.
+- `/api/health` returns 200 in the target deployment.
+- A preview upload stores `snapshots.upload_file_sha256` and an
+  `s3://...` `snapshots.upload_file_path`.
+- `/api/admin/digest/trigger` rejects missing or invalid `CRON_SECRET`.
+- `/api/admin/email-outbox/process` rejects missing or invalid `CRON_SECRET`.
+- Email rules for CFO digest/customer reminders remain inactive until the owner
+  explicitly activates them.
+
+External signoff required:
+
+- Google Workspace OAuth is configured with the production callback URL and
+  restricted to `emb.global`.
+- Vercel production env vars are set from `.env.example`, including
+  `DATABASE_URL`, `DATABASE_URL_DIRECT`, `SESSION_SECRET`, Google OAuth values,
+  `CRON_SECRET`, email values, and object-storage values.
+- Resend sending domain is verified with SPF and DKIM records for `emb.global`.
+- S3/R2-compatible workbook bucket exists, rejects public reads, and accepts
+  uploads from the app credentials.
+- Neon automated backup/PITR settings are confirmed.
+- A restore test has been completed against a non-production database.
+- Sentry or equivalent error monitoring is configured for server errors.
+- Vercel Analytics or equivalent performance/usage monitoring is enabled.
+- Real India Tally and UAE Xero workbooks are available for UAT.
+- Finance signs off two parallel Excel-vs-system snapshot cycles.
+- Analyst/admin/CFO user guide is published.
+- Launch owner has reviewed rollback and incident contacts.
+
+## Rollback
+
+Use Vercel deployment history to promote the last known-good deployment. Roll
+back database migrations only if the migration itself is faulty and the rollback
+has been reviewed.
+
+Before rollback:
+
+1. Freeze new uploads and publish actions.
+2. Record the current deployment URL, commit SHA, and incident reason.
+3. Preserve relevant logs from Vercel, Neon, Resend, and monitoring.
+
+After rollback:
+
+1. Re-run `/api/health`.
+2. Confirm authenticated dashboard load.
+3. Smoke-test upload staging without publishing live finance data.
+4. Confirm queued emails are not duplicated.
+5. Notify finance users of status and workaround.
+
+## Database Backups
+
+Neon provides automated backups/PITR. Keep a portable weekly dump outside this
+repo:
+
+```bash
+pg_dump "$DATABASE_URL_DIRECT" | gzip > receivables-$(date +%F).sql.gz
+```
+
+Store dumps in a controlled backup bucket. Do not commit dumps.
+
+Restore test:
+
+1. Restore the latest backup to a non-production Neon database.
+2. Run `npm run prisma:migrate:status` against the restored database.
+3. Verify sample counts for users, snapshots, invoices, invoice snapshots, and
+   audit logs.
+4. Load `/dashboard`, `/snapshots`, and `/admin/audit-log` against the restored
+   database.
+5. Record restore timestamp, duration, and any data gaps in the launch tracker.
+
+## Scheduler Guardrail
+
+Use Vercel Cron or an external scheduler hitting an authenticated endpoint. Guard
+execution with a Postgres-backed lock so retries cannot send duplicate CFO
+emails.
+
+Configured cron jobs:
+
+- Digest trigger: `30 3 * * 1-5` UTC, equal to 9:00 AM IST Monday-Friday.
+- Email outbox processor: every 5 minutes.
+
+Both cron routes must require `Authorization: Bearer <CRON_SECRET>`.
+
+## Monitoring
+
+Minimum production alerts:
+
+- API error rate exceeds 1% for 10 minutes.
+- Dashboard p95 latency exceeds 3 seconds for 15 minutes.
+- Upload failure rate exceeds 10% in a day.
+- Email failures exceed 5 sends or repeated bounce.
+- Digest or email cron misses a scheduled run.
+- Neon connection pool availability drops below 50%.
+- Reconciliation status is `MISMATCHED` on the latest published snapshot.
+
+## Uploaded Workbook Retention
+
+Vercel function filesystems are ephemeral. Before production cutover, store
+uploaded source workbooks in object storage and keep only hashes/metadata in the
+database unless retention policy says otherwise.
+
+Required production variables:
+
+```bash
+S3_BUCKET=<workbook-evidence-bucket>
+S3_REGION=<aws-region-or-auto-for-r2>
+S3_ENDPOINT=<optional-s3-compatible-endpoint>
+S3_ACCESS_KEY_ID=<access-key>
+S3_SECRET_ACCESS_KEY=<secret-key>
+```
+
+Upload behavior:
+
+1. The upload API computes `upload_file_sha256` before parsing or publishing.
+2. When object storage is configured, the original workbook bytes are written to
+   `workbooks/<entity>/<snapshot_id>/<sha256>-<safe-file-name>`.
+3. The snapshot row stores `upload_file_path` as `s3://<bucket>/<key>` and keeps
+   the SHA-256 in `upload_file_sha256`.
+4. The `snapshot.create` audit entry records the storage URI, storage key, and
+   whether object storage was used.
+5. In production, uploads fail if required object-storage variables are missing.
+   In local development, missing storage falls back to a `local-dev://` reference
+   so parser and staging work can continue without credentials.
+
+Verification:
+
+1. Upload a small test workbook in preview.
+2. Confirm the returned snapshot `file_sha256` matches the database
+   `snapshots.upload_file_sha256`.
+3. Confirm `snapshots.upload_file_path` starts with `s3://`.
+4. Confirm the object exists in the configured bucket at the recorded key.
+5. Remove the test workbook and snapshot only through an approved data-cleanup
+   procedure; never commit uploaded workbooks or database dumps to the repo.

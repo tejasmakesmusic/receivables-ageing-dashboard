@@ -1,0 +1,301 @@
+import { getPrisma } from "@/lib/prisma";
+import type { AuthenticatedUser } from "@/server/core/auth";
+import { role_enum } from "@/generated/prisma/enums";
+
+export interface ExceptionTagRow {
+  id: string;
+  bucket_type_code: string;
+  bucket_type_name: string;
+  reason: string;
+  tagged_at: string;
+  tagged_by_email: string;
+  status: string;
+  expected_resolution_date: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
+}
+
+export interface InvoiceSnapshotHistoryRow {
+  as_of_date: string;
+  snapshot_id: string;
+  outstanding_amount: string;
+  overdue_days: number;
+  bucket: string;
+}
+
+export interface InvoiceDetailResponse {
+  invoice_id: string;
+  invoice_ref: string;
+  invoice_date: string;
+  amount: string;
+  currency: string;
+  due_date: string;
+  credit_days_applied: number;
+  credit_days_source: string;
+  status: "OPEN" | "SETTLED";
+  canonical_id: string;
+  canonical_name: string;
+  entity_code: string;
+  first_seen_snapshot_id: string;
+  settled_snapshot_id: string | null;
+  exception_tags: ExceptionTagRow[];
+  snapshot_history: InvoiceSnapshotHistoryRow[];
+}
+
+export interface InvoiceListRow {
+  invoice_id: string;
+  invoice_ref: string;
+  invoice_date: string;
+  amount: string;
+  currency: string;
+  due_date: string;
+  credit_days_applied: number;
+  status: "OPEN" | "SETTLED";
+  canonical_id: string;
+  canonical_name: string;
+  entity_code: string;
+  overdue_days: number | null;
+  bucket: string | null;
+  active_exception_count: number;
+}
+
+export interface InvoiceListResponse {
+  items: InvoiceListRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface InvoiceListFilters {
+  entity?: string;
+  status?: string;
+  overdue_bucket?: string;
+  has_active_exceptions?: boolean;
+  party_canonical_id?: string;
+  page: number;
+  page_size: number;
+}
+
+type DecimalLike = string | number | null | { toString: () => string };
+
+function formatDecimal(value: DecimalLike): string {
+  if (value == null) return "0.00";
+  if (typeof value === "number") return value.toFixed(2);
+  return value.toString();
+}
+
+function toDateString(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function toDateTime(value: Date): string {
+  return value.toISOString();
+}
+
+export async function getInvoiceDetail(
+  invoiceId: string,
+): Promise<InvoiceDetailResponse | null> {
+  const prisma = getPrisma();
+
+  const invoice = await prisma.invoices.findUnique({
+    where: {
+      id: invoiceId,
+    },
+    include: {
+      parties_canonical: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      entities: {
+        select: {
+          code: true,
+        },
+      },
+      exception_tags: {
+        orderBy: {
+          tagged_at: "desc",
+        },
+        include: {
+          exception_bucket_types: {
+            select: {
+              code: true,
+              name: true,
+            },
+          },
+          users_exception_tags_tagged_byTousers: {
+            select: {
+              email: true,
+            },
+          },
+        },
+      },
+      invoice_snapshots: {
+        orderBy: {
+          as_of_date: "desc",
+        },
+        select: {
+          as_of_date: true,
+          snapshot_id: true,
+          outstanding_amount: true,
+          overdue_days: true,
+          bucket: true,
+        },
+      },
+    },
+  });
+
+  if (!invoice) {
+    return null;
+  }
+
+  const exceptionTags: ExceptionTagRow[] = invoice.exception_tags.map(
+    (tag) => ({
+      id: tag.id,
+      bucket_type_code: tag.exception_bucket_types?.code ?? "",
+      bucket_type_name: tag.exception_bucket_types?.name ?? "",
+      reason: tag.reason,
+      tagged_at: toDateTime(tag.tagged_at),
+      tagged_by_email: tag.users_exception_tags_tagged_byTousers?.email ?? "",
+      status: tag.status,
+      expected_resolution_date: tag.expected_resolution_date
+        ? toDateString(tag.expected_resolution_date)
+        : null,
+      resolved_at: tag.resolved_at ? toDateTime(tag.resolved_at) : null,
+      resolution_note: tag.resolution_note ?? null,
+    }),
+  );
+
+  const snapshotHistory: InvoiceSnapshotHistoryRow[] =
+    invoice.invoice_snapshots.map((snapshot) => ({
+      as_of_date: toDateString(snapshot.as_of_date),
+      snapshot_id: snapshot.snapshot_id,
+      outstanding_amount: formatDecimal(snapshot.outstanding_amount),
+      overdue_days: snapshot.overdue_days,
+      bucket: snapshot.bucket,
+    }));
+
+  return {
+    invoice_id: invoice.id,
+    invoice_ref: invoice.invoice_ref,
+    invoice_date: toDateString(invoice.invoice_date),
+    amount: formatDecimal(invoice.amount),
+    currency: invoice.currency,
+    due_date: toDateString(invoice.due_date),
+    credit_days_applied: invoice.credit_days_applied,
+    credit_days_source: invoice.credit_days_source,
+    status: invoice.status === "SETTLED" ? "SETTLED" : "OPEN",
+    canonical_id: invoice.canonical_id,
+    canonical_name:
+      invoice.parties_canonical?.name ?? String(invoice.canonical_id),
+    entity_code: invoice.entities?.code ?? "UNKNOWN",
+    first_seen_snapshot_id: invoice.first_seen_snapshot_id,
+    settled_snapshot_id: invoice.settled_snapshot_id,
+    exception_tags: exceptionTags,
+    snapshot_history: snapshotHistory,
+  };
+}
+
+export async function getInvoiceEntityId(
+  invoiceId: string,
+): Promise<string | null> {
+  const invoice = await getPrisma().invoices.findUnique({
+    where: { id: invoiceId },
+    select: { entity_id: true },
+  });
+
+  return invoice?.entity_id ?? null;
+}
+
+export async function listInvoices(
+  filters: InvoiceListFilters,
+  currentUser: AuthenticatedUser,
+): Promise<InvoiceListResponse> {
+  const prisma = getPrisma();
+  const where = {
+    ...(currentUser.role === role_enum.ANALYST && currentUser.entityIdScope
+      ? { entity_id: currentUser.entityIdScope }
+      : {}),
+    ...(filters.entity ? { entities: { is: { code: filters.entity } } } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.party_canonical_id
+      ? { canonical_id: filters.party_canonical_id }
+      : {}),
+    ...(filters.has_active_exceptions === true
+      ? { exception_tags: { some: { status: "ACTIVE" } } }
+      : {}),
+    ...(filters.has_active_exceptions === false
+      ? { exception_tags: { none: { status: "ACTIVE" } } }
+      : {}),
+  };
+
+  const [total, invoices] = await Promise.all([
+    prisma.invoices.count({ where }),
+    prisma.invoices.findMany({
+      where,
+      orderBy: { invoice_date: "desc" },
+      skip: (filters.page - 1) * filters.page_size,
+      take: filters.page_size,
+      include: {
+        parties_canonical: { select: { name: true } },
+        entities: { select: { code: true } },
+        invoice_snapshots: {
+          orderBy: { as_of_date: "desc" },
+          take: 1,
+          select: {
+            overdue_days: true,
+            bucket: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  const invoiceIds = invoices.map((invoice) => invoice.id);
+  const exceptionCounts = invoiceIds.length
+    ? await prisma.exception_tags.groupBy({
+        by: ["invoice_id"],
+        where: {
+          invoice_id: { in: invoiceIds },
+          status: "ACTIVE",
+        },
+        _count: { invoice_id: true },
+      })
+    : [];
+  const exceptionCountByInvoice = new Map<string, number>(
+    exceptionCounts.map((row) => [row.invoice_id, row._count.invoice_id]),
+  );
+
+  const items = invoices
+    .map<InvoiceListRow>((invoice) => {
+      const latestSnapshot = invoice.invoice_snapshots.at(0);
+
+      return {
+        invoice_id: invoice.id,
+        invoice_ref: invoice.invoice_ref,
+        invoice_date: toDateString(invoice.invoice_date),
+        amount: formatDecimal(invoice.amount),
+        currency: invoice.currency,
+        due_date: toDateString(invoice.due_date),
+        credit_days_applied: invoice.credit_days_applied,
+        status: invoice.status === "SETTLED" ? "SETTLED" : "OPEN",
+        canonical_id: invoice.canonical_id,
+        canonical_name: invoice.parties_canonical?.name ?? "",
+        entity_code: invoice.entities?.code ?? "",
+        overdue_days: latestSnapshot?.overdue_days ?? null,
+        bucket: latestSnapshot?.bucket ?? null,
+        active_exception_count: exceptionCountByInvoice.get(invoice.id) ?? 0,
+      };
+    })
+    .filter((invoice) =>
+      filters.overdue_bucket ? invoice.bucket === filters.overdue_bucket : true,
+    );
+
+  return {
+    items,
+    total,
+    page: filters.page,
+    page_size: filters.page_size,
+  };
+}

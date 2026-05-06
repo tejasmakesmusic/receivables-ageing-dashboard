@@ -1,68 +1,72 @@
-# Claude Code — Project Guardrails
+# Claude Code - Project Guardrails
 
-## Source of truth
-- `02_HANDOFF_SPEC.md` (or `docs/02_HANDOFF_SPEC.md`) is the locked spec. Treat as law.
-- If the spec and code disagree, the spec wins. Fix the code, don't amend the spec without asking the user.
+## Source Of Truth
 
-## Before every session
-1. Re-read `02_HANDOFF_SPEC.md` section 2 (locked decisions) and section 15 (do-not list).
-2. Check `docs/adr/` for any architecture decisions recorded since spec.
-3. Check current milestone in README.md or ask the user.
+- `02_HANDOFF_SPEC.md` is the locked functional spec. Do not edit it without
+  Tejaswa's explicit approval.
+- ADRs in `docs/adr/` record approved technical deviations from the locked spec.
+- Current runtime stack is Next.js 16, React 19, TypeScript, Prisma 7, Neon,
+  Tailwind CSS 4, Vercel.
 
-## Never do these (from spec §15 + project hygiene)
-- Invent credit period defaults. Entity defaults come from admin config (D8).
-- Auto-backfill historical data (D14).
-- Allow FX rate mutation after creation (D15).
-- Silently skip unparseable rows — stage as PARSE_ERROR.
-- Use Tally's overdue_days or due_on for ageing calc.
-- Let CFO or PENDING roles publish/edit anything.
-- Persist UAE credit period `Amount` column (D20).
-- Send CFO emails before user explicitly flips rule to active.
-- Deploy anywhere other than Railway (D21).
-- Start M4 (dashboard React) before M2 wireframes signed off (D23).
-- Commit `.env`, secrets, OAuth credentials, SMTP keys.
-- Run scheduler on >1 replica without Postgres job store locks.
-- Use `datetime.today()` for ageing — always use snapshot's as_of_date.
+## Before Every Session
 
-## Always do these
-- Pin FX lookup by invoice_date, never upload_date or today.
-- Log to structlog. No print statements.
-- Every mutation writes an audit_log row with before/after JSON.
-- Every parser error stages the row as PARSE_ERROR, never drops.
-- Every publish is gated: zero unmapped parties above 70% confidence + all validation acknowledged + correct role.
-- Every API endpoint: type-hinted request/response with pydantic v2, RBAC enforced via dependency.
-- Every DB migration: reversible, reviewed, has a seed/rollback note if destructive.
-- Every sample-file parser change: re-run parser tests against the 3 files in `backend/tests/fixtures/sample_files/`.
-- Use `uv` for Python dep management. Never `pip install` directly.
-- Use `npm` for frontend (not yarn or pnpm — keep consistent).
+1. Read `02_HANDOFF_SPEC.md` section 2 and section 15.
+2. Check `docs/adr/` for current architecture decisions.
+3. Check `README.md` and `PROGRESS.md` for current implementation state.
 
-## Commit style
-- Conventional commits: `feat(parsers): add Tally GrpBills parser`, `fix(ageing): correct boundary at 0 days`, `chore(deps): bump pandas`.
-- Every commit must pass pre-commit hooks (ruff, black, mypy, prettier).
-- PRs (if using GitHub): linked to milestone, with checklist from spec §12 for that milestone.
+## Never Do These
 
-## Testing discipline
-- Parsers: tests against actual sample files are non-negotiable (spec §12).
-- Ageing calc: boundary tests at 0, 30, 31, 60, 61, 90, 91 days.
-- FX: test rate-boundary, missing rate, multi-period invoice.
-- RBAC: every endpoint has a negative-role test.
-- Ingestion upsert: 3-snapshot test (insert → update → settle).
-- No skipped or xfail tests without an issue link.
+- Commit `.env`, OAuth secrets, SMTP keys, database dumps, or client data.
+- Edit `02_HANDOFF_SPEC.md` without approval.
+- Invent credit-period defaults.
+- Auto-backfill historical data.
+- Mutate FX rows after creation.
+- Use Tally `overdue_days` or `due_on` for ageing.
+- Use wall-clock today for ageing; use snapshot `as_of_date`.
+- Let CFO or PENDING users publish or mutate.
+- Drop parser errors silently.
+- Persist the UAE credit-period `Amount` column.
+- Send CFO emails before the rule is explicitly activated.
 
-## When to stop and ask the user
-- A decision is not in `02_HANDOFF_SPEC.md` section 2 or the consequences list.
-- The spec contradicts itself (flag the contradiction verbatim).
-- A dependency has a CVE or major breaking change.
-- You need to commit a secret or credential.
-- Deployment on Railway hits an issue that changes architecture (e.g., needs Redis where spec didn't).
+## Always Do These
 
-## Data handling
-- Never print raw invoice data in logs. Hash or redact party names in non-debug logs.
-- Sample files in `backend/tests/fixtures/sample_files/` are real client data — do not commit copies outside this path, do not exfiltrate.
+- Use `npm`; do not introduce yarn or pnpm.
+- Keep Prisma client initialization lazy for build-safe Next modules.
+- Enforce RBAC in route handlers.
+- Write `audit_log` rows for every mutation with before/after JSON.
+- Stage parser row errors as `PARSE_ERROR`.
+- Pin FX lookup by `invoice_date`.
+- Keep server code type-safe and avoid leaking raw invoice data to logs.
 
-## User context
-- User is Tejaswa Sharma (Rev Ops / Data Analytics at EMB Global).
-- Prefers structured outputs: tables, schemas, numbered steps.
-- Peer-level direct tone. No filler. Push back when something looks off.
-- Assume SQL + Python + Excel fluency. Don't explain basics.
-- Flag downstream consequences of any design deviation.
+## Verification
+
+Before claiming work is complete, run the relevant commands:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
+
+If tests are added, include them in the verification path.
+
+## Codex Workflow
+
+- Use `codex:codex-rescue` agent for all implementation phases to maximize token efficiency.
+- **Windows spawn fix (applied):** `SpawnedCodexAppServerClient.initialize()` in `app-server.mjs` passes `shell: process.platform === "win32"` so the `codex.cmd` npm shim is found on Windows. `ENOENT` errors now log a clear install hint before calling `handleExit` — the direct implementation path is preserved and not blocked if Codex spawn fails.
+- After each phase, run a `superpowers:code-reviewer` agent for a codebase review before moving to the next phase.
+
+## Architecture Conventions
+
+- Shell components: `src/components/shell/` — `AppShell` is a Server Component; `Sidebar` + `ModeToggle` are `'use client'`.
+- Ageing-bucket badge variants: `current | 1-30 | 31-60 | 61-90 | 90+` — must match bucket keys from ageing report API.
+- Theme tokens: use `var(--token)` in JSX `className` strings; bare `--token` syntax is CSS/`@theme` only.
+
+## Known ESLint Gotchas
+
+- `react-hooks/set-state-in-effect`: fires on `useEffect(() => setMounted(true), [])` — add `eslint-disable-next-line` for the `next-themes` hydration guard; this is intentional.
+
+## next-themes
+
+- Use `resolvedTheme` (not `theme`) for toggle comparisons to handle `system` default correctly.
+- Always wrap theme-dependent render output in a `mounted` guard to prevent hydration mismatch.

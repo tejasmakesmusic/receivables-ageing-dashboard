@@ -1,176 +1,106 @@
 # Receivables Ageing Dashboard
 
-Internal EMB Global platform for AR ageing across India (Tally) + UAE
-(Xero) entities.
+Internal EMB Global AR ageing dashboard for India and UAE receivables.
 
-**Owner:** Tejaswa Sharma — `tejaswa.sharma@emb.global`
-**Status (2026-04-16):** Scaffold complete (Milestone 0). Feature work
-starts on **"start Milestone 1 feature work"** signal.
+## Current Stack
 
----
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Neon PostgreSQL via Prisma 7 and `@prisma/adapter-neon`
+- Tailwind CSS 4 with local shadcn-style primitives
+- ExcelJS for report generation
+- SheetJS for workbook parsing
+- Fuse.js for fuzzy party matching
+- Recharts for dashboard charts
+- Vercel for app compute
 
-## For Claude Code / any implementer (start here)
+## Repo Layout
 
-1. [`CLAUDE.md`](./CLAUDE.md) — guardrails (read EVERY session)
-2. [`02_HANDOFF_SPEC.md`](./02_HANDOFF_SPEC.md) — canonical spec. Treat as law.
-3. [`01_brainstorm_screens_and_features.md`](./01_brainstorm_screens_and_features.md) — rationale / consequence analysis.
-4. [`docs/adr/`](./docs/adr/) — architecture decision records (post-spec).
-
-**Rule:** If a decision isn't covered in the handoff spec (§2 D1–D23 or §13
-consequences), STOP and ask Tejaswa. Do not invent defaults.
-
----
-
-## Repo layout
-
-```
-backend/                FastAPI + SQLAlchemy + Alembic
-  src/app/              application package (main, config, db, api, services, parsers, core, emails)
-  tests/                pytest — unit / integration / fixtures/sample_files (real client data, gitignored)
-  alembic/              migrations (versions empty until M1)
-frontend/               React 18 + Vite + TS + Tailwind + shadcn/ui + TanStack Query + React Router
-wireframes/             HTML+Tailwind mockups (generated in M2, reviewed before M4 React build)
-docs/
-  adr/                  architecture decision records
-  runbook.md            ops runbook (populated incrementally)
-  02_HANDOFF_SPEC.md    symlink to root spec
-CLAUDE.md               guardrails for every Claude Code session
-Dockerfile              multi-stage: frontend-builder → runtime (Railway)
-docker-compose.yml      local dev (postgres + backend + frontend)
-railway.json            Railway build + deploy config
-pyproject.toml          Python deps + ruff / black / mypy / pytest config
-.pre-commit-config.yaml ruff + black + mypy + prettier
-.env.example            all required env vars (copy to .env for local dev)
+```text
+src/                  Next App Router pages, route handlers, UI, server services
+prisma/               Introspected Prisma schema for the existing Neon database
+docs/                 ADRs, runbook, locked spec mirror
+02_HANDOFF_SPEC.md    Locked functional spec. Do not edit without approval.
 ```
 
----
-
-## Prerequisites
-
-| Tool | Version | Install |
-|---|---|---|
-| Python | 3.12 | managed by `uv` |
-| `uv` | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Node | 22 LTS | `nvm install 22 && nvm use 22` |
-| npm | bundled | — |
-| Neon account | — | https://neon.tech — create project `receivables-ageing-dashboard` |
-| Docker | (optional) | only if you want to run backend/frontend in containers |
-
-**Postgres provider:** Neon (see [ADR-0002](./docs/adr/0002-use-neon-for-postgres.md))
-— overrides the "Railway Postgres add-on" clause in spec D21. Railway
-still hosts the FastAPI app.
-
----
-
-## First-time setup
+## Local Setup
 
 ```bash
-# 1. Python deps (uv auto-provisions Python 3.12 if missing)
-uv sync
-
-# 2. Neon — create the DB
-#    a. Sign in at https://neon.tech
-#    b. Create project; copy BOTH connection strings from the dashboard:
-#       - "Pooled connection"  → DATABASE_URL
-#       - "Direct connection"  → DATABASE_URL_DIRECT
-#    c. Append `sslmode=require` if the copied string doesn't already include it
-#    d. Prepend `+psycopg` to the driver:
-#       postgres://...   →   postgresql+psycopg://...
-
-# 3. Copy env + paste in the Neon URLs + secrets
+npm install
 cp .env.example .env
-# edit .env → set DATABASE_URL, DATABASE_URL_DIRECT, SESSION_SECRET
-# (OAuth + email secrets can wait until M1 deploy)
-
-# 4. Run migrations (none in M0 — creates alembic_version table only)
-uv run alembic -c backend/alembic.ini upgrade head
-
-# 5. Install pre-commit hooks
-uv run pre-commit install
-
-# 6. Start backend
-uv run uvicorn app.main:app --reload --app-dir backend/src
-# → http://localhost:8000/health
-
-# 7. Start frontend (in another terminal)
-cd frontend && npm install && npm run dev
-# → http://localhost:5173
+npm run prisma:generate
+npm run dev
 ```
 
----
+Open `http://localhost:3000/auth/google/login`. In local development,
+`AUTH_PROVIDER=development` enables the stub admin flow.
 
-## Verifying the scaffold
+### Fully Local Database
+
+Neon remains the hosted default. For offline local development, run Postgres on
+port `5433`, set `DATABASE_ADAPTER=pg` in ignored `.env.local`, then push and
+seed the Prisma schema:
 
 ```bash
-# Backend
-curl localhost:8000/health
-# → {"status":"ok","env":"development"}
-
-uv run pytest                        # >0 tests pass (smoke test on /health)
-uv run ruff check .                  # clean
-uv run mypy backend/src              # clean
-uv run pre-commit run --all-files    # clean
-
-# Frontend
-cd frontend && npm run typecheck     # clean
-npm run build                        # produces frontend/dist/
+docker run -d --name receivables-postgres -e POSTGRES_USER=receivables -e POSTGRES_PASSWORD=receivables -e POSTGRES_DB=receivables -p 5433:5432 -v receivables-postgres-data:/var/lib/postgresql/data postgres:16-alpine
+npx prisma db push --accept-data-loss
+docker exec -i receivables-postgres psql -U receivables -d receivables < prisma/local-seed.sql
 ```
 
----
+## Verification
 
-## Sample test files (real client data — DO NOT commit)
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
 
-Drop these into [`backend/tests/fixtures/sample_files/`](./backend/tests/fixtures/sample_files/):
+The build command runs Prisma Client generation before `next build`.
 
-| File | Purpose | Used by |
-|---|---|---|
-| `GrpBills.xlsx` | Tally India — sheet `Sundry Debtors` | M2 Tally parser tests |
-| `MANTARAV_Aged_Receivables_Detail.xlsx` | Xero UAE — MANTARAV entity | M2 Xero parser tests |
-| `Credit Period for Accounts - India & UAE.xlsx` | Credit period master (2 sheets) | M2 credit-period parser tests |
+## Deployment
 
-The `.gitignore` at repo root excludes `*.xlsx` from that path. See
-[`backend/tests/fixtures/sample_files/README.md`](./backend/tests/fixtures/sample_files/README.md) for the red-flag protocol if one ever shows up in `git status`.
+Target: Vercel, region `sin1`, backed by Neon Postgres.
 
----
+Set Vercel environment variables from `.env.example`. Use the pooled Neon
+`DATABASE_URL` at runtime and keep `DATABASE_URL_DIRECT` available only for
+explicit database maintenance/migration work.
 
-## Milestone status
+## Production Launch Readiness
 
-| Milestone | Scope | Status |
-|---|---|---|
-| M0 | Repo scaffold + CLAUDE.md + Dockerfile + Railway config | ✅ complete (2026-04-16) |
-| M1 | Foundations: DB schema, entities, fx_rates, users, Google SSO, PENDING flow, deploy skeleton to Railway | ⏳ awaits signal |
-| M2 | Parsers (Tally/Xero/CreditPeriod) + Ageing calc + Wireframes (HTML+Tailwind) | — |
-| M3 | Ingestion pipeline: upload → stage → alias match → publish | — |
-| M4 | Dashboard + drill-downs (D1/D2/D3) — gated on M2 wireframe sign-off | — |
-| M5 | Exceptions + follow-ups (S5/S6) | — |
-| M6 | Admin screens + daily digest + reconciliation (A1–A6) | — |
-| M7 | Hardening + UAT | — |
-| M8 | Production cutover (DNS, Railway Pro, backups, first live snapshot) | — |
+Local code-verifiable gates before promoting a preview:
 
----
+- `npm run typecheck`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `npm run prisma:migrate:status`
+- Upload smoke test stores a workbook URI in `snapshots.upload_file_path` and a
+  SHA-256 in `snapshots.upload_file_sha256`
+- Cron endpoints reject requests without `CRON_SECRET`
+- Email rules remain inactive until Tejaswa explicitly activates them
 
-## Env vars to populate before Railway deploy (M1 day 3)
+External launch gates that require IT, finance, or admin signoff:
 
-From [`.env.example`](./.env.example):
+- Google Workspace OAuth credentials and callback URL configured in Vercel
+- `CRON_SECRET`, `CRON_ACTOR_USER_ID`, `RESEND_API_KEY`,
+  `SMTP_FROM_ADDRESS`, and object-storage variables set in Vercel
+- Resend domain, SPF, and DKIM verified for `emb.global`
+- S3/R2 workbook bucket created and access policy verified
+- Neon backup/restore process documented and tested
+- Sentry or equivalent error monitoring configured
+- Vercel Analytics or equivalent usage/performance monitoring enabled
+- Two-cycle real-data UAT and Excel parallel run signed off
+- Analyst/admin/CFO user guide and support runbook accepted
+- Rollback procedure reviewed with the launch owner
 
-- `DATABASE_URL` + `DATABASE_URL_DIRECT` — from Neon dashboard (see ADR-0002)
-- `SESSION_SECRET` — generate: `python -c "import secrets; print(secrets.token_urlsafe(64))"`
-- `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` — from Google Cloud Console, authorized redirect URI = `https://<railway-domain>/auth/google/callback`
-- `GOOGLE_OAUTH_ALLOWED_DOMAIN=emb.global` (default, keep)
-- `EMAIL_PROVIDER=resend` or `sendgrid` (D22 — decide at first deploy)
-- `RESEND_API_KEY` OR `SENDGRID_API_KEY`
-- `SMTP_FROM_ADDRESS` — discuss subdomain with IT (consequence #14)
+## Non-Negotiable Product Rules
 
-**DNS prerequisite (M1 starts):** get EMB IT to add SPF + DKIM for
-`emb.global` for the chosen email provider. Propagation has lead time.
-
----
-
-## Deployment target
-
-**Railway** (spec D21). Single service — FastAPI serves API + built React
-bundle via `StaticFiles`. Config in [`railway.json`](./railway.json).
-Pro plan required (free tier sleeps — breaks the 9 AM IST digest, see
-consequence #9).
-
-No other hosting. Don't deploy elsewhere without an ADR.
+- Every mutation writes an `audit_log` row with before/after JSON.
+- RBAC is enforced in every route handler, not only in UI.
+- Parser errors are staged as `PARSE_ERROR`; never silently drop rows.
+- Ageing uses the snapshot `as_of_date`, never wall-clock today.
+- FX lookup is pinned by `invoice_date`.
+- CFO and PENDING users do not mutate or publish.
+- Do not commit `.env`, OAuth secrets, SMTP keys, database dumps, or client data.

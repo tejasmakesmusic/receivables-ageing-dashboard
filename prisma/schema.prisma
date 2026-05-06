@@ -1,0 +1,522 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+  engineType      = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model alembic_version {
+  version_num String @id(map: "alembic_version_pkc") @db.VarChar(32)
+}
+
+model apscheduler_jobs {
+  id            String @id @db.VarChar(191)
+  next_run_time Float?
+  job_state     Bytes
+
+  @@index([next_run_time], map: "ix_apscheduler_jobs_next_run_time")
+}
+
+model audit_log {
+  id            String   @id(map: "pk_audit_log") @db.Uuid
+  actor_user_id String?  @db.Uuid
+  action        String   @db.VarChar(128)
+  entity_type   String   @db.VarChar(64)
+  entity_id     String?  @db.Uuid
+  before        Json?
+  after         Json?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  users         users?   @relation(fields: [actor_user_id], references: [id], onUpdate: NoAction, map: "fk_audit_log_actor_user_id_users")
+
+  @@index([created_at], map: "ix_audit_log_created_at")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model credit_period_config {
+  id                String            @id(map: "pk_credit_period_config") @db.Uuid
+  canonical_id      String            @unique(map: "ix_credit_period_config_open", where: raw("(valid_to IS NULL)")) @db.Uuid
+  days              Int
+  reason_note       String?
+  valid_from        DateTime          @db.Date
+  valid_to          DateTime?         @db.Date
+  updated_by        String            @db.Uuid
+  updated_at        DateTime          @default(now()) @db.Timestamptz(6)
+  parties_canonical parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_credit_period_config_canonical_id_parties_canonical")
+  users             users             @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_credit_period_config_updated_by_users")
+
+  @@index([canonical_id, valid_from], map: "ix_credit_period_config_canonical_valid_from")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model email_outbox {
+  id              String     @id(map: "pk_email_outbox") @db.Uuid
+  rule_type       String
+  snapshot_id     String?    @db.Uuid
+  recipients_json Json       @default("[]")
+  subject         String
+  body_html       String
+  status          String     @default("QUEUED")
+  attempts        Int        @default(0)
+  last_error      String?
+  enqueued_at     DateTime   @default(now()) @db.Timestamptz(6)
+  sent_at         DateTime?  @db.Timestamptz(6)
+  snapshots       snapshots? @relation(fields: [snapshot_id], references: [id], onUpdate: NoAction, map: "fk_email_outbox_snapshot_id_snapshots")
+
+  @@index([status, enqueued_at], map: "ix_email_outbox_status_enqueued")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model email_rules {
+  id              String   @id(map: "pk_email_rules") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rule_type       String   @unique(map: "uq_email_rules_rule_type") @db.VarChar(64)
+  recipients_json Json     @default("[]")
+  cron_schedule   String?  @db.VarChar(64)
+  is_active       Boolean  @default(true)
+  entity_filter   String?  @db.VarChar(8)
+  notes           String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_by      String?  @db.Uuid
+  users           users?   @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_email_rules_updated_by_users")
+}
+
+model entities {
+  id                  String              @id(map: "pk_entities") @db.Uuid
+  code                String              @unique(map: "uq_entities_code") @db.VarChar(64)
+  name                String              @db.VarChar(255)
+  country             String              @db.VarChar(2)
+  base_currency       String              @db.VarChar(3)
+  default_credit_days Int?
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime            @default(now()) @db.Timestamptz(6)
+  collection_tasks    collection_tasks[]
+  dispute_cases       dispute_cases[]
+  invoices            invoices[]
+  parties_canonical   parties_canonical[]
+  snapshots           snapshots[]
+  users               users[]
+}
+
+model exception_bucket_types {
+  id             String           @id(map: "pk_exception_bucket_types") @db.Uuid
+  code           String           @unique(map: "uq_exception_bucket_types_code") @db.VarChar(64)
+  name           String
+  description    String?
+  active         Boolean          @default(true)
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  exception_tags exception_tags[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model exception_tags {
+  id                                      String                 @id(map: "pk_exception_tags") @db.Uuid
+  invoice_id                              String                 @db.Uuid
+  bucket_type_id                          String                 @db.Uuid
+  reason                                  String
+  tagged_by                               String                 @db.Uuid
+  tagged_at                               DateTime               @default(now()) @db.Timestamptz(6)
+  expected_resolution_date                DateTime?              @db.Date
+  status                                  String                 @default("ACTIVE")
+  resolved_at                             DateTime?              @db.Timestamptz(6)
+  resolved_by                             String?                @db.Uuid
+  resolution_note                         String?
+  excluded_at                             DateTime?              @db.Timestamptz(6)
+  excluded_reason                         String?                @db.VarChar(64)
+  excluded_reason_note                    String?
+  excluded_by                             String?                @db.Uuid
+  exception_bucket_types                  exception_bucket_types @relation(fields: [bucket_type_id], references: [id], onUpdate: NoAction, map: "fk_exception_tags_bucket_type_id_exception_bucket_types")
+  users_exception_tags_excluded_byTousers users?                 @relation("exception_tags_excluded_byTousers", fields: [excluded_by], references: [id], onUpdate: NoAction, map: "fk_exception_tags_excluded_by_users")
+  invoices                                invoices               @relation(fields: [invoice_id], references: [id], onUpdate: NoAction, map: "fk_exception_tags_invoice_id_invoices")
+  users_exception_tags_resolved_byTousers users?                 @relation("exception_tags_resolved_byTousers", fields: [resolved_by], references: [id], onUpdate: NoAction, map: "fk_exception_tags_resolved_by_users")
+  users_exception_tags_tagged_byTousers   users                  @relation("exception_tags_tagged_byTousers", fields: [tagged_by], references: [id], onUpdate: NoAction, map: "fk_exception_tags_tagged_by_users")
+
+  @@index([invoice_id, status], map: "ix_exception_tags_invoice_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model follow_ups {
+  id                String            @id(map: "pk_follow_ups") @db.Uuid
+  invoice_id        String?           @db.Uuid
+  canonical_id      String            @db.Uuid
+  date              DateTime          @db.Date
+  channel           String
+  contact_person    String?
+  next_action_date  DateTime?         @db.Date
+  notes             String?
+  logged_by         String            @db.Uuid
+  logged_at         DateTime          @default(now()) @db.Timestamptz(6)
+  parties_canonical parties_canonical @relation(fields: [canonical_id], references: [id], onUpdate: NoAction, map: "fk_follow_ups_canonical_id_parties_canonical")
+  invoices          invoices?         @relation(fields: [invoice_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_follow_ups_invoice_id_invoices")
+  users             users             @relation(fields: [logged_by], references: [id], onUpdate: NoAction, map: "fk_follow_ups_logged_by_users")
+
+  @@index([canonical_id], map: "ix_follow_ups_canonical_id")
+  @@index([invoice_id], map: "ix_follow_ups_invoice_id")
+}
+
+model fx_rates {
+  id             String         @id(map: "pk_fx_rates") @db.Uuid
+  from_ccy       String         @db.VarChar(3)
+  to_ccy         String         @db.VarChar(3)
+  rate           Decimal        @db.Decimal(18, 8)
+  effective_from DateTime       @db.Date
+  effective_to   DateTime?      @db.Date
+  source         fx_rate_source
+  created_at     DateTime       @default(now()) @db.Timestamptz(6)
+  created_by     String?        @db.Uuid
+  users          users?         @relation(fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_fx_rates_created_by_users")
+
+  @@unique([from_ccy, to_ccy, effective_from], map: "uq_fx_rate_triple")
+  @@unique([from_ccy, to_ccy], map: "uq_fx_rates_pair_open", where: raw("(effective_to IS NULL)"))
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model invoice_snapshots {
+  id                 BigInt    @default(autoincrement())
+  snapshot_id        String    @db.Uuid
+  invoice_id         String    @db.Uuid
+  as_of_date         DateTime  @db.Date
+  outstanding_amount Decimal   @db.Decimal(18, 2)
+  overdue_days       Int
+  bucket             String
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  invoices           invoices  @relation(fields: [invoice_id], references: [id], onUpdate: NoAction)
+  snapshots          snapshots @relation(fields: [snapshot_id], references: [id], onUpdate: NoAction)
+
+  @@id([id, as_of_date])
+  @@index([as_of_date, bucket], map: "ix_invoice_snapshots_as_of_date_bucket")
+  @@index([snapshot_id], map: "ix_invoice_snapshots_snapshot_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model invoices {
+  id                                                   String              @id(map: "pk_invoices") @db.Uuid
+  entity_id                                            String              @db.Uuid
+  canonical_id                                         String              @db.Uuid
+  invoice_ref                                          String
+  invoice_date                                         DateTime            @db.Date
+  amount                                               Decimal             @db.Decimal(18, 2)
+  currency                                             String              @db.VarChar(3)
+  credit_days_applied                                  Int
+  credit_days_source                                   String              @db.VarChar(16)
+  due_date                                             DateTime            @db.Date
+  status                                               String              @default("OPEN") @db.VarChar(16)
+  first_seen_snapshot_id                               String              @db.Uuid
+  settled_snapshot_id                                  String?             @db.Uuid
+  raw_row_json                                         Json
+  xero_metadata                                        Json?
+  created_at                                           DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                                           DateTime            @default(now()) @db.Timestamptz(6)
+  collection_tasks                                     collection_tasks[]
+  dispute_cases                                        dispute_cases[]
+  exception_tags                                       exception_tags[]
+  follow_ups                                           follow_ups[]
+  invoice_snapshots                                    invoice_snapshots[]
+  promises_to_pay                                      promises_to_pay[]
+  parties_canonical                                    parties_canonical   @relation(fields: [canonical_id], references: [id], onUpdate: NoAction, map: "fk_invoices_canonical_id_parties_canonical")
+  entities                                             entities            @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_invoices_entity_id_entities")
+  snapshots_invoices_first_seen_snapshot_idTosnapshots snapshots           @relation("invoices_first_seen_snapshot_idTosnapshots", fields: [first_seen_snapshot_id], references: [id], onUpdate: NoAction, map: "fk_invoices_first_seen_snapshot_id_snapshots")
+  snapshots_invoices_settled_snapshot_idTosnapshots    snapshots?          @relation("invoices_settled_snapshot_idTosnapshots", fields: [settled_snapshot_id], references: [id], onUpdate: NoAction, map: "fk_invoices_settled_snapshot_id_snapshots")
+
+  @@unique([entity_id, canonical_id, invoice_ref], map: "uq_invoices_entity_canonical_ref")
+  @@index([entity_id], map: "ix_invoices_entity_id")
+  @@index([status], map: "ix_invoices_status_open", where: raw("((status)::text = 'OPEN'::text)"))
+}
+
+model parties_canonical {
+  id                   String                @id(map: "pk_parties_canonical") @db.Uuid
+  entity_id            String                @db.Uuid
+  name                 String
+  notes                String?
+  created_by           String                @db.Uuid
+  created_at           DateTime              @default(now()) @db.Timestamptz(6)
+  collection_tasks     collection_tasks[]
+  credit_period_config credit_period_config?
+  dispute_cases        dispute_cases[]
+  follow_ups           follow_ups[]
+  invoices             invoices[]
+  promises_to_pay      promises_to_pay[]
+  users                users                 @relation(fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_parties_canonical_created_by_users")
+  entities             entities              @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_parties_canonical_entity_id_entities")
+  party_aliases        party_aliases[]
+
+  @@unique([entity_id, name], map: "uq_parties_canonical_entity_name")
+  @@index([entity_id], map: "ix_parties_canonical_entity_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model party_aliases {
+  id                                      String            @id(map: "pk_party_aliases") @db.Uuid
+  canonical_id                            String            @db.Uuid
+  alias_text                              String
+  source                                  String            @db.VarChar(16)
+  confidence                              Decimal?          @db.Decimal(5, 2)
+  confirmed_by                            String?           @db.Uuid
+  confirmed_at                            DateTime?         @db.Timestamptz(6)
+  created_by                              String            @db.Uuid
+  created_at                              DateTime          @default(now()) @db.Timestamptz(6)
+  parties_canonical                       parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_party_aliases_canonical_id_parties_canonical")
+  users_party_aliases_confirmed_byTousers users?            @relation("party_aliases_confirmed_byTousers", fields: [confirmed_by], references: [id], onUpdate: NoAction, map: "fk_party_aliases_confirmed_by_users")
+  users_party_aliases_created_byTousers   users             @relation("party_aliases_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_party_aliases_created_by_users")
+
+  @@unique([alias_text, canonical_id], map: "uq_party_aliases_alias_canonical")
+  @@index([alias_text], map: "ix_party_aliases_alias_text")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model reconciliation_entries {
+  id                         String    @id(map: "pk_reconciliation_entries") @db.Uuid
+  snapshot_id                String    @unique(map: "uq_reconciliation_entries_snapshot_id") @db.Uuid
+  dashboard_ar               Decimal   @db.Decimal(18, 2)
+  exception_bucket_total     Decimal   @db.Decimal(18, 2)
+  exception_bucket_breakdown Json      @default("{}")
+  tally_xero_closing_ar      Decimal?  @db.Decimal(18, 2)
+  delta                      Decimal?  @db.Decimal(18, 2)
+  status                     String    @default("UNRECONCILED")
+  entered_by                 String?   @db.Uuid
+  entered_at                 DateTime? @db.Timestamptz(6)
+  notes                      String?
+  users                      users?    @relation(fields: [entered_by], references: [id], onUpdate: NoAction, map: "fk_reconciliation_entries_entered_by_users")
+  snapshots                  snapshots @relation(fields: [snapshot_id], references: [id], onUpdate: NoAction, map: "fk_reconciliation_entries_snapshot_id_snapshots")
+
+  @@index([snapshot_id], map: "ix_reconciliation_entries_snapshot_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model snapshots {
+  id                                                  String                  @id(map: "pk_snapshots") @db.Uuid
+  entity_id                                           String                  @db.Uuid
+  uploaded_by                                         String                  @db.Uuid
+  upload_file_path                                    String?
+  upload_file_sha256                                  String                  @unique(map: "uq_snapshots_upload_file_sha256") @db.VarChar(64)
+  as_of_date                                          DateTime?               @db.Date
+  source_hint                                         String                  @db.VarChar(32)
+  status                                              String                  @default("STAGED") @db.VarChar(16)
+  row_count                                           Int?
+  total_outstanding                                   Decimal?                @db.Decimal(18, 2)
+  parse_result_json                                   Json?
+  warnings_acknowledged_json                          Json                    @default("[]")
+  uploaded_at                                         DateTime                @default(now()) @db.Timestamptz(6)
+  published_as                                        String?                 @db.VarChar(16)
+  published_at                                        DateTime?               @db.Timestamptz(6)
+  published_by                                        String?                 @db.Uuid
+  discarded_at                                        DateTime?               @db.Timestamptz(6)
+  discarded_by                                        String?                 @db.Uuid
+  created_at                                          DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                          DateTime                @default(now()) @db.Timestamptz(6)
+  staging_overrides_json                              Json                    @default("[]")
+  material_change_flags_json                          Json                    @default("[]")
+  collection_tasks                                    collection_tasks[]
+  email_outbox                                        email_outbox[]
+  invoice_snapshots                                   invoice_snapshots[]
+  invoices_invoices_first_seen_snapshot_idTosnapshots invoices[]              @relation("invoices_first_seen_snapshot_idTosnapshots")
+  invoices_invoices_settled_snapshot_idTosnapshots    invoices[]              @relation("invoices_settled_snapshot_idTosnapshots")
+  reconciliation_entries                              reconciliation_entries?
+  users_snapshots_discarded_byTousers                 users?                  @relation("snapshots_discarded_byTousers", fields: [discarded_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_discarded_by_users")
+  entities                                            entities                @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_snapshots_entity_id_entities")
+  users_snapshots_published_byTousers                 users?                  @relation("snapshots_published_byTousers", fields: [published_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_published_by_users")
+  users_snapshots_uploaded_byTousers                  users                   @relation("snapshots_uploaded_byTousers", fields: [uploaded_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_uploaded_by_users")
+
+  @@index([entity_id, status], map: "ix_snapshots_entity_status")
+}
+
+model users {
+  id                                               String                   @id(map: "pk_users") @db.Uuid
+  email                                            String                   @unique(map: "uq_users_email") @db.VarChar(320)
+  google_sub                                       String?                  @unique(map: "uq_users_google_sub") @db.VarChar(64)
+  name                                             String                   @default("") @db.VarChar(255)
+  role                                             role_enum                @default(PENDING)
+  entity_id_scope                                  String?                  @db.Uuid
+  is_active                                        Boolean                  @default(true)
+  created_at                                       DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at                                       DateTime                 @default(now()) @db.Timestamptz(6)
+  last_login_at                                    DateTime?                @db.Timestamptz(6)
+  audit_log                                        audit_log[]
+  credit_period_config                             credit_period_config[]
+  email_rules                                      email_rules[]
+  exception_tags_exception_tags_excluded_byTousers exception_tags[]         @relation("exception_tags_excluded_byTousers")
+  exception_tags_exception_tags_resolved_byTousers exception_tags[]         @relation("exception_tags_resolved_byTousers")
+  exception_tags_exception_tags_tagged_byTousers   exception_tags[]         @relation("exception_tags_tagged_byTousers")
+  follow_ups                                       follow_ups[]
+  fx_rates                                         fx_rates[]
+  parties_canonical                                parties_canonical[]
+  party_aliases_party_aliases_confirmed_byTousers  party_aliases[]          @relation("party_aliases_confirmed_byTousers")
+  party_aliases_party_aliases_created_byTousers    party_aliases[]          @relation("party_aliases_created_byTousers")
+  reconciliation_entries                                               reconciliation_entries[]
+  snapshots_snapshots_discarded_byTousers                              snapshots[]              @relation("snapshots_discarded_byTousers")
+  snapshots_snapshots_published_byTousers                              snapshots[]              @relation("snapshots_published_byTousers")
+  snapshots_snapshots_uploaded_byTousers                               snapshots[]              @relation("snapshots_uploaded_byTousers")
+  entities                                                             entities?                @relation(fields: [entity_id_scope], references: [id], onUpdate: NoAction, map: "fk_users_entity_id_scope_entities")
+  // Phase 2: operational object relations
+  collection_tasks_collection_tasks_owner_user_idTousers               collection_tasks[]       @relation("collection_tasks_owner_user_idTousers")
+  collection_tasks_collection_tasks_created_byTousers                  collection_tasks[]       @relation("collection_tasks_created_byTousers")
+  promises_to_pay_promises_to_pay_created_byTousers                    promises_to_pay[]        @relation("promises_to_pay_created_byTousers")
+  dispute_cases_dispute_cases_owner_user_idTousers                     dispute_cases[]          @relation("dispute_cases_owner_user_idTousers")
+  dispute_cases_dispute_cases_created_byTousers                        dispute_cases[]          @relation("dispute_cases_created_byTousers")
+  digest_events_digest_events_approved_byTousers                       digest_events[]          @relation("digest_events_approved_byTousers")
+}
+
+enum fx_rate_source {
+  MANUAL
+  API
+}
+
+enum role_enum {
+  ANALYST
+  CFO
+  ADMIN
+  PENDING
+}
+
+// ─── Phase 2: Operational object enums ──────────────────────────────────────
+
+enum collection_task_status {
+  SUGGESTED
+  OPEN
+  IN_PROGRESS
+  SNOOZED
+  DONE
+  DISMISSED
+}
+
+enum collection_task_reason_code {
+  NINETY_PLUS
+  STALE_FOLLOW_UP
+  HIGH_VALUE
+  DISPUTE_OPEN
+  BROKEN_PROMISE
+  MANUAL
+}
+
+enum collection_task_source_type {
+  SUGGESTED
+  MANUAL
+}
+
+enum promise_to_pay_status {
+  OPEN
+  KEPT
+  BROKEN
+  CANCELLED
+}
+
+enum dispute_case_status {
+  OPEN
+  IN_REVIEW
+  WAITING_ON_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum digest_event_state {
+  DRAFT
+  PREVIEWED
+  APPROVED
+  SENT
+  SKIPPED
+  FAILED
+}
+
+// ─── Phase 2: Operational object models ─────────────────────────────────────
+
+model collection_tasks {
+  id                 String                      @id @db.Uuid
+  entity_id          String                      @db.Uuid
+  canonical_id       String                      @db.Uuid
+  invoice_id         String?                     @db.Uuid
+  source_snapshot_id String?                     @db.Uuid
+  source_type        collection_task_source_type
+  reason_code        collection_task_reason_code
+  priority_score     Decimal                     @db.Decimal(10, 2)
+  status             collection_task_status      @default(SUGGESTED)
+  owner_user_id      String?                     @db.Uuid
+  due_date           DateTime?                   @db.Date
+  completed_at       DateTime?                   @db.Timestamptz(6)
+  dismissed_reason   String?
+  created_by         String                      @db.Uuid
+  created_at         DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime                    @default(now()) @db.Timestamptz(6)
+
+  entities                                               entities          @relation(fields: [entity_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_entity_id_entities")
+  parties_canonical                                      parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_canonical_id_parties_canonical")
+  invoices                                               invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_invoice_id_invoices")
+  snapshots                                              snapshots?        @relation(fields: [source_snapshot_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_source_snapshot_id_snapshots")
+  users_collection_tasks_owner_user_idTousers            users?            @relation("collection_tasks_owner_user_idTousers", fields: [owner_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_owner_user_id_users")
+  users_collection_tasks_created_byTousers               users             @relation("collection_tasks_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_created_by_users")
+  promises_to_pay                                        promises_to_pay[]
+
+  @@index([entity_id, status], map: "ix_collection_tasks_entity_status")
+  @@index([canonical_id, status], map: "ix_collection_tasks_canonical_status")
+  @@index([owner_user_id, status], map: "ix_collection_tasks_owner_status")
+}
+
+model promises_to_pay {
+  id                 String                @id @db.Uuid
+  canonical_id       String                @db.Uuid
+  invoice_id         String?               @db.Uuid
+  collection_task_id String?               @db.Uuid
+  amount             Decimal               @db.Decimal(18, 2)
+  currency           String                @db.VarChar(3)
+  promised_date      DateTime              @db.Date
+  status             promise_to_pay_status @default(OPEN)
+  contact_person     String?
+  notes              String?
+  created_by         String                @db.Uuid
+  created_at         DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime              @default(now()) @db.Timestamptz(6)
+
+  parties_canonical                              parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_promises_to_pay_canonical_id_parties_canonical")
+  invoices                                       invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_promises_to_pay_invoice_id_invoices")
+  collection_tasks                               collection_tasks? @relation(fields: [collection_task_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_promises_to_pay_collection_task_id_collection_tasks")
+  users_promises_to_pay_created_byTousers        users             @relation("promises_to_pay_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_promises_to_pay_created_by_users")
+
+  @@index([canonical_id, status], map: "ix_promises_to_pay_canonical_status")
+}
+
+model dispute_cases {
+  id                       String              @id @db.Uuid
+  entity_id                String              @db.Uuid
+  canonical_id             String              @db.Uuid
+  invoice_id               String?             @db.Uuid
+  reason_code              String              @db.VarChar(64)
+  description              String
+  status                   dispute_case_status @default(OPEN)
+  owner_user_id            String?             @db.Uuid
+  expected_resolution_date DateTime?           @db.Date
+  resolved_at              DateTime?           @db.Timestamptz(6)
+  resolution_note          String?
+  created_by               String              @db.Uuid
+  created_at               DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime            @default(now()) @db.Timestamptz(6)
+
+  entities                                            entities          @relation(fields: [entity_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_entity_id_entities")
+  parties_canonical                                   parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_canonical_id_parties_canonical")
+  invoices                                            invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_dispute_cases_invoice_id_invoices")
+  users_dispute_cases_owner_user_idTousers            users?            @relation("dispute_cases_owner_user_idTousers", fields: [owner_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_dispute_cases_owner_user_id_users")
+  users_dispute_cases_created_byTousers               users             @relation("dispute_cases_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_created_by_users")
+
+  @@index([entity_id, status], map: "ix_dispute_cases_entity_status")
+  @@index([canonical_id, status], map: "ix_dispute_cases_canonical_status")
+}
+
+model digest_events {
+  id            String             @id @db.Uuid
+  digest_date   DateTime           @db.Date
+  state         digest_event_state @default(DRAFT)
+  snapshot_ids  Json               @default("[]")
+  payload_json  Json?
+  approved_by   String?            @db.Uuid
+  sent_at       DateTime?          @db.Timestamptz(6)
+  error_message String?
+  created_at    DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime           @default(now()) @db.Timestamptz(6)
+
+  users_digest_events_approved_byTousers users? @relation("digest_events_approved_byTousers", fields: [approved_by], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_digest_events_approved_by_users")
+
+  @@unique([digest_date], map: "uq_digest_events_digest_date")
+  @@index([state, digest_date], map: "ix_digest_events_state_date")
+}

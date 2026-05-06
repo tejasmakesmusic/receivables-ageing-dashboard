@@ -13,11 +13,11 @@ Spec §4.2 validation (pre-amendment) required:
 
 When the M2 Task 3 Xero parser implementer inspected the real `MANTARAV_Aged_Receivables_Detail.xlsx` fixture, they found this rule is not satisfiable on a real Xero "Aged Receivables Detail" export:
 
-| Quantity | Value |
-|---|---|
-| Sum of invoice `Total` across 57 invoice rows | AED 586,642.94 |
-| Grand total row (`col0 = "Total"`, `Total` column value) | AED 0 |
-| Delta | AED 586,642.94 (≈100% off) |
+| Quantity                                                 | Value                      |
+| -------------------------------------------------------- | -------------------------- |
+| Sum of invoice `Total` across 57 invoice rows            | AED 586,642.94             |
+| Grand total row (`col0 = "Total"`, `Total` column value) | AED 0                      |
+| Delta                                                    | AED 586,642.94 (≈100% off) |
 
 The cause: Xero's "Aged Receivables Detail" report groups outstanding amounts into ageing bucket columns (`<1 Month`, `1 Month`, `2 Months`, `3 Months`, `Older`). The grand total row's `Total` column in this report format is the **net overdue** aged amount, not the sum of every invoice's `Total`. Future-dated or not-yet-due invoices contribute to invoice `Total` values but not to the overdue grand total.
 
@@ -30,14 +30,17 @@ Amend spec §4.2 validation: emit `GRAND_TOTAL_MISMATCH` as a **warning** (non-b
 ## Consequences
 
 **Positive:**
+
 - Real Xero uploads can publish. Parser-bug detection comes from classification completeness, not an impossible sum-reconcile.
 - Consistent with Tally parser behavior (ADR-0003 addendum). Single mental model across both formats.
 - The warning itself still surfaces useful analyst context — a large mismatch between invoice totals and Xero's overdue grand total is meaningful hygiene data.
 
 **Negative:**
+
 - We lose the total-reconcile as a hard parser-bug invariant for Xero. A row-drop bug would be caught only by classification (if the dropped rows were previously classified correctly, the dropped rows wouldn't show up). Synthetic parser tests use strict grand-total reconciliation on hand-built files to cover this surface.
 
 **Load-bearing for downstream:**
+
 - M3 ingestion: publish gate (§5) already requires analyst to resolve PARSE_ERROR rows. Xero credit-note rows without `Invoice Number` emerge as PARSE_ERROR — analyst resolves (likely via "Credit note pending" exception tag from D9).
 - M6 A6 reconciliation: `dashboard_ar` for the UAE entity will be gross per-invoice (sum of invoice `Total` values); `tally_xero_closing_ar` will be net (user-entered from Xero's accounts view, not this Aged Receivables report). The expected delta = future-dated invoice totals + any FX movement between invoice date and close date. Reconciliation screen should make this delta explicit.
 
