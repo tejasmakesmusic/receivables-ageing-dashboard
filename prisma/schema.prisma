@@ -336,6 +336,7 @@ model users {
   updated_at                                       DateTime                 @default(now()) @db.Timestamptz(6)
   last_login_at                                    DateTime?                @db.Timestamptz(6)
   audit_log                                        audit_log[]
+  user_saved_views                                 user_saved_views[]
   credit_period_config                             credit_period_config[]
   email_rules                                      email_rules[]
   exception_tags_exception_tags_excluded_byTousers exception_tags[]         @relation("exception_tags_excluded_byTousers")
@@ -358,6 +359,27 @@ model users {
   dispute_cases_dispute_cases_owner_user_idTousers                     dispute_cases[]          @relation("dispute_cases_owner_user_idTousers")
   dispute_cases_dispute_cases_created_byTousers                        dispute_cases[]          @relation("dispute_cases_created_byTousers")
   digest_events_digest_events_approved_byTousers                       digest_events[]          @relation("digest_events_approved_byTousers")
+}
+
+model user_saved_views {
+  view_id         String   @id @default(uuid()) @db.Uuid
+  owner_user_id   String   @db.Uuid
+  surface         String
+  name            String
+  visibility      String   @default("PRIVATE")
+  filters_json    Json
+  sort_json       Json?
+  visible_columns Json?
+  grouping_json   Json?
+  pinned          Boolean  @default(false)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @updatedAt @db.Timestamptz(6)
+
+  owner users @relation(fields: [owner_user_id], references: [id])
+
+  @@index([owner_user_id, surface])
+  @@index([surface, visibility])
+  @@map("user_saved_views")
 }
 
 enum fx_rate_source {
