@@ -21,6 +21,28 @@ describe("command menu data", () => {
     expect(results.every((item) => item.href.startsWith("/"))).toBe(true);
   });
 
+  it("uses canonical Parties and Tasks navigation vocabulary", () => {
+    const items = flattenCommandItems(COMMAND_GROUPS);
+
+    expect(items.find((item) => item.id === "accounts")).toMatchObject({
+      href: "/parties",
+      label: "Parties",
+    });
+    expect(items.find((item) => item.id === "collections")).toMatchObject({
+      href: "/tasks",
+      label: "Tasks",
+    });
+    expect(
+      items
+        .filter((item) => item.id.startsWith("view-"))
+        .map((item) => item.href),
+    ).toEqual([
+      "/tasks?system_view=90_PLUS_HIGH_VALUE",
+      "/tasks?system_view=BROKEN_PTP",
+      "/tasks?system_view=DUE_TODAY",
+    ]);
+  });
+
   it("returns priority commands when the query is blank", () => {
     expect(filterCommandItems("", COMMAND_GROUPS).map((item) => item.id)).toEqual(
       [

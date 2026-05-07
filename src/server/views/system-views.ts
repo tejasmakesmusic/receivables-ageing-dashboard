@@ -12,7 +12,7 @@ export const SYSTEM_VIEW_IDS = [
 ] as const;
 
 export type SystemViewId = (typeof SYSTEM_VIEW_IDS)[number];
-export type SystemViewSurface = "collections" | "invoices";
+export type SystemViewSurface = "tasks" | "invoices";
 
 export interface SystemViewDefinition {
   description: string;
@@ -52,12 +52,12 @@ const SYSTEM_VIEW_DEFINITIONS: readonly (SystemViewDefinition & {
   targets: Partial<Record<SystemViewSurface, SystemViewTarget>>;
 })[] = [
   {
-    description: "Open 90+ invoices and collection work flagged as 90+ or high value.",
+    description: "Open 90+ invoices and tasks flagged as 90+ or high value.",
     id: "90_PLUS_HIGH_VALUE",
     label: "90+ / High value",
-    surfaces: ["collections", "invoices"],
+    surfaces: ["tasks", "invoices"],
     targets: {
-      collections: { path: "/collections" },
+      tasks: { path: "/tasks" },
       invoices: {
         path: "/invoices",
         params: [
@@ -71,9 +71,9 @@ const SYSTEM_VIEW_DEFINITIONS: readonly (SystemViewDefinition & {
     description: "Collection tasks created from broken promise-to-pay records.",
     id: "BROKEN_PTP",
     label: "Broken PTP",
-    surfaces: ["collections"],
+    surfaces: ["tasks"],
     targets: {
-      collections: { path: "/collections" },
+      tasks: { path: "/tasks" },
     },
   },
   {
@@ -101,9 +101,9 @@ const SYSTEM_VIEW_DEFINITIONS: readonly (SystemViewDefinition & {
     description: "Active and snoozed collection tasks due today or earlier.",
     id: "DUE_TODAY",
     label: "Due today",
-    surfaces: ["collections"],
+    surfaces: ["tasks"],
     targets: {
-      collections: { path: "/collections" },
+      tasks: { path: "/tasks" },
     },
   },
 ];

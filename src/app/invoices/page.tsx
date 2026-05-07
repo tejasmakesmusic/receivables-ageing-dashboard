@@ -600,7 +600,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               <div className="space-y-2 p-4">
                 {[
                   ["Log follow-up", `/follow-ups?invoice_id=${selectedInvoice.invoice_id}`],
-                  ["Collection queue", `/collections?canonical_id=${selectedInvoice.canonical_id}`],
+                  ["Task queue", `/tasks?canonical_id=${selectedInvoice.canonical_id}`],
                   ["Promises", `/promises-to-pay?canonical_id=${selectedInvoice.canonical_id}`],
                   ["Exceptions", `/exceptions?invoice_id=${selectedInvoice.invoice_id}`],
                 ].map(([label, href]) => (

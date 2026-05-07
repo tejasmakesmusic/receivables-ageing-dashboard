@@ -3,27 +3,35 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  AlertTriangle,
   BarChart3,
   Building2,
+  CalendarClock,
   FileText,
   Home,
   Inbox,
+  Layers,
   PieChart,
   RefreshCw,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Target,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
-  { href: "/accounts", label: "Accounts", icon: Building2 },
+  { href: "/dashboard", label: "Dashboard", icon: PieChart },
+  { href: "/focus", label: "Focus Queue", icon: Target },
+  { href: "/snapshots", label: "Snapshots", icon: Layers },
   { href: "/invoices", label: "Invoices", icon: FileText },
-  { href: "/collections", label: "Collections", icon: Inbox },
+  { href: "/parties", label: "Parties", icon: Building2 },
+  { href: "/tasks", label: "Tasks", icon: Inbox },
+  { href: "/promises-to-pay", label: "Promises", icon: CalendarClock },
+  { href: "/dispute-cases", label: "Disputes", icon: AlertTriangle },
   { href: "/reconciliation", label: "Reconciliation", icon: RefreshCw },
   { href: "/workflows", label: "Workflows", icon: SlidersHorizontal },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/dashboard", label: "Dashboards", icon: PieChart },
   { href: "/admin", label: "Admin", icon: Settings },
 ] as const;
 

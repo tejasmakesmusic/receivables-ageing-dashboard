@@ -20,7 +20,7 @@ import { requirePageRole } from "@/server/core/page-auth";
 
 export const dynamic = "force-dynamic";
 
-type AccountsPageProps = {
+type PartiesPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -50,12 +50,12 @@ function healthStatus(health: string) {
 }
 
 function viewHref(view: AccountView) {
-  return view === "all" ? "/accounts" : `/accounts?view=${view}`;
+  return view === "all" ? "/parties" : `/parties?view=${view}`;
 }
 
-export default async function AccountsPage({ searchParams }: AccountsPageProps) {
+export default async function PartiesPage({ searchParams }: PartiesPageProps) {
   const user = await requirePageRole(
-    "/accounts",
+    "/parties",
     role_enum.ANALYST,
     role_enum.CFO,
     role_enum.ADMIN,
@@ -70,7 +70,7 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
     if (activeView === "uae") return account.entity_code.toUpperCase() === "UAE";
     return true;
   });
-  const selectedId = first(params.account);
+  const selectedId = first(params.party) ?? first(params.account);
   const selectedAccount =
     visibleAccounts.find((account) => account.canonical_id === selectedId) ??
     visibleAccounts[0] ??
@@ -100,23 +100,23 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
             </Link>
           </>
         }
-        title="Accounts"
+        title="Parties"
       >
-        Manage customer relationships and monitor account health.
+        Manage customer relationships and monitor party health.
       </PageHeader>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Visible Accounts" meta="Current account view" value={visibleAccounts.length} />
-        <MetricCard label="High Risk Accounts" meta="90+ or active exceptions" value={highRiskCount} />
-        <MetricCard label="Watch Accounts" meta="31-90 day exposure" value={watchCount} />
-        <MetricCard label="Open Invoices" meta="Across visible accounts" value={openInvoiceCount} />
+        <MetricCard label="Visible Parties" meta="Current party view" value={visibleAccounts.length} />
+        <MetricCard label="High Risk Parties" meta="90+ or active exceptions" value={highRiskCount} />
+        <MetricCard label="Watch Parties" meta="31-90 day exposure" value={watchCount} />
+        <MetricCard label="Open Invoices" meta="Across visible parties" value={openInvoiceCount} />
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <SavedViewTabs>
             <SavedViewLink active={activeView === "all"} href={viewHref("all")}>
-              All Accounts
+              All Parties
             </SavedViewLink>
             <SavedViewLink active={activeView === "high-risk"} href={viewHref("high-risk")}>High Risk</SavedViewLink>
             <SavedViewLink active={activeView === "watch"} href={viewHref("watch")}>Watch</SavedViewLink>
@@ -128,7 +128,7 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4 text-sm">
               <div>
                 <div className="font-semibold text-[var(--color-text)]">
-                  Account Register
+                  Party Register
                 </div>
                 <div className="text-xs text-[var(--color-text-muted)]">
                   Showing {visibleAccounts.length} of {accounts.length} canonical parties.
@@ -147,7 +147,7 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
               <table className="w-full min-w-[980px] text-sm">
                 <thead className="bg-[var(--color-bg-subtle)] text-left text-xs font-medium text-[var(--color-text-muted)]">
                   <tr>
-                    <th className="px-4 py-3">Account Name</th>
+                    <th className="px-4 py-3">Party Name</th>
                     <th className="px-4 py-3">Entity</th>
                     <th className="px-4 py-3 text-right">Total Outstanding</th>
                     <th className="px-4 py-3 text-right">Overdue</th>
@@ -169,8 +169,8 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
                             Upload workbook
                           </Link>
                         }
-                        description="Change the saved view or upload a workbook to expand the visible account set."
-                        title="No accounts match this view"
+                        description="Change the saved view or upload a workbook to expand the visible party set."
+                        title="No parties match this view"
                       />
                     </EmptyTableRow>
                   ) : (
@@ -192,7 +192,7 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
                             <div>
                               <Link
                                 className="font-medium text-[var(--color-text)] hover:text-[var(--color-accent)]"
-                                href={`/accounts?account=${account.canonical_id}`}
+                                href={`/parties?party=${account.canonical_id}`}
                               >
                                 {account.canonical_name}
                               </Link>
@@ -234,7 +234,7 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
                             className="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-accent)]"
                             href={`/party/${account.canonical_id}`}
                           >
-                            View Account
+                            View Party
                             <ArrowRight className="h-3.5 w-3.5" />
                           </Link>
                         </td>
@@ -249,10 +249,10 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
 
         <RightRail>
           <Panel>
-            <PanelHeader title="Account Preview">
+            <PanelHeader title="Party Preview">
               {selectedAccount
                 ? selectedAccount.canonical_id.slice(0, 8)
-                : "No account selected"}
+                : "No party selected"}
             </PanelHeader>
             {selectedAccount ? (
               <div className="space-y-4 p-4">
@@ -290,22 +290,22 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
                   </div>
                 </div>
                 <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-subtle)] p-3 text-sm text-[var(--color-text-muted)]">
-                  Open the account detail page for invoice, follow-up, promise,
+                  Open the party detail page for invoice, follow-up, promise,
                   and dispute context tied to this canonical party.
                 </div>
                 <Link
                   className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-accent)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
                   href={`/party/${selectedAccount.canonical_id}`}
                 >
-                  View Full Account
+                  View Full Party
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
             ) : (
               <div className="p-4">
                 <EmptyState
-                  description="Select an account row to preview outstanding exposure and next actions."
-                  title="No account selected"
+                  description="Select a party row to preview outstanding exposure and next actions."
+                  title="No party selected"
                 />
               </div>
             )}

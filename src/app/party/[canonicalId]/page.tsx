@@ -112,7 +112,7 @@ export default async function PartyDetailPage({
                   ? "pointer-events-none border-[var(--color-border)] bg-[var(--color-bg-muted)] text-[var(--color-text-subtle)]"
                   : "border-red-300 bg-white text-red-600 hover:bg-red-50",
               ].join(" ")}
-              href={`/collections?canonical_id=${party.canonical_id}`}
+              href={`/tasks?canonical_id=${party.canonical_id}`}
             >
               <ShieldAlert className="h-4 w-4" />
               Escalate
@@ -122,10 +122,10 @@ export default async function PartyDetailPage({
         eyebrow={
           <Link
             className="inline-flex items-center gap-1 text-[var(--color-accent)]"
-            href="/accounts"
+            href="/parties"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Accounts
+            Back to Parties
           </Link>
         }
         title={party.canonical_name}
@@ -186,7 +186,7 @@ export default async function PartyDetailPage({
           ["Activity", `/follow-ups?canonical_id=${party.canonical_id}`],
           ["Promises", `/promises-to-pay?canonical_id=${party.canonical_id}`],
           ["Disputes", `/dispute-cases?canonical_id=${party.canonical_id}`],
-          ["Collections", `/collections?canonical_id=${party.canonical_id}`],
+          ["Tasks", `/tasks?canonical_id=${party.canonical_id}`],
         ].map(([label, href]) => (
           <Link
             className="pb-3 text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
@@ -383,7 +383,7 @@ export default async function PartyDetailPage({
               </Link>
               <Link
                 className="inline-flex h-10 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-bg-muted)]"
-                href={`/collections?canonical_id=${party.canonical_id}`}
+                href={`/tasks?canonical_id=${party.canonical_id}`}
               >
                 Queue
               </Link>

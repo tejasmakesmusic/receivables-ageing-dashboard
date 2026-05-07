@@ -27,7 +27,7 @@ describe("system views", () => {
     expect(getInvoiceSystemViewParams("BROKEN_PTP")).toBeNull();
   });
 
-  it("maps collections views to server-side collection task filters", () => {
+  it("maps task views to server-side collection task filters", () => {
     const today = new Date("2026-05-06T00:00:00.000Z");
 
     expect(
@@ -52,8 +52,8 @@ describe("system views", () => {
     expect(buildSystemViewHref("90_PLUS_HIGH_VALUE", "invoices")).toBe(
       "/invoices?system_view=90_PLUS_HIGH_VALUE&status=OPEN&overdue_bucket=90_PLUS",
     );
-    expect(buildSystemViewHref("BROKEN_PTP", "collections")).toBe(
-      "/collections?system_view=BROKEN_PTP",
+    expect(buildSystemViewHref("BROKEN_PTP", "tasks")).toBe(
+      "/tasks?system_view=BROKEN_PTP",
     );
     expect(
       buildSystemViewHref("RECONCILIATION_MISMATCHES", "invoices"),
@@ -61,7 +61,7 @@ describe("system views", () => {
   });
 
   it("returns compact tabs for relevant pages without custom persisted views", () => {
-    expect(getSystemViewsForSurface("collections").map((view) => view.id)).toEqual([
+    expect(getSystemViewsForSurface("tasks").map((view) => view.id)).toEqual([
       "90_PLUS_HIGH_VALUE",
       "BROKEN_PTP",
       "DUE_TODAY",

@@ -135,7 +135,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
         }
         title="Reports"
       >
-        Executive AR performance, ageing exposure, risk accounts, and exports.
+        Executive AR performance, ageing exposure, risk parties, and exports.
       </PageHeader>
 
       <Panel>
@@ -240,7 +240,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
               </Panel>
 
               <Panel>
-                <PanelHeader title="Top Risk Accounts">
+                <PanelHeader title="Top Risk Parties">
                   Ordered by outstanding exposure.
                 </PanelHeader>
                 <TableShell>
@@ -258,8 +258,8 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                       {dashboard.top_parties.length === 0 ? (
                         <EmptyTableRow colSpan={5}>
                           <EmptyState
-                            description="Risk accounts appear after open receivables are present in the published snapshot."
-                            title="No risk accounts"
+                            description="Risk parties appear after open receivables are present in the published snapshot."
+                            title="No risk parties"
                           />
                         </EmptyTableRow>
                       ) : (

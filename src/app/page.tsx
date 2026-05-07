@@ -105,7 +105,7 @@ export default async function HomePage() {
         <MetricCard
           accent={<StatusTag status="90_PLUS" />}
           label="90+ Parties"
-          meta="Accounts needing senior attention"
+          meta="Parties needing senior attention"
           value={dashboard?.kpis.parties_with_90plus_count ?? "-"}
         />
         <MetricCard
@@ -136,7 +136,7 @@ export default async function HomePage() {
               }
               title="Prioritized Focus Queue"
             >
-              Accounts and invoices prioritized by risk and impact.
+              Parties and invoices prioritized by risk and impact.
             </PanelHeader>
 
             {home.focus_items.length === 0 ? (
@@ -303,7 +303,7 @@ export default async function HomePage() {
 
             <Panel className="p-4">
               <h2 className="text-sm font-semibold text-[var(--color-text)]">
-                Top Overdue Accounts
+                Top Overdue Parties
               </h2>
               {dashboard?.top_parties.length ? (
                 <ol className="mt-4 space-y-3 text-sm">
@@ -326,7 +326,7 @@ export default async function HomePage() {
                 </ol>
               ) : (
                 <EmptyState
-                  description="Top overdue accounts appear after a published snapshot is available."
+                  description="Top overdue parties appear after a published snapshot is available."
                   title="No overdue account ranking"
                 />
               )}
@@ -407,7 +407,7 @@ export default async function HomePage() {
             </h2>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {[
-                { href: "/collections", label: "New Task", icon: Plus },
+                { href: "/tasks", label: "New Task", icon: Plus },
                 { href: "/follow-ups", label: "Log Follow-up", icon: Phone },
                 { href: "/promises-to-pay", label: "Create Promise", icon: CalendarCheck },
                 { href: "/reconciliation", label: "Review Tie-Out", icon: Mail },

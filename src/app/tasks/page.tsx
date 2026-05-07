@@ -127,7 +127,7 @@ function collectionHref(params: Record<string, string | number | undefined>) {
   }
 
   const query = search.toString();
-  return query ? `/collections?${query}` : "/collections";
+  return query ? `/tasks?${query}` : "/tasks";
 }
 
 function appendTab(href: string, tab: CollectionsTab) {
@@ -172,7 +172,7 @@ function isDue(task: CollectionTaskView, now: Date) {
 export default async function CollectionsPage({ searchParams }: PageProps) {
   const raw = await searchParams;
   const user = await requirePageRole(
-    "/collections",
+    "/tasks",
     role_enum.ANALYST,
     role_enum.CFO,
     role_enum.ADMIN,
@@ -220,7 +220,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
       : tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
   const now = new Date();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const systemViews = getSystemViewsForSurface("collections");
+  const systemViews = getSystemViewsForSurface("tasks");
   const closedCount = tasks.filter((task) =>
     ["DONE", "DISMISSED"].includes(task.status),
   ).length;
@@ -255,21 +255,21 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
           <>
             <Link
               className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
-              href="/collections?tab=calendar"
+              href="/tasks?tab=calendar"
             >
               <CalendarDays className="h-4 w-4" />
               Calendar
             </Link>
             <Link
               className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
-              href="/collections?tab=queue"
+              href="/tasks?tab=queue"
             >
               <ListChecks className="h-4 w-4" />
               Queue
             </Link>
           </>
         }
-        title="Collections"
+        title="Tasks"
       >
         Manage follow-ups, promises, disputes, and task ownership from one
         queue.
@@ -310,7 +310,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
                 <TabIcon className="h-4 w-4 text-[var(--color-accent)]" />
-                Collection Workspace
+                Task Workspace
               </div>
               <div className="flex flex-wrap gap-2">
                 <Link
@@ -334,7 +334,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
                         ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                         : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)]",
                     ].join(" ")}
-                    href={appendTab(buildSystemViewHref(view.id, "collections"), activeTab)}
+                    href={appendTab(buildSystemViewHref(view.id, "tasks"), activeTab)}
                     key={view.id}
                     title={view.description}
                   >
@@ -344,7 +344,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
               </div>
             </div>
 
-            <form action="/collections" className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[180px_200px_160px_auto]">
+            <form action="/tasks" className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[180px_200px_160px_auto]">
               <input name="tab" type="hidden" value={activeTab} />
               <select
                 className="h-10 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)]"
@@ -598,7 +598,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
 
         <RightRail>
           <Panel>
-            <PanelHeader title="Collection Progress">
+            <PanelHeader title="Task Progress">
               Current filtered page.
             </PanelHeader>
             <div className="flex items-center gap-5 p-4">

@@ -63,11 +63,11 @@ export function buildHomeNudges({
   if (highRiskItems > 0) {
     nudges.push({
       tone: "warning",
-      title: `${highRiskItems} high-risk account${
-        highRiskItems === 1 ? "" : "s"
+      title: `${highRiskItems} high-risk ${
+        highRiskItems === 1 ? "party" : "parties"
       } ${highRiskItems === 1 ? "needs" : "need"} attention`,
       description: "Prioritize 90+ and high-value receivables first.",
-      href: "/collections?system_view=90-plus-high-value",
+      href: "/tasks?system_view=90_PLUS_HIGH_VALUE",
     });
   }
 

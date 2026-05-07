@@ -91,7 +91,7 @@ export function TaskTable({
               >
                 <td className="px-[var(--spacing-4)] py-[var(--spacing-3)]">
                   <Link
-                    href={`/collections?${params.toString()}`}
+                    href={`/tasks?${params.toString()}`}
                     className="text-[var(--color-accent)] hover:underline"
                   >
                     {REASON_LABEL[task.reason_code] ?? task.reason_code}

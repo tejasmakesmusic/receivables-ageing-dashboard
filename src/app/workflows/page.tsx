@@ -48,14 +48,14 @@ const dailyFlow = [
     href: "/",
     icon: Inbox,
     label: "Review Focus Queue",
-    meta: "Prioritized accounts and invoices",
+    meta: "Prioritized parties and invoices",
     status: "FOLLOW_UP_DUE",
   },
   {
-    href: "/collections",
+    href: "/tasks",
     icon: Send,
     label: "Take Action",
-    meta: "Move tasks through collections",
+    meta: "Move collection tasks through the queue",
     status: "TASK_IN_PROGRESS",
   },
   {
@@ -66,7 +66,7 @@ const dailyFlow = [
     status: "PTP_OPEN",
   },
   {
-    href: "/collections",
+    href: "/tasks",
     icon: Flag,
     label: "Escalate If Needed",
     meta: "Review high-risk work",
@@ -76,14 +76,14 @@ const dailyFlow = [
 
 const lifecycle = [
   {
-    href: "/accounts",
+    href: "/parties",
     icon: ShieldCheck,
     label: "Identify & Prioritize",
     meta: "Score by ageing and exceptions",
     status: "READ_ONLY",
   },
   {
-    href: "/collections",
+    href: "/tasks",
     icon: Bell,
     label: "Engage",
     meta: "Phone, email, and follow-up tasks",
@@ -97,7 +97,7 @@ const lifecycle = [
     status: "PTP_OPEN",
   },
   {
-    href: "/collections?tab=calendar",
+    href: "/tasks?tab=calendar",
     icon: CheckCircle2,
     label: "Monitor & Follow Up",
     meta: "Due dates and scheduled work",
@@ -239,7 +239,7 @@ export default async function WorkflowsPage() {
           <>
             <Link
               className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
-              href="/collections"
+              href="/tasks"
             >
               <Inbox className="h-4 w-4" />
               Collection Queue
@@ -255,7 +255,7 @@ export default async function WorkflowsPage() {
         }
         title="Core Workflows"
       >
-        End-to-end receivables paths across ageing, collections, and close.
+        End-to-end receivables paths across ageing, tasks, and close.
       </PageHeader>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -263,14 +263,14 @@ export default async function WorkflowsPage() {
           <WorkflowBand
             items={dailyFlow}
             number={1}
-            subtitle="Drive daily execution and move accounts forward."
+            subtitle="Drive daily execution and move parties forward."
             title="Daily Analyst Flow"
           />
           <WorkflowBand
             items={lifecycle}
             number={2}
-            subtitle="Manage accounts through structured stages to resolution."
-            title="Collections Lifecycle"
+            subtitle="Manage parties through structured stages to resolution."
+            title="Task Lifecycle"
           />
           <WorkflowBand
             items={closeFlow}
@@ -287,9 +287,9 @@ export default async function WorkflowsPage() {
             </PanelHeader>
             <div className="divide-y divide-[var(--color-border)]">
               {[
-                ["Accounts", "/accounts"],
+                ["Parties", "/parties"],
                 ["Invoices", "/invoices"],
-                ["Collections", "/collections"],
+                ["Tasks", "/tasks"],
                 ["Reconciliation", "/reconciliation"],
                 ["Reports", "/reports"],
                 ["Admin", "/admin"],

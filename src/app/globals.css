@@ -5,17 +5,20 @@
     Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
 
+  /* PRD §9.4 neutral-light foundation (Twenty-inspired). */
   --color-bg: #ffffff;
-  --color-bg-subtle: #fcfbf9;
-  --color-bg-muted: #f5f2ee;
+  --color-bg-subtle: #fcfcfc;
+  --color-bg-muted: #f1f1f1;
   --color-surface: #ffffff;
 
-  --color-border: #ebe7df;
-  --color-border-strong: #d8d2c8;
+  --color-border: #f1f1f1;
+  --color-border-medium: #ebebeb;
+  --color-border-strong: #d6d6d6;
 
-  --color-text: #111827;
-  --color-text-muted: #5f6b7a;
-  --color-text-subtle: #8a95a3;
+  --color-text: #333333;
+  --color-text-muted: #666666;
+  --color-text-subtle: #999999;
+  --color-text-disabled: #b3b3b3;
 
   --color-accent: #2563eb;
   --color-accent-soft: #eaf1ff;
@@ -29,9 +32,9 @@
   --color-danger-soft: #fff0f0;
   --color-violet-soft: #f3edff;
 
-  --color-status-neutral-bg: #f7f5f2;
-  --color-status-neutral-border: #e7e2da;
-  --color-status-neutral-text: #5f6b7a;
+  --color-status-neutral-bg: #f1f1f1;
+  --color-status-neutral-border: #ebebeb;
+  --color-status-neutral-text: #666666;
   --color-status-info-bg: #eaf1ff;
   --color-status-info-border: #c8dcff;
   --color-status-info-text: #1d4ed8;
@@ -68,7 +71,7 @@
   }
 
   html {
-    background-color: var(--color-bg-subtle);
+    background-color: var(--color-bg);
   }
 
   body {

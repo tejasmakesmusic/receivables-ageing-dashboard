@@ -237,7 +237,7 @@ function mapTask(row: {
       row.reason_code === collection_task_reason_code.NINETY_PLUS
         ? `90+ collection task at priority ${Math.round(priority)}`
         : `Collection task due ${dateKey(row.due_date) ?? "without a due date"}`,
-    href: `/collections?task=${encodeURIComponent(row.id)}`,
+    href: `/tasks?task=${encodeURIComponent(row.id)}`,
     due_date: dateKey(row.due_date),
     status: `TASK_${row.status}`,
   };

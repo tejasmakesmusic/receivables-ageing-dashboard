@@ -25,7 +25,7 @@ describe("home command center helpers", () => {
     });
 
     expect(nudges.map((nudge) => nudge.title)).toEqual([
-      "3 high-risk accounts need attention",
+      "3 high-risk parties need attention",
       "2 promises to pay need review",
       "1 reconciliation item needs review",
     ]);
