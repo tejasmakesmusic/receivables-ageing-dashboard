@@ -1,16 +1,16 @@
 import Link from "next/link";
 import {
+  ArrowRight,
   CalendarDays,
   CheckCircle2,
-  Clock3,
   Filter,
   KanbanSquare,
   ListChecks,
-  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EmptyTableRow, TableShell } from "@/components/ui/data-table";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { ProgressBar } from "@/components/ui/mini-chart";
+import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
   EmptyState,
@@ -86,7 +86,7 @@ function first(value: string | string[] | undefined): string | undefined {
 }
 
 function parseTab(value: string | undefined): CollectionsTab {
-  return value === "calendar" || value === "queue" ? value : "board";
+  return value === "board" || value === "calendar" ? value : "queue";
 }
 
 function toTaskView(task: {
@@ -152,6 +152,19 @@ function taskStatusTag(status: string) {
   return `TASK_${status}`;
 }
 
+function taskSignalTag(task: CollectionTaskView) {
+  if (task.reason_code === "NINETY_PLUS") return { status: "90_PLUS" };
+  if (task.reason_code === "BROKEN_PROMISE") return { status: "PTP_BROKEN" };
+  if (task.reason_code === "DISPUTE_OPEN") return { status: "DISPUTE_OPEN" };
+  if (task.reason_code === "STALE_FOLLOW_UP") {
+    return { status: "FOLLOW_UP_DUE" };
+  }
+  if (task.reason_code === "HIGH_VALUE") {
+    return { label: "High Value", status: "61_90" };
+  }
+  return { label: "Manual", status: "NO_DATA" };
+}
+
 function columnAccent(columnId: string) {
   if (columnId === "promise-to-pay") return "var(--color-success)";
   if (columnId === "escalated") return "var(--color-danger)";
@@ -164,9 +177,131 @@ function formatOwner(ownerUserId: string | null) {
   return ownerUserId ? `${ownerUserId.slice(0, 8)}...` : "Unassigned";
 }
 
+function formatTaskDueDate(task: CollectionTaskView) {
+  if (!task.due_date) return "No date";
+  return task.status === "SNOOZED"
+    ? `Snoozed until ${formatDate(task.due_date)}`
+    : formatDate(task.due_date);
+}
+
 function isDue(task: CollectionTaskView, now: Date) {
   if (!task.due_date) return false;
   return new Date(task.due_date).getTime() <= now.getTime();
+}
+
+function filterCount(params: Record<string, string | number | undefined>) {
+  return [
+    params.canonical_id,
+    params.entity_id,
+    params.mine,
+    params.owner_user_id,
+    params.reason_code,
+    params.status,
+    params.system_view,
+  ].filter(Boolean).length;
+}
+
+function followUpHref(task: CollectionTaskView) {
+  const search = new URLSearchParams({ canonical_id: task.canonical_id });
+
+  if (task.invoice_id) {
+    search.set("invoice_id", task.invoice_id);
+  }
+
+  return `/follow-ups?${search.toString()}`;
+}
+
+function taskColumns(): DataTableColumn<CollectionTaskView>[] {
+  return [
+    {
+      key: "task",
+      header: "Task",
+      sticky: "left",
+      width: "min-w-[220px]",
+      cell: (task) => (
+        <div>
+          <div className="font-medium text-[var(--color-text)]">
+            {reasonLabel(task.reason_code)}
+          </div>
+          <div className="mt-1 font-mono text-xs text-[var(--color-text-muted)]">
+            Task {task.id.slice(0, 8)}
+            {task.invoice_id ? ` | Invoice ${task.invoice_id.slice(0, 8)}` : ""}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "party",
+      header: "Party",
+      sticky: "left",
+      width: "min-w-[160px]",
+      cell: (task) => (
+        <span className="font-mono text-xs text-[var(--color-text-muted)]">
+          {/* TODO: Replace canonical ID fragments with party display names when the tasks read model exposes them. */}
+          {task.canonical_id.slice(0, 8)}
+        </span>
+      ),
+    },
+    {
+      key: "ageing_signal",
+      header: "Ageing / Signal",
+      cell: (task) => {
+        const signal = taskSignalTag(task);
+        return <StatusTag label={signal.label} status={signal.status} />;
+      },
+    },
+    {
+      key: "priority",
+      header: "Priority",
+      align: "right",
+      cell: (task) => (
+        <span className="font-semibold tabular-nums">
+          {task.priority_score.toFixed(0)}
+        </span>
+      ),
+    },
+    {
+      key: "owner",
+      header: "Assigned User",
+      cell: (task) => (
+        <span className="text-[var(--color-text-muted)]">
+          {formatOwner(task.owner_user_id)}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (task) => <StatusTag status={taskStatusTag(task.status)} />,
+    },
+    {
+      key: "reason_code",
+      header: "Reason Code",
+      cell: (task) => (
+        <span className="text-[var(--color-text-muted)]">
+          {reasonLabel(task.reason_code)}
+        </span>
+      ),
+    },
+    {
+      key: "due",
+      header: "Snooze / Due",
+      cell: (task) => (
+        <span className="text-[var(--color-text-muted)]">
+          {formatTaskDueDate(task)}
+        </span>
+      ),
+    },
+    {
+      key: "created",
+      header: "Created",
+      cell: (task) => (
+        <span className="text-[var(--color-text-muted)]">
+          {formatDate(task.created_at)}
+        </span>
+      ),
+    },
+  ];
 }
 
 export default async function CollectionsPage({ searchParams }: PageProps) {
@@ -234,6 +369,8 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
   const completionPercent =
     tasks.length > 0 ? Math.round((closedCount / tasks.length) * 100) : 0;
   const baseParams = {
+    canonical_id: first(raw.canonical_id),
+    entity_id: first(raw.entity_id),
     mine: first(raw.mine),
     owner_user_id: first(raw.owner_user_id),
     reason_code: first(raw.reason_code),
@@ -241,6 +378,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
     system_view: systemViewId ?? undefined,
     tab: activeTab,
   };
+  const activeFilterCount = filterCount(baseParams);
   const calendarTasks = [...tasks]
     .filter((task) => task.due_date)
     .sort((a, b) =>
@@ -506,70 +644,41 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
               <PanelHeader title="Queue">
                 Dense task list for scanning and review.
               </PanelHeader>
-              <TableShell>
-                <table className="w-full min-w-[920px] text-sm">
-                  <thead className="bg-[var(--color-bg-subtle)] text-left text-xs font-medium text-[var(--color-text-muted)]">
-                    <tr>
-                      <th className="px-4 py-3">Reason</th>
-                      <th className="px-4 py-3">Party</th>
-                      <th className="px-4 py-3">Invoice</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Priority</th>
-                      <th className="px-4 py-3">Due</th>
-                      <th className="px-4 py-3">Owner</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--color-border)]">
-                    {tasks.length === 0 ? (
-                      <EmptyTableRow colSpan={7}>
-                        <EmptyState
-                          description="No collection tasks match this view."
-                          title="Queue is clear"
-                        />
-                      </EmptyTableRow>
-                    ) : (
-                      tasks.map((task) => (
-                        <tr
-                          className={[
-                            "hover:bg-[var(--color-bg-subtle)]",
-                            selectedTask?.id === task.id
-                              ? "bg-[var(--color-accent-soft)]"
-                              : "",
-                          ].join(" ")}
-                          key={task.id}
-                        >
-                          <td className="px-4 py-3">
-                            <Link
-                              className="font-medium text-[var(--color-accent)]"
-                              href={taskHref(task.id, baseParams)}
-                            >
-                              {reasonLabel(task.reason_code)}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-muted)]">
-                            {task.canonical_id.slice(0, 8)}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-muted)]">
-                            {task.invoice_id ? task.invoice_id.slice(0, 8) : "-"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusTag status={taskStatusTag(task.status)} />
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold">
-                            {task.priority_score.toFixed(0)}
-                          </td>
-                          <td className="px-4 py-3 text-[var(--color-text-muted)]">
-                            {task.due_date ? formatDate(task.due_date) : "No date"}
-                          </td>
-                          <td className="px-4 py-3 text-[var(--color-text-muted)]">
-                            {formatOwner(task.owner_user_id)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </TableShell>
+              <DataTable<CollectionTaskView>
+                columns={taskColumns()}
+                emptyState={{
+                  title: "No tasks yet",
+                  description:
+                    "Collection tasks appear here after a snapshot creates follow-up, promise, dispute, or ageing work.",
+                  action: (
+                    <Link
+                      className="text-sm font-medium text-[var(--color-accent)]"
+                      href="/snapshots"
+                    >
+                      Upload snapshot
+                    </Link>
+                  ),
+                }}
+                filteredEmptyState={{
+                  title: "No tasks match these filters",
+                  description:
+                    "Try clearing filters or switching to another saved view.",
+                  action: (
+                    <Link
+                      className="text-sm font-medium text-[var(--color-accent)]"
+                      href="/tasks"
+                    >
+                      Clear filters
+                    </Link>
+                  ),
+                }}
+                isFiltered={activeFilterCount > 0}
+                minWidthClass="min-w-[1080px]"
+                rowHref={(task) => taskHref(task.id, baseParams)}
+                rowKey={(task) => task.id}
+                rows={tasks}
+                selectedRowKey={selectedTask?.id ?? null}
+              />
             </Panel>
           ) : null}
 
@@ -620,92 +729,85 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
             </div>
           </Panel>
 
-          <Panel>
-            <PanelHeader title="Selected Task">
-              {selectedTask ? selectedTask.id.slice(0, 8) : "No task selected"}
-            </PanelHeader>
-            {selectedTask ? (
-              <div className="space-y-4 p-4">
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-[var(--color-text)]">
-                        {reasonLabel(selectedTask.reason_code)}
-                      </h2>
-                      <div className="mt-1 font-mono text-xs text-[var(--color-text-muted)]">
-                        {selectedTask.canonical_id}
-                      </div>
-                    </div>
-                    <StatusTag status={taskStatusTag(selectedTask.status)} />
-                  </div>
-                </div>
+          {selectedTask ? (
+            <SidePanel
+              meta={`Updated ${formatDate(selectedTask.updated_at)} | ${formatOwner(selectedTask.owner_user_id)}`}
+              nextAction={
+                <Link
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
+                  href={followUpHref(selectedTask)}
+                >
+                  Log follow-up
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              }
+              openFullPageHref={
+                selectedTask.invoice_id
+                  ? `/invoice/${selectedTask.invoice_id}`
+                  : `/party/${selectedTask.canonical_id}`
+              }
+              status={<StatusTag status={taskStatusTag(selectedTask.status)} />}
+              subtitle={selectedTask.canonical_id}
+              title={reasonLabel(selectedTask.reason_code)}
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <SidePanelField label="Priority">
+                  {selectedTask.priority_score.toFixed(0)}
+                </SidePanelField>
+                <SidePanelField label="Signal">
+                  {(() => {
+                    const signal = taskSignalTag(selectedTask);
+                    return (
+                      <StatusTag label={signal.label} status={signal.status} />
+                    );
+                  })()}
+                </SidePanelField>
+                <SidePanelField label="Snooze / Due">
+                  {formatTaskDueDate(selectedTask)}
+                </SidePanelField>
+                <SidePanelField label="Created">
+                  {formatDate(selectedTask.created_at)}
+                </SidePanelField>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
-                    <div className="text-xs text-[var(--color-text-muted)]">
-                      Priority
-                    </div>
-                    <div className="mt-1 font-semibold">
-                      {selectedTask.priority_score.toFixed(0)}
-                    </div>
-                  </div>
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
-                    <div className="text-xs text-[var(--color-text-muted)]">
-                      Due Date
-                    </div>
-                    <div className="mt-1 font-semibold">
-                      {selectedTask.due_date
-                        ? formatDate(selectedTask.due_date)
-                        : "No date"}
-                    </div>
-                  </div>
+              <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
+                <div className="text-sm font-semibold text-[var(--color-text)]">
+                  Linked Records
                 </div>
-
-                <div className="space-y-2 text-sm text-[var(--color-text-muted)]">
-                  <div className="flex items-center gap-2">
-                    <UserRound className="h-4 w-4" />
-                    {formatOwner(selectedTask.owner_user_id)}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock3 className="h-4 w-4" />
-                    Updated {formatDate(selectedTask.updated_at)}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <Link
-                    className="inline-flex h-10 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                    className="inline-flex h-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
                     href={`/party/${selectedTask.canonical_id}`}
                   >
                     Account
                   </Link>
                   {selectedTask.invoice_id ? (
                     <Link
-                      className="inline-flex h-10 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                      className="inline-flex h-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
                       href={`/invoice/${selectedTask.invoice_id}`}
                     >
                       Invoice
                     </Link>
                   ) : (
-                    <span className="inline-flex h-10 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-sm font-medium text-[var(--color-text-muted)]">
+                    <span className="inline-flex h-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] text-sm font-medium text-[var(--color-text-muted)]">
                       No invoice
                     </span>
                   )}
                 </div>
+              </div>
 
-                {user.role === role_enum.CFO ? (
-                  <StatusTag label="Read-only CFO view" status="READ_ONLY" />
-                ) : null}
-              </div>
-            ) : (
-              <div className="p-4">
-                <EmptyState
-                  description="Select a task card or queue row to inspect ownership, due date, and linked records."
-                  title="No task selected"
-                />
-              </div>
-            )}
-          </Panel>
+              {user.role === role_enum.CFO ? (
+                <StatusTag label="Read-only CFO view" status="READ_ONLY" />
+              ) : null}
+            </SidePanel>
+          ) : (
+            <SidePanel title="No task selected">
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Select a task card or queue row to inspect ownership, due date,
+                and linked records.
+              </p>
+            </SidePanel>
+          )}
 
           <Panel>
             <PanelHeader title="Queue Overview">
