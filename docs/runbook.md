@@ -183,3 +183,88 @@ Verification:
 4. Confirm the object exists in the configured bucket at the recorded key.
 5. Remove the test workbook and snapshot only through an approved data-cleanup
    procedure; never commit uploaded workbooks or database dumps to the repo.
+
+## Sentry Alerts
+
+Set `SENTRY_DSN` in Vercel production and preview environments before launch.
+Server initialization is a no-op when the DSN is absent.
+
+Minimum alert routing:
+
+- New production error issue: notify the launch owner and engineering owner.
+- Error rate spike over 1% for 10 minutes: start incident triage.
+- Repeated upload route exceptions: pause workbook uploads until the parser or
+  storage failure is understood.
+- Cron route exceptions: verify `CRON_SECRET`, recent deployment changes, and
+  email rule activation state before retrying.
+
+Triage steps:
+
+1. Open the Sentry issue and identify route, release, environment, and first
+   seen timestamp.
+2. Check Vercel runtime logs for the same timestamp.
+3. Confirm whether the failure created any partial database mutation. Use
+   `audit_log` and snapshot status rather than raw workbook logs.
+4. Apply rollback only if the issue is deployment-related and data state is
+   understood.
+
+## Rate-Limit Responses
+
+API middleware returns HTTP 429 with:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests"
+  }
+}
+```
+
+Clients should honor the `Retry-After` response header before retrying. Default
+API traffic is limited to 100 requests per minute per IP and route. Workbook
+upload is limited to 10 requests per minute. Email outbox processing is limited
+to 5 requests per minute.
+
+Operational response:
+
+1. Confirm the blocked route and source IP from Vercel logs.
+2. If traffic is legitimate, wait for token refill and retry.
+3. If traffic is abusive or automated, add the source to the platform firewall
+   or block upstream.
+4. Do not bypass limits for workbook upload without confirming the parser and
+   storage queues are healthy.
+
+## Upload Rejection Codes
+
+Workbook upload validation can reject before parsing with HTTP 400:
+
+| Code | Meaning | Operator action |
+|---|---|---|
+| `TOO_LARGE` | File exceeds 25 MB. | Ask the analyst to export a smaller workbook or split the report. |
+| `BAD_EXTENSION` | File extension is not `.xlsx`, `.xls`, or `.csv`. | Ask for an approved workbook or CSV export. |
+| `BAD_MIME` | Browser-supplied MIME type is not allowed. | Re-export the workbook or confirm the source system generated the file. |
+
+Parser row errors remain staged as `PARSE_ERROR`; upload validation failures do
+not enter the parser pipeline.
+
+## Error-Boundary Recovery
+
+The page and root error boundaries show a calm recovery screen with a retry
+button and home link. When `SENTRY_DSN` is configured, the boundary sends the
+captured exception to Sentry.
+
+Operator response:
+
+1. Ask the user for the route, timestamp, and action that preceded the boundary.
+2. Check Sentry for a matching issue and digest.
+3. If retry succeeds, keep the incident open until the root cause is classified.
+4. If retry fails, route the user to the home page and use the relevant API or
+   database state to determine whether a mutation completed.
+
+## OWASP Review Cadence
+
+Review `docs/owasp-review.md` before production launch, after major auth/upload
+changes, and at least quarterly. Open items must have an owner and target date
+before launch promotion.
