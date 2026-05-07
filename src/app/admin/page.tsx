@@ -1,83 +1,304 @@
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { ComponentType } from "react";
+import {
+  ArrowRight,
+  ClipboardList,
+  Mail,
+  Scale,
+  ShieldCheck,
+} from "lucide-react";
+import DataResetForm from "@/app/admin/_components/data-reset-form";
+import { EmptyTableRow, TableShell } from "@/components/ui/data-table";
+import { StatusTag } from "@/components/ui/status-tag";
+import {
+  EmptyState,
+  PageFrame,
+  PageHeader,
+  Panel,
+  PanelHeader,
+  RightRail,
+  SavedViewLink,
+  SavedViewTabs,
+} from "@/components/ui/workspace";
 import { role_enum } from "@/generated/prisma/enums";
-import { requirePageRole } from "@/server/core/page-auth";
+import { formatDateTime } from "@/lib/format";
+import { getImportedDataResetPreview } from "@/server/admin/dataReset";
 import { listUsers, parseUserListQuery } from "@/server/admin/users";
+import { requirePageRole } from "@/server/core/page-auth";
+
+export const dynamic = "force-dynamic";
+
+const adminLinks = [
+  ["Users & Roles", "/admin"],
+  ["Digest Events", "/admin/digest"],
+  ["Email Rules", "/admin/email-rules"],
+  ["Reconciliation", "/admin/reconciliation"],
+  ["Audit Log", "/admin/audit-log"],
+] as const;
+
+const adminQueues: {
+  description: string;
+  href: string;
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  status: string;
+}[] = [
+  {
+    description: "Generated daily digest records and approval state.",
+    href: "/admin/digest",
+    icon: Mail,
+    label: "Digest Events",
+    status: "FOLLOW_UP_DUE",
+  },
+  {
+    description: "Reminder rules, delivery gates, and email policy state.",
+    href: "/admin/email-rules",
+    icon: ShieldCheck,
+    label: "Email Rules",
+    status: "READ_ONLY",
+  },
+  {
+    description: "Snapshot closing AR tie-out and mismatch review.",
+    href: "/admin/reconciliation",
+    icon: Scale,
+    label: "Reconciliation",
+    status: "RECONCILIATION_PENDING",
+  },
+  {
+    description: "Mutation trail for users, snapshots, and operational actions.",
+    href: "/admin/audit-log",
+    icon: ClipboardList,
+    label: "Audit Log",
+    status: "PUBLISHED",
+  },
+];
+
+function roleStatus(role: string) {
+  if (role === "PENDING") return "STAGING_BLOCKED";
+  if (role === "ADMIN") return "WORKFLOW_DRAFT";
+  if (role === "CFO") return "READ_ONLY";
+  return "TASK_IN_PROGRESS";
+}
 
 export default async function AdminPage() {
-  await requirePageRole("/admin", role_enum.ADMIN);
-
+  const currentUser = await requirePageRole("/admin", role_enum.ADMIN);
   const users = await listUsers(parseUserListQuery({}));
+  const resetPreview = await getImportedDataResetPreview(currentUser);
+  const activeUsers = users.items.filter((user) => user.is_active).length;
+  const pendingUsers = users.items.filter((user) => user.role === "PENDING").length;
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
-      <div className="mx-auto w-full max-w-6xl space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Admin</h1>
-          <div className="flex gap-4">
+    <PageFrame>
+      <PageHeader
+        actions={
+          <>
             <Link
-              className="text-sm text-blue-700 hover:underline"
-              href="/admin/digest"
-            >
-              Digest events
-            </Link>
-            <Link
-              className="text-sm text-blue-700 hover:underline"
+              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
               href="/admin/email-rules"
             >
-              Email rules
+              <Mail className="h-4 w-4" />
+              Email Rules
             </Link>
             <Link
-              className="text-sm text-blue-700 hover:underline"
-              href="/admin/reconciliation"
-            >
-              Reconciliation
-            </Link>
-            <Link
-              className="text-sm text-blue-700 hover:underline"
+              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
               href="/admin/audit-log"
             >
-              Audit log
+              <ClipboardList className="h-4 w-4" />
+              Audit Log
             </Link>
+          </>
+        }
+        title="Admin & Configuration"
+      >
+        Manage access, policy gates, reconciliation controls, and auditability.
+      </PageHeader>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          <SavedViewTabs>
+            {adminLinks.map(([label, href]) => (
+              <SavedViewLink active={href === "/admin"} href={href} key={href}>
+                {label}
+              </SavedViewLink>
+            ))}
+          </SavedViewTabs>
+
+          <Panel>
+            <PanelHeader
+              action={<StatusTag label={`${users.total} users`} status="READ_ONLY" />}
+              title="Users & Roles"
+            >
+              Access roster from authenticated users and approval state.
+            </PanelHeader>
+            <TableShell>
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-[var(--color-bg-subtle)] text-left text-xs font-medium text-[var(--color-text-muted)]">
+                  <tr>
+                    <th className="px-4 py-3">User</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Entity Scope</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Last Login</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  {users.items.length === 0 ? (
+                    <EmptyTableRow colSpan={5}>
+                      <EmptyState
+                        description="Users appear after sign-in and approval."
+                        title="No users found"
+                      />
+                    </EmptyTableRow>
+                  ) : (
+                    users.items.map((user) => (
+                      <tr className="hover:bg-[var(--color-bg-subtle)]" key={user.id}>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-[var(--color-text)]">
+                            {user.name || user.email}
+                          </div>
+                          <div className="text-xs text-[var(--color-text-muted)]">
+                            {user.email}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusTag label={user.role} status={roleStatus(user.role)} />
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-muted)]">
+                          {user.entity_id_scope
+                            ? user.entity_id_scope.slice(0, 8)
+                            : "All entities"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusTag
+                            label={user.is_active ? "Active" : "Inactive"}
+                            status={user.is_active ? "MATCHED" : "NO_DATA"}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-[var(--color-text-muted)]">
+                          {user.last_login_at ? formatDateTime(user.last_login_at) : "-"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </TableShell>
+          </Panel>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Panel>
+              <PanelHeader title="Admin Work Queues">
+                Operational controls backed by active admin routes.
+              </PanelHeader>
+              <div className="divide-y divide-[var(--color-border)]">
+                {adminQueues.map(({ description, href, icon: Icon, label, status }) => (
+                  <Link
+                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-[var(--color-bg-subtle)]"
+                    href={href}
+                    key={href}
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-medium text-[var(--color-text)]">
+                          {label}
+                        </span>
+                        <span className="block truncate text-xs text-[var(--color-text-muted)]">
+                          {description}
+                        </span>
+                      </span>
+                    </span>
+                    <StatusTag status={status} />
+                  </Link>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHeader title="Governance">
+                RBAC-sensitive configuration and audit surfaces.
+              </PanelHeader>
+              <div className="space-y-3 p-4">
+                {[
+                  ["User approvals", "/admin", `${pendingUsers} pending`],
+                  ["Email policy", "/admin/email-rules", "Delivery gated"],
+                  ["Reconciliation review", "/admin/reconciliation", "Snapshot tie-out"],
+                  ["Audit trail", "/admin/audit-log", "Mutation history"],
+                ].map(([label, href, detail]) => (
+                  <Link
+                    className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-sm hover:border-[var(--color-accent)]"
+                    href={href}
+                    key={href}
+                  >
+                    <span>
+                      <span className="block font-medium text-[var(--color-text)]">
+                        {label}
+                      </span>
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {detail}
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-[var(--color-text-muted)]" />
+                  </Link>
+                ))}
+              </div>
+            </Panel>
           </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {users.items.length === 0 ? (
-              <p className="text-sm text-slate-500">No users found.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full table-auto text-sm">
-                  <thead className="bg-slate-100 text-left text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Email</th>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Role</th>
-                      <th className="px-3 py-2">Active</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.items.map((user) => (
-                      <tr key={user.id} className="odd:bg-white">
-                        <td className="px-3 py-2">{user.email}</td>
-                        <td className="px-3 py-2">{user.name}</td>
-                        <td className="px-3 py-2">{user.role}</td>
-                        <td className="px-3 py-2">
-                          {user.is_active ? "Yes" : "No"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+        <RightRail>
+          <Panel>
+            <PanelHeader title="Admin Summary">
+              Current access and control posture.
+            </PanelHeader>
+            <div className="space-y-4 p-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
+                  <div className="text-xs text-[var(--color-text-muted)]">Active users</div>
+                  <div className="mt-1 text-xl font-semibold">{activeUsers}</div>
+                </div>
+                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
+                  <div className="text-xs text-[var(--color-text-muted)]">Pending</div>
+                  <div className="mt-1 text-xl font-semibold">{pendingUsers}</div>
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+
+              <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-subtle)] p-3 text-sm text-[var(--color-text-muted)]">
+                CFO and pending users remain read-limited by route handlers;
+                admin mutations continue to write audit log entries.
+              </div>
+
+              <div className="space-y-2">
+                {adminQueues.slice(0, 3).map(({ href, label }) => (
+                  <Link
+                    className="flex h-10 items-center justify-between rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                    href={href}
+                    key={href}
+                  >
+                    {label}
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </Panel>
+
+          <Panel>
+            <PanelHeader
+              action={<StatusTag label="Admin only" status="STAGING_BLOCKED" />}
+              title="Data Reset"
+            >
+              Remove imported receivables data while preserving configuration.
+            </PanelHeader>
+            <DataResetForm
+              confirmationPhrase={resetPreview.confirmation_phrase}
+              counts={resetPreview.counts}
+            />
+          </Panel>
+        </RightRail>
       </div>
-    </main>
+    </PageFrame>
   );
 }

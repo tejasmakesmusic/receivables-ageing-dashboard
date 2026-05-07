@@ -186,6 +186,7 @@ export interface PublishGate {
   ok: boolean;
   unmapped_parties_count: number;
   fuzzy_high_pending_count: number;
+  fuzzy_low_pending_count: number;
   parse_errors_unresolved_count: number;
   warnings_unacknowledged: string[];
   role_permits_publish: boolean;
@@ -583,6 +584,12 @@ function gateFromRows(params: {
       !row.analyst_overrides.resolved_canonical_id &&
       row.alias_resolution.resolutionState === "FUZZY_HIGH",
   ).length;
+  const fuzzyLow = invoiceRows.filter(
+    (row) =>
+      row.status === "OK" &&
+      !row.analyst_overrides.resolved_canonical_id &&
+      row.alias_resolution.resolutionState === "FUZZY_LOW",
+  ).length;
   const rolePermits =
     params.currentUser.role === role_enum.ANALYST ||
     params.currentUser.role === role_enum.ADMIN;
@@ -593,9 +600,11 @@ function gateFromRows(params: {
       unacknowledged.length === 0 &&
       parseErrorsUnresolved === 0 &&
       unmapped === 0 &&
-      fuzzyHigh === 0,
+      fuzzyHigh === 0 &&
+      fuzzyLow === 0,
     unmapped_parties_count: unmapped,
     fuzzy_high_pending_count: fuzzyHigh,
+    fuzzy_low_pending_count: fuzzyLow,
     parse_errors_unresolved_count: parseErrorsUnresolved,
     warnings_unacknowledged: unacknowledged,
     role_permits_publish: rolePermits,

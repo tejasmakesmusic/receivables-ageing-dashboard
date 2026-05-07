@@ -2,65 +2,95 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ModeToggle } from "@/components/mode-toggle";
+import {
+  BarChart3,
+  Building2,
+  FileText,
+  Home,
+  Inbox,
+  PieChart,
+  RefreshCw,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+} from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/",             label: "Dashboard"    },
-  { href: "/focus",        label: "Focus Queue"  },
-  { href: "/collections",       label: "Collections"      },
-  { href: "/promises-to-pay",  label: "Promises to Pay"  },
-  { href: "/dispute-cases",    label: "Dispute Cases"    },
-  { href: "/invoices",         label: "Invoices"         },
-  { href: "/snapshots",    label: "Snapshots"    },
-  { href: "/upload",       label: "Upload"       },
-  { href: "/follow-ups",   label: "Follow-ups"   },
-  { href: "/exceptions",   label: "Exceptions"   },
-  { href: "/config",       label: "Config"       },
-  { href: "/admin",        label: "Admin"        },
+  { href: "/", label: "Home", icon: Home },
+  { href: "/accounts", label: "Accounts", icon: Building2 },
+  { href: "/invoices", label: "Invoices", icon: FileText },
+  { href: "/collections", label: "Collections", icon: Inbox },
+  { href: "/reconciliation", label: "Reconciliation", icon: RefreshCw },
+  { href: "/workflows", label: "Workflows", icon: SlidersHorizontal },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/dashboard", label: "Dashboards", icon: PieChart },
+  { href: "/admin", label: "Admin", icon: Settings },
 ] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-52 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
-      {/* Wordmark */}
-      <div className="flex h-12 items-center px-[var(--spacing-4)] border-b border-[var(--color-border)]">
-        <span className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
-          Receivables OS
-        </span>
+    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+      <div className="flex h-16 items-center gap-3 border-b border-[var(--color-border)] px-5">
+        <div className="grid h-9 w-9 place-items-center rounded-[var(--radius-md)] bg-[var(--color-accent)] text-white">
+          <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-[var(--color-text)]">
+            Receivables OS
+          </div>
+          <div className="truncate text-xs text-[var(--color-text-muted)]">
+            AR command center
+          </div>
+        </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-[var(--spacing-2)]">
-        {NAV_ITEMS.map(({ href, label }) => {
+      <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="Primary">
+        {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
           const active =
             href === "/"
               ? pathname === "/"
-              : pathname === href || pathname.startsWith(href + "/");
+              : pathname === href || pathname.startsWith(`${href}/`);
 
           return (
             <Link
-              key={href}
-              href={href}
+              aria-current={active ? "page" : undefined}
               className={[
-                "flex items-center gap-[var(--spacing-2)] px-[var(--spacing-4)] py-[var(--spacing-2)]",
-                "text-sm rounded-[var(--radius-sm)] mx-[var(--spacing-2)] my-px transition-colors",
+                "my-1 flex h-10 items-center gap-3 rounded-[var(--radius-md)] px-3 text-sm transition-colors duration-150",
                 active
-                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium"
+                  ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
                   : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
               ].join(" ")}
+              href={href}
+              key={href}
             >
-              {label}
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">{label}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between px-[var(--spacing-4)] py-[var(--spacing-3)] border-t border-[var(--color-border)]">
-        <span className="text-xs text-[var(--color-text-subtle)]">EMB Global</span>
-        <ModeToggle />
+      <div className="border-t border-[var(--color-border)] p-3">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <div className="flex items-center gap-3">
+            <div className="grid h-9 w-9 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] text-[10px] font-semibold text-white">
+              EMB
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-[var(--color-text)]">
+                EMB Global
+              </div>
+              <div className="truncate text-xs text-[var(--color-text-muted)]">
+                Receivables workspace
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 text-xs text-[var(--color-text-subtle)]">
+          Receivables OS
+        </div>
       </div>
     </aside>
   );

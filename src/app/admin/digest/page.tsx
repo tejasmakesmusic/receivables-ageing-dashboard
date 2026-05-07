@@ -1,8 +1,12 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { role_enum } from "@/generated/prisma/enums";
 import { requirePageRole } from "@/server/core/page-auth";
 import { listDigestEvents } from "@/server/digest/service";
-import { Badge } from "@/components/ui/badge";
+import {
+  DigestActions,
+  TriggerDigestButton,
+} from "./_components/digest-action-buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +60,10 @@ export default async function AdminDigestPage() {
             <tbody>
               {events.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                  <td
+                    colSpan={5}
+                    className="px-4 py-8 text-center text-slate-400"
+                  >
                     No digest events yet. Use the trigger button to create one.
                   </td>
                 </tr>
@@ -83,13 +90,10 @@ export default async function AdminDigestPage() {
                       <td className="px-4 py-3 text-slate-500">
                         {event.sent_at
                           ? new Date(event.sent_at).toLocaleString()
-                          : "—"}
+                          : "-"}
                       </td>
                       <td className="px-4 py-3">
-                        <DigestActions
-                          id={event.id}
-                          state={event.state}
-                        />
+                        <DigestActions id={event.id} state={event.state} />
                       </td>
                     </tr>
                   );
@@ -100,60 +104,5 @@ export default async function AdminDigestPage() {
         </div>
       </div>
     </main>
-  );
-}
-
-// ── Client action components ──────────────────────────────────────────────
-
-function TriggerDigestButton() {
-  return (
-    <form action="/api/admin/digest/trigger" method="post">
-      <button
-        type="submit"
-        className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
-      >
-        Trigger today&apos;s digest
-      </button>
-    </form>
-  );
-}
-
-function DigestActions({
-  id,
-  state,
-}: {
-  id: string;
-  state: string;
-}) {
-  const canApprove = state === "PREVIEWED";
-  const canSkip = !["SENT", "SKIPPED", "FAILED"].includes(state);
-
-  if (!canApprove && !canSkip) {
-    return <span className="text-slate-400">—</span>;
-  }
-
-  return (
-    <div className="flex gap-2">
-      {canApprove && (
-        <form action={`/api/admin/digest/${id}/approve`} method="post">
-          <button
-            type="submit"
-            className="rounded bg-green-100 px-2 py-1 text-xs text-green-800 hover:bg-green-200"
-          >
-            Approve & send
-          </button>
-        </form>
-      )}
-      {canSkip && (
-        <form action={`/api/admin/digest/${id}/skip`} method="post">
-          <button
-            type="submit"
-            className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600 hover:bg-slate-200"
-          >
-            Skip
-          </button>
-        </form>
-      )}
-    </div>
   );
 }

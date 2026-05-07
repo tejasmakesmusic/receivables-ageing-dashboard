@@ -16,6 +16,9 @@ coverage/
 playwright-report/
 test-results/
 
+# Local workbook/data samples
+test_data/
+
 # Environment and secrets
 .env
 .env.*

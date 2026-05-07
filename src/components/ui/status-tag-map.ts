@@ -70,8 +70,15 @@ export const STATUS_TAGS = {
   MISMATCH: tag("Mismatch", "danger"),
   MISMATCHED: tag("Mismatched", "danger"),
   UNRECONCILED: tag("Unreconciled", "warning"),
+  RECONCILIATION_PENDING: tag("Reconciliation Pending", "warning"),
 
   OVERRIDE: tag("Admin Override", "warning"),
+  READ_ONLY: tag("Read-only", "neutral"),
+  NO_DATA: tag("No Data", "neutral"),
+  FOLLOW_UP_DUE: tag("Follow-up Due", "warning"),
+  STAGING_BLOCKED: tag("Staging Blocked", "danger"),
+  WORKFLOW_DRAFT: tag("Draft", "info"),
+  WORKFLOW_DISABLED: tag("Unavailable", "neutral"),
 } as const satisfies Record<string, StatusTagDefinition>;
 
 export type StatusTagKey = keyof typeof STATUS_TAGS;

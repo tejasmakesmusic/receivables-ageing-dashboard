@@ -4,6 +4,8 @@ import { role_enum } from "@/generated/prisma/enums";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { requirePageRole } from "@/server/core/page-auth";
 import { getStagingView, stagingQuerySchema } from "@/server/snapshots/service";
+import { StagingPublishPanel } from "./_components/staging-publish-panel";
+import { StagingRowActions } from "./_components/staging-row-actions";
 
 type PageProps = {
   params: Promise<{ snapshotId: string }>;
@@ -88,6 +90,12 @@ export default async function SnapshotStagingPage({
           </Card>
         </div>
 
+        <StagingPublishPanel
+          publishGate={staging.publish_gate}
+          snapshotId={snapshotId}
+          sourceHint={staging.source_hint}
+        />
+
         <Card>
           <CardHeader>
             <CardTitle>Rows</CardTitle>
@@ -104,6 +112,7 @@ export default async function SnapshotStagingPage({
                     <th className="px-3 py-2 text-right">Amount</th>
                     <th className="px-3 py-2">Resolution</th>
                     <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -135,6 +144,12 @@ export default async function SnapshotStagingPage({
                         </td>
                         <td className="px-3 py-2">
                           {isInvoice ? row.status : "OK"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <StagingRowActions
+                            row={row}
+                            snapshotId={snapshotId}
+                          />
                         </td>
                       </tr>
                     );

@@ -61,6 +61,8 @@ export function TaskSidePanel({ task }: { task: Task | null }) {
   const [disputeResDate, setDisputeResDate] = useState("");
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [disputeError, setDisputeError] = useState<string | null>(null);
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   const close = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -73,7 +75,39 @@ export function TaskSidePanel({ task }: { task: Task | null }) {
     setActionFeedback(null);
     setPtpError(null);
     setDisputeError(null);
+    setClaimError(null);
   }, []);
+
+  const handleClaimTask = useCallback(async () => {
+    if (!task) return;
+
+    setClaimSubmitting(true);
+    setClaimError(null);
+
+    try {
+      const res = await fetch(`/api/collection-tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "OPEN" }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
+        throw new Error(
+          body.message ?? body.error ?? `Request failed with ${res.status}`,
+        );
+      }
+
+      router.refresh();
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : "Task claim failed");
+    } finally {
+      setClaimSubmitting(false);
+    }
+  }, [task, router]);
 
   const handlePtpSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -265,12 +299,19 @@ export function TaskSidePanel({ task }: { task: Task | null }) {
             <p className="text-xs text-[var(--color-text-subtle)] mb-[var(--spacing-2)]">
               Claim this task to begin working on it.
             </p>
-            <a
-              href={`/api/collection-tasks/${task.id}`}
+            <button
               className="inline-flex items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-[var(--spacing-3)] py-[var(--spacing-2)] text-xs font-medium text-white hover:opacity-90 transition-opacity"
+              disabled={claimSubmitting}
+              onClick={handleClaimTask}
+              type="button"
             >
               Claim → Open
-            </a>
+            </button>
+            {claimError ? (
+              <p aria-live="polite" className="mt-2 text-xs text-red-600">
+                {claimError}
+              </p>
+            ) : null}
           </div>
         )}
 

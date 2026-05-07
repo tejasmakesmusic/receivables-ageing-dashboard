@@ -14,6 +14,15 @@ const REQUIRED_FINANCE_STATES = [
   "MATCHED",
   "MISMATCH",
   "OVERRIDE",
+  "READ_ONLY",
+  "NO_DATA",
+  "FOLLOW_UP_DUE",
+  "STAGING_BLOCKED",
+  "TASK_SNOOZED",
+  "TASK_DONE",
+  "RECONCILIATION_PENDING",
+  "WORKFLOW_DRAFT",
+  "WORKFLOW_DISABLED",
 ] as const;
 
 describe("status tag map", () => {

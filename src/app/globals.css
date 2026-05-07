@@ -1,62 +1,58 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 @theme {
   --font-sans:
     Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
 
-  /* Backgrounds */
-  --color-bg:        #ffffff;
-  --color-bg-subtle: #fcfcfc;
-  --color-bg-muted:  #f1f1f1;
+  --color-bg: #ffffff;
+  --color-bg-subtle: #fcfbf9;
+  --color-bg-muted: #f5f2ee;
+  --color-surface: #ffffff;
 
-  /* Borders */
-  --color-border:        #ebebeb;
-  --color-border-strong: #d6d6d6;
+  --color-border: #ebe7df;
+  --color-border-strong: #d8d2c8;
 
-  /* Text */
-  --color-text:        #333333;
-  --color-text-muted:  #666666;
-  --color-text-subtle: #999999;
+  --color-text: #111827;
+  --color-text-muted: #5f6b7a;
+  --color-text-subtle: #8a95a3;
 
-  /* Accent (EMB blue) */
-  --color-accent:      #465fd6;
-  --color-accent-soft: #eef2fd;
+  --color-accent: #2563eb;
+  --color-accent-soft: #eaf1ff;
+  --color-accent-strong: #1d4ed8;
 
-  /* Semantic fills */
-  --color-success-soft: #e9f7ee;
-  --color-warning-soft: #fff6db;
-  --color-danger-soft:  #fbecec;
+  --color-success: #16a34a;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-success-soft: #eaf8ef;
+  --color-warning-soft: #fff7df;
+  --color-danger-soft: #fff0f0;
+  --color-violet-soft: #f3edff;
 
-  /* Status tags */
-  --color-status-neutral-bg:     #f5f5f4;
-  --color-status-neutral-border: #e7e5e4;
-  --color-status-neutral-text:   #57534e;
-  --color-status-info-bg:        #edf4ff;
-  --color-status-info-border:    #c7dcff;
-  --color-status-info-text:      #315aa8;
-  --color-status-current-bg:     #e9f7ee;
-  --color-status-current-border: #bee8cb;
-  --color-status-current-text:   #287343;
-  --color-status-warning-bg:     #fff6db;
-  --color-status-warning-border: #f5dc8a;
-  --color-status-warning-text:   #806114;
-  --color-status-alert-bg:       #fff0e6;
-  --color-status-alert-border:   #ffd1ad;
-  --color-status-alert-text:     #9a4a16;
-  --color-status-danger-bg:      #fbecec;
-  --color-status-danger-border:  #f2b8b8;
-  --color-status-danger-text:    #b42323;
+  --color-status-neutral-bg: #f7f5f2;
+  --color-status-neutral-border: #e7e2da;
+  --color-status-neutral-text: #5f6b7a;
+  --color-status-info-bg: #eaf1ff;
+  --color-status-info-border: #c8dcff;
+  --color-status-info-text: #1d4ed8;
+  --color-status-current-bg: #eaf8ef;
+  --color-status-current-border: #bde9cb;
+  --color-status-current-text: #16743a;
+  --color-status-warning-bg: #fff7df;
+  --color-status-warning-border: #f4df91;
+  --color-status-warning-text: #8a6200;
+  --color-status-alert-bg: #fff2e4;
+  --color-status-alert-border: #ffd3a6;
+  --color-status-alert-text: #a64b00;
+  --color-status-danger-bg: #fff0f0;
+  --color-status-danger-border: #ffc7c7;
+  --color-status-danger-text: #b42318;
 
-  /* Radii */
-  --radius-xs:   2px;
-  --radius-sm:   4px;
-  --radius-md:   8px;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
   --radius-pill: 9999px;
 
-  /* Spacing scale */
   --spacing-1: 4px;
   --spacing-2: 8px;
   --spacing-3: 12px;
@@ -66,46 +62,15 @@
   --spacing-8: 32px;
 }
 
-:root.dark {
-  --color-bg:        #171717;
-  --color-bg-subtle: #1b1b1b;
-  --color-bg-muted:  #1d1d1d;
-
-  --color-border:        #222222;
-  --color-border-strong: #333333;
-
-  --color-text:        #ebebeb;
-  --color-text-muted:  #b3b3b3;
-  --color-text-subtle: #888888;
-
-  --color-accent:      #5f72d6;
-  --color-accent-soft: #1b2446;
-
-  --color-success-soft: #193123;
-  --color-warning-soft: #352b16;
-  --color-danger-soft:  #351d1d;
-
-  --color-status-neutral-bg:     #222222;
-  --color-status-neutral-border: #3a3a3a;
-  --color-status-neutral-text:   #c8c8c8;
-  --color-status-info-bg:        #17233d;
-  --color-status-info-border:    #29406d;
-  --color-status-info-text:      #9bbcff;
-  --color-status-current-bg:     #193123;
-  --color-status-current-border: #2d5b3f;
-  --color-status-current-text:   #8fdaa8;
-  --color-status-warning-bg:     #352b16;
-  --color-status-warning-border: #675126;
-  --color-status-warning-text:   #f3d071;
-  --color-status-alert-bg:       #3b2113;
-  --color-status-alert-border:   #77451f;
-  --color-status-alert-text:     #f2a66f;
-  --color-status-danger-bg:      #351d1d;
-  --color-status-danger-border:  #713131;
-  --color-status-danger-text:    #f2a0a0;
-}
-
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background-color: var(--color-bg-subtle);
+  }
+
   body {
     background-color: var(--color-bg);
     color: var(--color-text);
@@ -113,6 +78,13 @@
     margin: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
   }
 }
 
