@@ -9,6 +9,10 @@
     {
       "path": "/api/admin/email-outbox/process",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/streak-tick",
+      "schedule": "30 13 * * 1-5"
     }
   ]
 }

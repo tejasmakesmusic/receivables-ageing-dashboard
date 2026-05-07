@@ -1,19 +1,175 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import {
+  ProgressPath,
+  type ProgressStep,
+} from "@/components/engagement/progress-path";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { role_enum } from "@/generated/prisma/enums";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
+import { getPrisma } from "@/lib/prisma";
 import { requirePageRole } from "@/server/core/page-auth";
 import { HttpError } from "@/server/core/errors";
 import {
   getOrComputeReconciliation,
   getSnapshotDetail,
   type ReconciliationResponse,
+  type SnapshotDetailResponse,
 } from "@/server/snapshots/service";
 
 type PageProps = {
   params: Promise<{ snapshotId: string }>;
 };
+
+type ParseSummary = {
+  totalRows: number;
+  okRows: number;
+  parseErrorRows: number;
+  warningCount: number;
+  fileErrorCount: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function countArray(value: unknown) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function summarizeParseResult(value: unknown): ParseSummary {
+  if (!isRecord(value)) {
+    return {
+      totalRows: 0,
+      okRows: 0,
+      parseErrorRows: 0,
+      warningCount: 0,
+      fileErrorCount: 0,
+    };
+  }
+
+  const invoices = Array.isArray(value.invoices) ? value.invoices : [];
+  const creditPeriods = Array.isArray(value.credit_periods)
+    ? value.credit_periods
+    : [];
+  const parseErrorRows = invoices.filter(
+    (row) => isRecord(row) && row.status === "PARSE_ERROR",
+  ).length;
+  const okInvoiceRows = invoices.filter(
+    (row) => isRecord(row) && row.status !== "PARSE_ERROR",
+  ).length;
+
+  return {
+    totalRows: invoices.length + creditPeriods.length,
+    okRows: okInvoiceRows + creditPeriods.length,
+    parseErrorRows,
+    warningCount: countArray(value.warnings),
+    fileErrorCount: countArray(value.errors),
+  };
+}
+
+function pluralize(count: number, singular: string, plural: string) {
+  return count === 1 ? singular : plural;
+}
+
+function buildProgressSteps(params: {
+  snapshot: SnapshotDetailResponse;
+  parseSummary: ParseSummary;
+  reconciliation: ReconciliationResponse | null;
+}): ProgressStep[] {
+  const { snapshot, parseSummary, reconciliation } = params;
+  const totalErrors = parseSummary.parseErrorRows + parseSummary.fileErrorCount;
+  const parseCompleted = parseSummary.okRows > 0;
+  const parseBlocked = parseSummary.totalRows > 0 && !parseCompleted;
+  const readyToPublish = parseCompleted && totalErrors === 0;
+  const isPublished = snapshot.status === "PUBLISHED";
+  const hasReconciliation =
+    reconciliation !== null && reconciliation.status !== "UNRECONCILED";
+
+  return [
+    {
+      id: "upload",
+      label: "Upload",
+      description: "Workbook snapshot is recorded.",
+      state: "completed",
+      href: "/snapshots",
+    },
+    {
+      id: "parse",
+      label: "Parse",
+      description: `${parseSummary.okRows} parsed ${pluralize(
+        parseSummary.okRows,
+        "row",
+        "rows",
+      )}.`,
+      state: parseCompleted ? "completed" : parseBlocked ? "blocked" : "active",
+      blocker: parseBlocked ? "All parsed rows are currently errored." : undefined,
+      href: `/snapshots/${snapshot.id}/staging`,
+    },
+    {
+      id: "review",
+      label: "Review",
+      description: `${parseSummary.warningCount} ${pluralize(
+        parseSummary.warningCount,
+        "warning",
+        "warnings",
+      )} to review.`,
+      state:
+        totalErrors > 0
+          ? "blocked"
+          : parseSummary.warningCount > 0
+            ? "active"
+            : parseCompleted
+              ? "completed"
+              : "not_started",
+      blocker:
+        totalErrors > 0
+          ? `${totalErrors} parser ${pluralize(totalErrors, "error", "errors")} remain.`
+          : undefined,
+      href: `/snapshots/${snapshot.id}/staging`,
+    },
+    {
+      id: "resolve",
+      label: "Resolve",
+      description: `${totalErrors} parser ${pluralize(totalErrors, "error", "errors")} open.`,
+      state:
+        totalErrors > 0 ? "active" : parseCompleted ? "completed" : "not_started",
+      href: `/snapshots/${snapshot.id}/staging`,
+    },
+    {
+      id: "publish",
+      label: "Publish",
+      description: isPublished
+        ? "Snapshot is published."
+        : "Snapshot is waiting for publish.",
+      state: isPublished
+        ? "completed"
+        : readyToPublish
+          ? "active"
+          : totalErrors > 0
+            ? "blocked"
+            : "not_started",
+      blocker:
+        totalErrors > 0
+          ? `${totalErrors} parser ${pluralize(totalErrors, "error", "errors")} block publish.`
+          : undefined,
+      href: `/snapshots/${snapshot.id}/staging`,
+    },
+    {
+      id: "reconcile",
+      label: "Reconcile",
+      description: hasReconciliation
+        ? "Reconciliation entry is recorded."
+        : "Reconciliation entry is pending.",
+      state: hasReconciliation
+        ? "completed"
+        : isPublished
+          ? "active"
+          : "not_started",
+      href: isPublished ? "/admin/reconciliation" : undefined,
+    },
+  ];
+}
 
 export default async function SnapshotDetailPage({ params }: PageProps) {
   const { snapshotId } = await params;
@@ -23,7 +179,7 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
     role_enum.CFO,
     role_enum.ADMIN,
   );
-  let snapshot;
+  let snapshot: SnapshotDetailResponse;
   try {
     snapshot = await getSnapshotDetail(snapshotId, currentUser);
   } catch (error) {
@@ -43,6 +199,15 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
   }
 
   const currency = snapshot.entity_code === "IND" ? "INR" : "AED";
+  const snapshotParse = await getPrisma().snapshots.findUnique({
+    where: { id: snapshotId },
+    select: { parse_result_json: true },
+  });
+  const progressSteps = buildProgressSteps({
+    snapshot,
+    parseSummary: summarizeParseResult(snapshotParse?.parse_result_json),
+    reconciliation,
+  });
 
   return (
     <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
@@ -61,6 +226,8 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
             {snapshot.entity_code} - {snapshot.source_hint} - {snapshot.status}
           </p>
         </div>
+
+        <ProgressPath steps={progressSteps} />
 
         <div className="grid gap-3 sm:grid-cols-3">
           <Card>

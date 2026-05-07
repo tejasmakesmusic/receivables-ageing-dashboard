@@ -1,6 +1,15 @@
 import Link from "next/link";
-import { role_enum } from "@/generated/prisma/enums";
+import { GoalChip } from "@/components/engagement/goal-chip";
+import {
+  OnboardingChecklist,
+  type OnboardingChecklistProps,
+} from "@/components/engagement/onboarding-checklist";
+import { StreakBadge } from "@/components/engagement/streak-badge";
+import { NudgeStack } from "@/components/engagement/nudge-stack";
 import { StatusTag } from "@/components/ui/status-tag";
+import { collection_task_status, role_enum } from "@/generated/prisma/enums";
+import { getPrisma } from "@/lib/prisma";
+import type { AuthenticatedUser } from "@/server/core/auth";
 import { requirePageRole } from "@/server/core/page-auth";
 import {
   FOCUS_QUEUE_PAGE_ROLES,
@@ -9,6 +18,96 @@ import {
 } from "@/server/focus/service";
 
 export const dynamic = "force-dynamic";
+const DEFAULT_DAILY_TARGET = 10;
+
+type OnboardingCompletion = OnboardingChecklistProps["completion"];
+
+function dayBounds(value: string) {
+  const date = new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const start = new Date(safeDate);
+  start.setUTCHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+
+  return { start, end };
+}
+
+async function getFocusEngagementState(
+  user: AuthenticatedUser,
+  generatedAt: string,
+): Promise<{
+  completedToday: number;
+  onboarding: OnboardingCompletion;
+}> {
+  const prisma = getPrisma();
+  const { start, end } = dayBounds(generatedAt);
+  const entityScope =
+    user.role === role_enum.ANALYST && user.entityIdScope
+      ? { entity_id: user.entityIdScope }
+      : {};
+  const canonicalScope =
+    user.role === role_enum.ANALYST && user.entityIdScope
+      ? { parties_canonical: { entity_id: user.entityIdScope } }
+      : {};
+  const taskUserScope = {
+    OR: [{ owner_user_id: user.id }, { created_by: user.id }],
+  };
+
+  const [
+    uploadedSnapshotCount,
+    publishedSnapshotCount,
+    workedTaskCount,
+    completedToday,
+    followUpCount,
+    promiseCount,
+    disputeCount,
+  ] = await Promise.all([
+    prisma.snapshots.count({
+      where: { ...entityScope, uploaded_by: user.id },
+    }),
+    prisma.snapshots.count({
+      where: { ...entityScope, uploaded_by: user.id, status: "PUBLISHED" },
+    }),
+    prisma.collection_tasks.count({
+      where: {
+        ...entityScope,
+        ...taskUserScope,
+        status: collection_task_status.DONE,
+      },
+    }),
+    prisma.collection_tasks.count({
+      where: {
+        ...entityScope,
+        ...taskUserScope,
+        completed_at: { gte: start, lt: end },
+        status: collection_task_status.DONE,
+      },
+    }),
+    prisma.follow_ups.count({
+      where: { ...canonicalScope, logged_by: user.id },
+    }),
+    prisma.promises_to_pay.count({
+      where: { ...canonicalScope, created_by: user.id },
+    }),
+    prisma.dispute_cases.count({
+      where: { ...entityScope, created_by: user.id },
+    }),
+  ]);
+
+  return {
+    completedToday,
+    onboarding: {
+      uploaded_snapshot: uploadedSnapshotCount > 0,
+      resolved_warnings: publishedSnapshotCount > 0,
+      worked_task: workedTaskCount > 0,
+      logged_follow_up: followUpCount > 0,
+      recorded_ptp: promiseCount > 0,
+      raised_dispute: disputeCount > 0,
+      reviewed_export: publishedSnapshotCount > 0,
+    },
+  };
+}
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -45,6 +144,7 @@ function visibleRoleLabel(role: role_enum): string {
 export default async function FocusPage() {
   const user = await requirePageRole("/focus", ...FOCUS_QUEUE_PAGE_ROLES);
   const queue = await getFocusQueue({}, user);
+  const engagement = await getFocusEngagementState(user, queue.generated_at);
   const visibleEntities =
     queue.visible_entity_codes.length > 0
       ? queue.visible_entity_codes.join(", ")
@@ -75,9 +175,22 @@ export default async function FocusPage() {
             ) : null}
           </div>
         </div>
+
+        <div className="mt-[var(--spacing-4)] flex flex-wrap items-center justify-between gap-[var(--spacing-3)]">
+          <GoalChip
+            completed={engagement.completedToday}
+            target={DEFAULT_DAILY_TARGET}
+          />
+          <StreakBadge />
+        </div>
+
+        <div className="mt-[var(--spacing-3)]">
+          <OnboardingChecklist completion={engagement.onboarding} />
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        <NudgeStack />
         {queue.items.length === 0 ? (
           <div className="flex min-h-72 items-center justify-center px-[var(--spacing-6)] text-sm text-[var(--color-text-muted)]">
             No current focus items for your scope.
