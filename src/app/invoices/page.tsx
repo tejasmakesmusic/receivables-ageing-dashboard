@@ -1,17 +1,11 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  Eye,
-  Filter,
-  Settings,
-  Upload,
-} from "lucide-react";
+import { ArrowRight, Filter, Settings, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EmptyTableRow, TableShell } from "@/components/ui/data-table";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { MiniSparkline } from "@/components/ui/mini-chart";
+import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
-  EmptyState,
   MetricCard,
   PageFrame,
   PageHeader,
@@ -114,6 +108,105 @@ function riskTag(invoice: InvoiceListRow) {
   if (invoice.bucket === "61_90") return { label: "High", status: "61_90" };
   if (invoice.bucket === "31_60") return { label: "Medium", status: "31_60" };
   return { label: "Low", status: "NOT_DUE" };
+}
+
+function invoiceColumns(): DataTableColumn<InvoiceListRow>[] {
+  return [
+    {
+      key: "ref",
+      header: "Invoice",
+      sticky: "left",
+      width: "min-w-[160px]",
+      cell: (invoice) => (
+        <Link
+          className="font-mono text-[13px] font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
+          href={`/invoice/${invoice.invoice_id}`}
+        >
+          {invoice.invoice_ref}
+        </Link>
+      ),
+    },
+    {
+      key: "account",
+      header: "Account",
+      sticky: "left",
+      width: "min-w-[220px]",
+      cell: (invoice) => (
+        <div>
+          <Link
+            className="font-medium text-[var(--color-text)] hover:text-[var(--color-accent)]"
+            href={`/party/${invoice.canonical_id}`}
+          >
+            {invoice.canonical_name || "Unmatched account"}
+          </Link>
+          <div className="text-xs text-[var(--color-text-muted)]">
+            {invoice.entity_code}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "issue_date",
+      header: "Issue",
+      cell: (invoice) => (
+        <span className="text-[var(--color-text-muted)]">
+          {formatDate(invoice.invoice_date)}
+        </span>
+      ),
+    },
+    {
+      key: "due_date",
+      header: "Due",
+      cell: (invoice) => (
+        <span className="text-[var(--color-text-muted)]">
+          {formatDate(invoice.due_date)}
+        </span>
+      ),
+    },
+    {
+      key: "age",
+      header: "Age",
+      align: "right",
+      cell: (invoice) => invoice.overdue_days ?? "-",
+    },
+    {
+      key: "bucket",
+      header: "Bucket",
+      cell: (invoice) => <StatusTag status={invoice.bucket} />,
+    },
+    {
+      key: "outstanding",
+      header: "Outstanding",
+      align: "right",
+      cell: (invoice) => (
+        <span className="font-medium tabular-nums">
+          {formatCurrency(invoice.amount, invoice.currency)}
+        </span>
+      ),
+    },
+    {
+      key: "risk",
+      header: "Risk",
+      cell: (invoice) => {
+        const risk = riskTag(invoice);
+        return <StatusTag label={risk.label} status={risk.status} />;
+      },
+    },
+    {
+      key: "next_action",
+      header: "Next Action",
+      cell: (invoice) => (
+        <span className="text-[var(--color-text-muted)]">
+          {suggestedAction(invoice)}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (invoice) => <StatusTag status={invoice.status} />,
+    },
+  ];
 }
 
 function filterCount(params: InvoicePageParams) {
@@ -354,112 +447,41 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               </div>
             </div>
 
-            <TableShell>
-              <table className="w-full min-w-[1120px] text-sm">
-                <thead className="bg-[var(--color-bg-subtle)] text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  <tr>
-                    <th className="px-4 py-3">Invoice</th>
-                    <th className="px-4 py-3">Account</th>
-                    <th className="px-4 py-3">Issue Date</th>
-                    <th className="px-4 py-3">Due Date</th>
-                    <th className="px-4 py-3 text-right">Age</th>
-                    <th className="px-4 py-3">Bucket</th>
-                    <th className="px-4 py-3 text-right">Outstanding</th>
-                    <th className="px-4 py-3">Risk</th>
-                    <th className="px-4 py-3">Suggested Action</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Preview</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
-                  {response.items.length === 0 ? (
-                    <EmptyTableRow colSpan={11}>
-                      <EmptyState
-                        action={
-                          <Link
-                            className="text-sm font-medium text-[var(--color-accent)]"
-                            href="/upload"
-                          >
-                            Upload snapshot
-                          </Link>
-                        }
-                        description="Invoices appear here after a workbook is staged, parsed, reviewed, and published."
-                        title="No invoices match this view"
-                      />
-                    </EmptyTableRow>
-                  ) : (
-                    response.items.map((invoice) => {
-                      const risk = riskTag(invoice);
-
-                      return (
-                        <tr
-                          className={[
-                            "transition-colors hover:bg-[var(--color-bg-subtle)]",
-                            selectedInvoice?.invoice_id === invoice.invoice_id
-                              ? "bg-[var(--color-accent-soft)]"
-                              : "",
-                          ].join(" ")}
-                          key={invoice.invoice_id}
-                        >
-                          <td className="px-4 py-3">
-                            <Link
-                              className="font-mono text-[13px] font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
-                              href={`/invoice/${invoice.invoice_id}`}
-                            >
-                              {invoice.invoice_ref}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Link
-                              className="font-medium text-[var(--color-text)] hover:text-[var(--color-accent)]"
-                              href={`/party/${invoice.canonical_id}`}
-                            >
-                              {invoice.canonical_name || "Unmatched account"}
-                            </Link>
-                            <div className="text-xs text-[var(--color-text-muted)]">
-                              {invoice.entity_code}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-[var(--color-text-muted)]">
-                            {formatDate(invoice.invoice_date)}
-                          </td>
-                          <td className="px-4 py-3 text-[var(--color-text-muted)]">
-                            {formatDate(invoice.due_date)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {invoice.overdue_days ?? "-"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusTag status={invoice.bucket} />
-                          </td>
-                          <td className="px-4 py-3 text-right font-medium">
-                            {formatCurrency(invoice.amount, invoice.currency)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusTag label={risk.label} status={risk.status} />
-                          </td>
-                          <td className="px-4 py-3 text-[var(--color-text-muted)]">
-                            {suggestedAction(invoice)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusTag status={invoice.status} />
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <Link
-                              aria-label={`Preview ${invoice.invoice_ref}`}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                              href={previewHref(invoice.invoice_id, params)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Link>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </TableShell>
+            <DataTable<InvoiceListRow>
+              columns={invoiceColumns()}
+              emptyState={{
+                title: "No invoices yet",
+                description:
+                  "Invoices appear here after a workbook is staged, parsed, reviewed, and published.",
+                action: (
+                  <Link
+                    className="text-sm font-medium text-[var(--color-accent)]"
+                    href="/snapshots"
+                  >
+                    Upload snapshot
+                  </Link>
+                ),
+              }}
+              filteredEmptyState={{
+                title: "No invoices match these filters",
+                description:
+                  "Try clearing filters or switching to another saved view.",
+                action: (
+                  <Link
+                    className="text-sm font-medium text-[var(--color-accent)]"
+                    href="/invoices"
+                  >
+                    Clear filters
+                  </Link>
+                ),
+              }}
+              isFiltered={activeFilterCount > 0}
+              minWidthClass="min-w-[1120px]"
+              rowHref={(invoice) => previewHref(invoice.invoice_id, params)}
+              rowKey={(invoice) => invoice.invoice_id}
+              rows={response.items}
+              selectedRowKey={selectedInvoice?.invoice_id ?? null}
+            />
 
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
               <span>
@@ -486,111 +508,67 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         </div>
 
         <RightRail>
-          <Panel>
-            <PanelHeader title="Invoice Detail">
-              {selectedInvoice ? selectedInvoice.invoice_ref : "No invoice selected"}
-            </PanelHeader>
-            {selectedInvoice ? (
-              <div className="space-y-4 p-4">
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="font-mono text-lg font-semibold text-[var(--color-text)]">
-                        {selectedInvoice.invoice_ref}
-                      </h2>
-                      <Link
-                        className="text-sm font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
-                        href={`/party/${selectedInvoice.canonical_id}`}
-                      >
-                        {selectedInvoice.canonical_name || "Unmatched account"}
-                      </Link>
-                    </div>
-                    <StatusTag status={selectedInvoice.bucket} />
-                  </div>
-                </div>
+          {selectedInvoice ? (
+            <SidePanel
+              meta={`${selectedInvoice.entity_code} · last reviewed ${formatDate(selectedInvoice.invoice_date)}`}
+              nextAction={
+                <Link
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
+                  href={`/follow-ups?invoice_id=${selectedInvoice.invoice_id}`}
+                >
+                  Log follow-up
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              }
+              openFullPageHref={`/invoice/${selectedInvoice.invoice_id}`}
+              status={<StatusTag status={selectedInvoice.bucket} />}
+              subtitle={selectedInvoice.canonical_name || "Unmatched account"}
+              title={selectedInvoice.invoice_ref}
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <SidePanelField label="Amount">
+                  {formatCurrency(selectedInvoice.amount, selectedInvoice.currency)}
+                </SidePanelField>
+                <SidePanelField label="Age">
+                  {selectedInvoice.overdue_days ?? 0} days
+                </SidePanelField>
+                <SidePanelField label="Issue Date">
+                  {formatDate(selectedInvoice.invoice_date)}
+                </SidePanelField>
+                <SidePanelField label="Due Date">
+                  {formatDate(selectedInvoice.due_date)}
+                </SidePanelField>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
-                    <div className="text-xs text-[var(--color-text-muted)]">
-                      Amount
-                    </div>
-                    <div className="mt-1 font-semibold">
-                      {formatCurrency(selectedInvoice.amount, selectedInvoice.currency)}
-                    </div>
-                  </div>
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
-                    <div className="text-xs text-[var(--color-text-muted)]">
-                      Age
-                    </div>
-                    <div className="mt-1 font-semibold">
-                      {selectedInvoice.overdue_days ?? 0} days
-                    </div>
-                  </div>
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
-                    <div className="text-xs text-[var(--color-text-muted)]">
-                      Issue Date
-                    </div>
-                    <div className="mt-1 font-semibold">
-                      {formatDate(selectedInvoice.invoice_date)}
-                    </div>
-                  </div>
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3">
-                    <div className="text-xs text-[var(--color-text-muted)]">
-                      Due Date
-                    </div>
-                    <div className="mt-1 font-semibold">
-                      {formatDate(selectedInvoice.due_date)}
-                    </div>
-                  </div>
+              <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
+                <div className="text-sm font-semibold text-[var(--color-text)]">
+                  Next Review Path
                 </div>
-
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
-                  <div className="text-sm font-semibold text-[var(--color-text)]">
-                    Next Review Path
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
-                    <span>{suggestedAction(selectedInvoice)}</span>
-                    <StatusTag
-                      label={
-                        selectedInvoice.active_exception_count > 0
-                          ? `${selectedInvoice.active_exception_count} active`
-                          : "No exception"
-                      }
-                      status={
-                        selectedInvoice.active_exception_count > 0
-                          ? "STAGING_BLOCKED"
-                          : "NO_DATA"
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <Link
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                    href={`/invoice/${selectedInvoice.invoice_id}`}
-                  >
-                    View Invoice
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                  <Link
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                    href={`/party/${selectedInvoice.canonical_id}`}
-                  >
-                    Account
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
+                <div className="mt-2 flex items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
+                  <span>{suggestedAction(selectedInvoice)}</span>
+                  <StatusTag
+                    label={
+                      selectedInvoice.active_exception_count > 0
+                        ? `${selectedInvoice.active_exception_count} active`
+                        : "No exception"
+                    }
+                    status={
+                      selectedInvoice.active_exception_count > 0
+                        ? "STAGING_BLOCKED"
+                        : "NO_DATA"
+                    }
+                  />
                 </div>
               </div>
-            ) : (
-              <div className="p-4">
-                <EmptyState
-                  description="Select an invoice to inspect ageing, exception, and account context."
-                  title="No invoice selected"
-                />
-              </div>
-            )}
-          </Panel>
+            </SidePanel>
+          ) : (
+            <SidePanel title="No invoice selected">
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Select an invoice from the queue to inspect ageing, exception,
+                and account context here.
+              </p>
+            </SidePanel>
+          )}
 
           <Panel>
             <PanelHeader title="Linked Workflows">
@@ -615,11 +593,9 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                 ))}
               </div>
             ) : (
-              <div className="p-4">
-                <EmptyState
-                  description="Select an invoice to open related follow-up, collection, promise, and exception workflows."
-                  title="No invoice selected"
-                />
+              <div className="p-4 text-sm text-[var(--color-text-muted)]">
+                Select an invoice to open related follow-up, task, promise,
+                and exception workflows.
               </div>
             )}
           </Panel>
