@@ -308,10 +308,18 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
     (sum, account) => sum + account.open_task_count,
     0,
   );
+  const ninetyPlusPartyCount = visibleAccounts.filter(
+    (account) => toCents(account.ninety_plus_exposure) > 0,
+  ).length;
   const ninetyPlusExposure = visibleAccounts.reduce(
     (sum, account) => sum + toCents(account.ninety_plus_exposure),
     0,
   );
+  const visibleCurrencies = new Set(
+    visibleAccounts.map((account) => account.currency_display),
+  );
+  const singleVisibleCurrency =
+    visibleCurrencies.size === 1 ? visibleAccounts[0]?.currency_display : null;
   const isFiltered = activeView !== "all";
 
   return (
@@ -354,8 +362,16 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
         />
         <MetricCard
           label="90+ Exposure"
-          meta={`${openTaskCount} open tasks`}
-          value={formatCurrency(fromCents(ninetyPlusExposure), "INR")}
+          meta={
+            singleVisibleCurrency
+              ? `${openTaskCount} open tasks`
+              : `${openTaskCount} open tasks - mixed currencies`
+          }
+          value={
+            singleVisibleCurrency
+              ? formatCurrency(fromCents(ninetyPlusExposure), singleVisibleCurrency)
+              : `${ninetyPlusPartyCount} parties`
+          }
         />
       </section>
 

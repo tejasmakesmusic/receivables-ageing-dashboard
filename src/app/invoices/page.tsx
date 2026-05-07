@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Filter, Settings, Upload } from "lucide-react";
+import { SavedViewSwitcher } from "@/components/saved-views/saved-view-switcher";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { MiniSparkline } from "@/components/ui/mini-chart";
@@ -334,6 +335,10 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
+          <SavedViewSwitcher
+            currentUserRole={currentUser.role}
+            surface="invoices"
+          />
           <SavedViewTabs>
             <SavedViewLink active={!systemViewId} href="/invoices">
               All Invoices

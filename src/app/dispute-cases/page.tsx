@@ -19,6 +19,7 @@ import { formatDate } from "@/lib/format";
 import { assertNotPending } from "@/server/core/assertNotPending";
 import { requirePageRole } from "@/server/core/page-auth";
 import { listDisputeCases } from "@/server/dispute-cases/service";
+import { DisputeKanban } from "./_components/dispute-kanban";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,10 @@ type DisputePageParams = {
   entity_id?: string;
   page?: number;
   status?: dispute_case_status;
+  tab?: DisputePageTab;
 };
+
+type DisputePageTab = "list" | "kanban";
 
 type DisputeRow = {
   canonical_id: string;
@@ -56,6 +60,11 @@ const STATUS_FILTERS: { label: string; value: dispute_case_status | "" }[] = [
   { label: "Escalated", value: "WAITING_ON_CUSTOMER" },
   { label: "Resolved", value: "RESOLVED" },
   { label: "Cancelled", value: "CLOSED" },
+];
+
+const VIEW_TABS: Array<{ label: string; value: DisputePageTab }> = [
+  { label: "List", value: "list" },
+  { label: "Kanban", value: "kanban" },
 ];
 
 function first(value: string | string[] | undefined): string | undefined {
@@ -124,6 +133,7 @@ function disputeColumns(
       width: "min-w-[160px]",
       cell: (dispute) =>
         dispute.invoice_id ? (
+          // TODO: Replace this invoice_id preview with invoice_ref when listDisputeCases exposes it.
           <Link
             className="font-mono text-[13px] font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
             href={`/invoice/${dispute.invoice_id}`}
@@ -227,11 +237,14 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
   assertNotPending(user);
 
   const page = Number(first(raw.page) ?? "1");
+  const activeTab: DisputePageTab =
+    first(raw.tab) === "kanban" ? "kanban" : "list";
   const params: DisputePageParams = {
     dispute: first(raw.dispute),
     entity_id: first(raw.entity_id),
     page,
     status: first(raw.status) as dispute_case_status | undefined,
+    tab: activeTab === "kanban" ? "kanban" : undefined,
   };
 
   const { items, page_size: pageSize, total } = await listDisputeCases(
@@ -259,6 +272,14 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
   const resolvedCount = disputes.filter(
     (dispute) => dispute.status === "RESOLVED",
   ).length;
+  const kanbanDisputes = disputes.map((dispute) => ({
+    canonical_id: dispute.canonical_id,
+    entity_code: dispute.entities?.code ?? dispute.entity_id,
+    id: dispute.id,
+    party_name: dispute.parties_canonical?.name ?? "Unmatched account",
+    reason_code: dispute.reason_code,
+    status: dispute.status,
+  }));
 
   return (
     <PageFrame>
@@ -295,6 +316,7 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
                 href={disputeHref({
                   entity_id: params.entity_id,
                   status: value || undefined,
+                  tab: params.tab,
                 })}
                 key={value || "all"}
               >
@@ -302,6 +324,34 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
               </SavedViewLink>
             ))}
           </SavedViewTabs>
+
+          <div className="inline-flex w-fit items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 text-sm">
+            {VIEW_TABS.map((tab) => {
+              const active = activeTab === tab.value;
+
+              return (
+                <Link
+                  aria-current={active ? "page" : undefined}
+                  className={[
+                    "rounded-[var(--radius-sm)] px-3 py-1.5 font-medium text-[var(--color-text-muted)] transition",
+                    active
+                      ? "bg-[var(--color-bg-subtle)] text-[var(--color-text)] shadow-sm"
+                      : "hover:text-[var(--color-text)]",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  href={disputeHref({
+                    ...params,
+                    page: 1,
+                    tab: tab.value === "kanban" ? "kanban" : undefined,
+                  })}
+                  key={tab.value}
+                >
+                  {tab.label}
+                </Link>
+              );
+            })}
+          </div>
 
           <Panel>
             <form
@@ -320,6 +370,9 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
                 ))}
               </select>
               <input name="page" type="hidden" value="1" />
+              {params.tab ? (
+                <input name="tab" type="hidden" value={params.tab} />
+              ) : null}
               {params.entity_id ? (
                 <input name="entity_id" type="hidden" value={params.entity_id} />
               ) : null}
@@ -329,69 +382,77 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
               </Button>
             </form>
 
-            <DataTable<DisputeRow>
-              columns={disputeColumns(params)}
-              emptyState={{
-                title: "No dispute cases yet",
-                description:
-                  "Disputes appear here after analysts raise them from collection tasks or invoice detail pages.",
-                action: (
-                  <Link
-                    className="text-sm font-medium text-[var(--color-accent)]"
-                    href="/tasks"
-                  >
-                    Review task queue
-                  </Link>
-                ),
-              }}
-              filteredEmptyState={{
-                title: "No disputes match this filter",
-                description:
-                  "Switch the lifecycle filter or clear entity scope to inspect other cases.",
-                action: (
-                  <Link
-                    className="text-sm font-medium text-[var(--color-accent)]"
-                    href="/dispute-cases"
-                  >
-                    Clear filters
-                  </Link>
-                ),
-              }}
-              isFiltered={isFiltered}
-              minWidthClass="min-w-[1180px]"
-              rowHref={(dispute) => previewHref(dispute.id, params)}
-              rowKey={(dispute) => dispute.id}
-              rows={disputes}
-              selectedRowKey={selected?.id ?? null}
-            />
+            {activeTab === "kanban" ? (
+              <DisputeKanban disputes={kanbanDisputes} />
+            ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
-              <span>
-                Showing page {page} of {totalPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <Link
-                  aria-disabled={page <= 1}
-                  className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                  href={disputeHref({
-                    ...params,
-                    page: Math.max(1, page - 1),
-                  })}
-                >
-                  Previous
-                </Link>
-                <Link
-                  aria-disabled={page >= totalPages}
-                  className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                  href={disputeHref({
-                    ...params,
-                    page: Math.min(totalPages, page + 1),
-                  })}
-                >
-                  Next
-                </Link>
-              </div>
-            </div>
+            {activeTab !== "kanban" ? (
+              <>
+                <DataTable<DisputeRow>
+                  columns={disputeColumns(params)}
+                  emptyState={{
+                    title: "No dispute cases yet",
+                    description:
+                      "Disputes appear here after analysts raise them from collection tasks or invoice detail pages.",
+                    action: (
+                      <Link
+                        className="text-sm font-medium text-[var(--color-accent)]"
+                        href="/tasks"
+                      >
+                        Review task queue
+                      </Link>
+                    ),
+                  }}
+                  filteredEmptyState={{
+                    title: "No disputes match this filter",
+                    description:
+                      "Switch the lifecycle filter or clear entity scope to inspect other cases.",
+                    action: (
+                      <Link
+                        className="text-sm font-medium text-[var(--color-accent)]"
+                        href="/dispute-cases"
+                      >
+                        Clear filters
+                      </Link>
+                    ),
+                  }}
+                  isFiltered={isFiltered}
+                  minWidthClass="min-w-[1180px]"
+                  rowHref={(dispute) => previewHref(dispute.id, params)}
+                  rowKey={(dispute) => dispute.id}
+                  rows={disputes}
+                  selectedRowKey={selected?.id ?? null}
+                />
+
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
+                  <span>
+                    Showing page {page} of {totalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      aria-disabled={page <= 1}
+                      className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                      href={disputeHref({
+                        ...params,
+                        page: Math.max(1, page - 1),
+                      })}
+                    >
+                      Previous
+                    </Link>
+                    <Link
+                      aria-disabled={page >= totalPages}
+                      className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                      href={disputeHref({
+                        ...params,
+                        page: Math.min(totalPages, page + 1),
+                      })}
+                    >
+                      Next
+                    </Link>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </Panel>
         </div>
 

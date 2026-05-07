@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, CalendarCheck } from "lucide-react";
+import { PtpCalendar } from "@/app/promises-to-pay/_components/ptp-calendar";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
@@ -13,10 +14,7 @@ import {
   SavedViewLink,
   SavedViewTabs,
 } from "@/components/ui/workspace";
-import {
-  promise_to_pay_status,
-  role_enum,
-} from "@/generated/prisma/enums";
+import { promise_to_pay_status, role_enum } from "@/generated/prisma/enums";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getPrisma } from "@/lib/prisma";
 import { assertNotPending } from "@/server/core/assertNotPending";
@@ -30,6 +28,7 @@ type PageProps = {
 };
 
 type PromiseStatus = promise_to_pay_status;
+type PromiseTab = "list" | "calendar";
 type PromiseListResponse = Awaited<ReturnType<typeof listPromisesToPay>>;
 type PromiseListItem = PromiseListResponse["items"][number];
 type PromiseViewRow = PromiseListItem & {
@@ -42,6 +41,7 @@ type PromisePageParams = {
   page: number;
   promise?: string;
   status?: PromiseStatus;
+  tab?: PromiseTab;
 };
 
 const STATUS_FILTERS: { label: string; value: PromiseStatus | "" }[] = [
@@ -50,6 +50,11 @@ const STATUS_FILTERS: { label: string; value: PromiseStatus | "" }[] = [
   { label: "Kept", value: promise_to_pay_status.KEPT },
   { label: "Broken", value: promise_to_pay_status.BROKEN },
   { label: "Cancelled", value: promise_to_pay_status.CANCELLED },
+];
+
+const VIEW_TABS: { label: string; value: PromiseTab }[] = [
+  { label: "List", value: "list" },
+  { label: "Calendar", value: "calendar" },
 ];
 
 function first(value: string | string[] | undefined): string | undefined {
@@ -67,6 +72,16 @@ function parseStatus(value: string | undefined): PromiseStatus | undefined {
   }
 
   return undefined;
+}
+
+function parseTab(value: string | undefined): PromiseTab {
+  return value === "calendar" ? "calendar" : "list";
+}
+
+function toIsoDate(value: string | Date): string {
+  return typeof value === "string"
+    ? value.slice(0, 10)
+    : value.toISOString().slice(0, 10);
 }
 
 function pageHref(page: number, params: PromisePageParams) {
@@ -95,8 +110,32 @@ function filterHref(status: PromiseStatus | "", params: PromisePageParams) {
     search.set("status", status);
   }
 
+  if (params.tab === "calendar") {
+    search.set("tab", "calendar");
+  }
+
   const query = search.toString();
   return query ? `/promises-to-pay?${query}` : "/promises-to-pay";
+}
+
+function tabHref(tab: PromiseTab, params: PromisePageParams) {
+  const search = new URLSearchParams();
+
+  if (params.canonical_id) {
+    search.set("canonical_id", params.canonical_id);
+  }
+
+  if (params.status) {
+    search.set("status", params.status);
+  }
+
+  if (params.promise) {
+    search.set("promise", params.promise);
+  }
+
+  search.set("tab", tab);
+
+  return `/promises-to-pay?${search.toString()}`;
 }
 
 function previewHref(promiseId: string, params: PromisePageParams) {
@@ -191,7 +230,9 @@ function promiseColumns(): DataTableColumn<PromiseViewRow>[] {
       key: "promised_date",
     },
     {
-      cell: (promise) => <StatusTag status={promiseStatusTag(promise.status)} />,
+      cell: (promise) => (
+        <StatusTag status={promiseStatusTag(promise.status)} />
+      ),
       header: "Status",
       key: "status",
     },
@@ -226,11 +267,13 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
   assertNotPending(user);
 
   const page = Math.max(1, Number(first(raw.page) ?? "1") || 1);
+  const activeTab = parseTab(first(raw.tab));
   const params: PromisePageParams = {
     canonical_id: first(raw.canonical_id),
     page,
     promise: first(raw.promise),
     status: parseStatus(first(raw.status)),
+    tab: activeTab,
   };
   const response = await listPromisesToPay(
     {
@@ -246,10 +289,28 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
   const promises: PromiseViewRow[] = response.items.map((promise) => ({
     ...promise,
     invoice_ref: promise.invoice_id
-      ? invoiceRefs.get(promise.invoice_id) ?? null
+      ? (invoiceRefs.get(promise.invoice_id) ?? null)
       : null,
     party_name: promise.parties_canonical?.name ?? promise.canonical_id,
   }));
+  const calendarPromises = promises.map((promise) => ({
+    id: promise.id,
+    canonical_id: promise.canonical_id,
+    party_name: promise.party_name,
+    invoice_ref: promise.invoice_ref,
+    promised_date: toIsoDate(promise.promised_date),
+    amount: promise.amount,
+    currency: promise.currency,
+    status: promise.status,
+    contact_person: promise.contact_person,
+  }));
+  const calendarSearchParams: Record<string, string | undefined> = {
+    canonical_id: params.canonical_id,
+    page: String(params.page),
+    promise: params.promise,
+    status: params.status,
+    tab: params.tab,
+  };
   const selectedPromise =
     promises.find((promise) => promise.id === params.promise) ??
     promises[0] ??
@@ -308,11 +369,7 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
           meta="Awaiting payment date"
           value={openCount}
         />
-        <MetricCard
-          label="Broken"
-          meta="Needs follow-up"
-          value={brokenCount}
-        />
+        <MetricCard label="Broken" meta="Needs follow-up" value={brokenCount} />
         <MetricCard label="Kept" meta="Closed successfully" value={keptCount} />
       </section>
 
@@ -330,93 +387,126 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
             ))}
           </SavedViewTabs>
 
-          <Panel>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-3">
-              <div>
-                <div className="text-sm font-semibold text-[var(--color-text)]">
-                  Promise Register
-                </div>
-                <div className="text-xs text-[var(--color-text-muted)]">
-                  Open any promise to inspect invoice, account, and follow-up
-                  context.
-                </div>
-              </div>
-              {isFiltered ? (
-                <Link
-                  className="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-accent)]"
-                  href="/promises-to-pay"
-                >
-                  Clear filters
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              ) : null}
-            </div>
+          <nav
+            aria-label="Promise view"
+            className="inline-flex w-fit items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
+          >
+            {VIEW_TABS.map((tab) => (
+              <Link
+                aria-current={activeTab === tab.value ? "page" : undefined}
+                className={[
+                  "inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-sm transition-colors",
+                  activeTab === tab.value
+                    ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
+                    : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+                ].join(" ")}
+                href={tabHref(tab.value, params)}
+                key={tab.value}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </nav>
 
-            {params.canonical_id ? (
-              <div className="border-b border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
-                Party filter active:{" "}
-                <span className="font-mono">{params.canonical_id}</span>
-              </div>
-            ) : null}
+          {activeTab === "calendar" ? (
+            <PtpCalendar
+              baseSearchParams={calendarSearchParams}
+              promises={calendarPromises}
+            />
+          ) : null}
 
-            <DataTable<PromiseViewRow>
-              columns={promiseColumns()}
-              emptyState={{
-                action: (
+          {activeTab === "list" ? (
+            <Panel>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--color-text)]">
+                    Promise Register
+                  </div>
+                  <div className="text-xs text-[var(--color-text-muted)]">
+                    Open any promise to inspect invoice, account, and follow-up
+                    context.
+                  </div>
+                </div>
+                {isFiltered ? (
                   <Link
-                    className="text-sm font-medium text-[var(--color-accent)]"
-                    href="/tasks"
-                  >
-                    Review collection tasks
-                  </Link>
-                ),
-                description:
-                  "Promises appear after an analyst records a customer payment commitment.",
-                title: "No promises recorded yet",
-              }}
-              filteredEmptyState={{
-                action: (
-                  <Link
-                    className="text-sm font-medium text-[var(--color-accent)]"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-accent)]"
                     href="/promises-to-pay"
                   >
-                    View open promises
+                    Clear filters
+                    <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
-                ),
-                description:
-                  "Clear filters or switch status views to continue promise review.",
-                title: "No promises match these filters",
-              }}
-              isFiltered={isFiltered}
-              minWidthClass="min-w-[1120px]"
-              rowHref={(promise) => previewHref(promise.id, params)}
-              rowKey={(promise) => promise.id}
-              rows={promises}
-              selectedRowKey={selectedPromise?.id ?? null}
-            />
-
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
-              <span>
-                Showing page {response.page} of {totalPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <Link
-                  aria-disabled={response.page <= 1}
-                  className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                  href={pageHref(Math.max(1, response.page - 1), params)}
-                >
-                  Previous
-                </Link>
-                <Link
-                  aria-disabled={response.page >= totalPages}
-                  className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                  href={pageHref(Math.min(totalPages, response.page + 1), params)}
-                >
-                  Next
-                </Link>
+                ) : null}
               </div>
-            </div>
-          </Panel>
+
+              {params.canonical_id ? (
+                <div className="border-b border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
+                  Party filter active:{" "}
+                  <span className="font-mono">{params.canonical_id}</span>
+                </div>
+              ) : null}
+
+              <DataTable<PromiseViewRow>
+                columns={promiseColumns()}
+                emptyState={{
+                  action: (
+                    <Link
+                      className="text-sm font-medium text-[var(--color-accent)]"
+                      href="/tasks"
+                    >
+                      Review collection tasks
+                    </Link>
+                  ),
+                  description:
+                    "Promises appear after an analyst records a customer payment commitment.",
+                  title: "No promises recorded yet",
+                }}
+                filteredEmptyState={{
+                  action: (
+                    <Link
+                      className="text-sm font-medium text-[var(--color-accent)]"
+                      href="/promises-to-pay"
+                    >
+                      View open promises
+                    </Link>
+                  ),
+                  description:
+                    "Clear filters or switch status views to continue promise review.",
+                  title: "No promises match these filters",
+                }}
+                isFiltered={isFiltered}
+                minWidthClass="min-w-[1120px]"
+                rowHref={(promise) => previewHref(promise.id, params)}
+                rowKey={(promise) => promise.id}
+                rows={promises}
+                selectedRowKey={selectedPromise?.id ?? null}
+              />
+
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
+                <span>
+                  Showing page {response.page} of {totalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Link
+                    aria-disabled={response.page <= 1}
+                    className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                    href={pageHref(Math.max(1, response.page - 1), params)}
+                  >
+                    Previous
+                  </Link>
+                  <Link
+                    aria-disabled={response.page >= totalPages}
+                    className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                    href={pageHref(
+                      Math.min(totalPages, response.page + 1),
+                      params,
+                    )}
+                  >
+                    Next
+                  </Link>
+                </div>
+              </div>
+            </Panel>
+          ) : null}
         </div>
 
         <RightRail>
@@ -434,7 +524,9 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
               }
               openFullPageHref={selectedOpenHref}
               openFullPageLabel={selectedOpenLabel}
-              status={<StatusTag status={promiseStatusTag(selectedPromise.status)} />}
+              status={
+                <StatusTag status={promiseStatusTag(selectedPromise.status)} />
+              }
               subtitle={selectedPromise.party_name}
               title={selectedPromise.invoice_ref ?? "Unlinked promise"}
             >
@@ -495,10 +587,7 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
                     "Task queue",
                     `/tasks?canonical_id=${selectedPromise.canonical_id}`,
                   ],
-                  [
-                    "Party page",
-                    `/party/${selectedPromise.canonical_id}`,
-                  ],
+                  ["Party page", `/party/${selectedPromise.canonical_id}`],
                   selectedPromise.invoice_id
                     ? [
                         "Linked invoice",
