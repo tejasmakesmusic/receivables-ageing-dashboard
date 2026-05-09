@@ -102,6 +102,16 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   let dashboard: DashboardResponse | null = null;
   let dashboardError: DashboardError | null = null;
 
+  const publishedSnapshots = await getPrisma().snapshots.findMany({
+    where: {
+      status: "PUBLISHED",
+      ...(entity !== "ALL" ? { entities: { is: { code: entity } } } : {}),
+    },
+    select: { id: true, as_of_date: true, entities: { select: { code: true } } },
+    orderBy: { as_of_date: "desc" },
+    take: 30,
+  });
+
   if (forcedEntity) {
     try {
       dashboard = await getDashboard({ as_of: asOf, entity });
@@ -156,6 +166,16 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             name="as_of"
           >
             <option value="latest">Latest snapshot</option>
+            {publishedSnapshots.map((snap) => {
+              const dateStr = snap.as_of_date
+                ? snap.as_of_date.toISOString().slice(0, 10)
+                : snap.id;
+              return (
+                <option key={snap.id} value={dateStr}>
+                  {formatDate(snap.as_of_date)} ({snap.entities.code})
+                </option>
+              );
+            })}
           </select>
           <Button className="justify-self-start" type="submit" variant="secondary">
             <Filter className="h-4 w-4" />

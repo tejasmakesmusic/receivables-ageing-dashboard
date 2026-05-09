@@ -79,6 +79,16 @@ export const STATUS_TAGS = {
   STAGING_BLOCKED: tag("Staging Blocked", "danger"),
   WORKFLOW_DRAFT: tag("Draft", "info"),
   WORKFLOW_DISABLED: tag("Unavailable", "neutral"),
+
+  // Staging resolution states
+  EXACT: tag("Auto-matched", "current"),
+  FUZZY_HIGH: tag("High Match", "info"),
+  FUZZY_LOW: tag("Low Match", "warning"),
+  UNMAPPED: tag("Unmapped", "danger"),
+  RESOLVED: tag("Resolved", "current"),
+  DISMISSED: tag("Reviewed", "neutral"),
+  PARSE_ERROR: tag("Parse Error", "danger"),
+  GATE_OK: tag("Ready to Publish", "current"),
 } as const satisfies Record<string, StatusTagDefinition>;
 
 export type StatusTagKey = keyof typeof STATUS_TAGS;

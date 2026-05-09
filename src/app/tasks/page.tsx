@@ -60,6 +60,8 @@ interface CollectionTaskView {
   id: string;
   invoice_id: string | null;
   owner_user_id: string | null;
+  owner_name: string | null;
+  party_name: string | null;
   priority_score: number;
   reason_code: string;
   status: string;
@@ -97,11 +99,14 @@ function toTaskView(task: {
   id: string;
   invoice_id: string | null;
   owner_user_id: string | null;
+  parties_canonical?: { name?: string | null } | null;
   priority_score: number | { toString: () => string };
   reason_code: string;
   status: string;
   updated_at: Date;
+  users_collection_tasks_owner_user_idTousers?: { name?: string | null; email?: string | null } | null;
 }): CollectionTaskView {
+  const ownerUser = task.users_collection_tasks_owner_user_idTousers;
   return {
     canonical_id: task.canonical_id,
     created_at: task.created_at.toISOString(),
@@ -110,6 +115,8 @@ function toTaskView(task: {
     id: task.id,
     invoice_id: task.invoice_id,
     owner_user_id: task.owner_user_id,
+    owner_name: ownerUser?.name ?? ownerUser?.email ?? null,
+    party_name: task.parties_canonical?.name ?? null,
     priority_score: Number(task.priority_score),
     reason_code: task.reason_code,
     status: task.status,
@@ -173,8 +180,9 @@ function columnAccent(columnId: string) {
   return "var(--color-accent)";
 }
 
-function formatOwner(ownerUserId: string | null) {
-  return ownerUserId ? `${ownerUserId.slice(0, 8)}...` : "Unassigned";
+function formatOwner(task: Pick<CollectionTaskView, "owner_user_id" | "owner_name">) {
+  if (!task.owner_user_id) return "Unassigned";
+  return task.owner_name ?? `${task.owner_user_id.slice(0, 8)}…`;
 }
 
 function formatTaskDueDate(task: CollectionTaskView) {
@@ -236,10 +244,12 @@ function taskColumns(): DataTableColumn<CollectionTaskView>[] {
       sticky: "left",
       width: "min-w-[160px]",
       cell: (task) => (
-        <span className="font-mono text-xs text-[var(--color-text-muted)]">
-          {/* TODO: Replace canonical ID fragments with party display names when the tasks read model exposes them. */}
-          {task.canonical_id.slice(0, 8)}
-        </span>
+        <Link
+          className="font-medium text-[var(--color-text)] hover:text-[var(--color-accent)]"
+          href={`/party/${task.canonical_id}`}
+        >
+          {task.party_name ?? task.canonical_id.slice(0, 8)}
+        </Link>
       ),
     },
     {
@@ -265,7 +275,7 @@ function taskColumns(): DataTableColumn<CollectionTaskView>[] {
       header: "Assigned User",
       cell: (task) => (
         <span className="text-[var(--color-text-muted)]">
-          {formatOwner(task.owner_user_id)}
+          {formatOwner(task)}
         </span>
       ),
     },
@@ -568,8 +578,8 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
                                 <div className="text-sm font-semibold text-[var(--color-text)]">
                                   {reasonLabel(task.reason_code)}
                                 </div>
-                                <div className="mt-1 font-mono text-xs text-[var(--color-text-muted)]">
-                                  {task.canonical_id.slice(0, 8)}
+                                <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+                                  {task.party_name ?? task.canonical_id.slice(0, 8)}
                                 </div>
                               </div>
                               <span
@@ -626,8 +636,8 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
                           <div className="text-sm font-medium text-[var(--color-text)]">
                             {reasonLabel(task.reason_code)}
                           </div>
-                          <div className="font-mono text-xs text-[var(--color-text-muted)]">
-                            {task.canonical_id.slice(0, 8)}
+                          <div className="text-xs text-[var(--color-text-muted)]">
+                            {task.party_name ?? task.canonical_id.slice(0, 8)}
                           </div>
                         </div>
                         <StatusTag status={taskStatusTag(task.status)} />
@@ -731,7 +741,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
 
           {selectedTask ? (
             <SidePanel
-              meta={`Updated ${formatDate(selectedTask.updated_at)} | ${formatOwner(selectedTask.owner_user_id)}`}
+              meta={`Updated ${formatDate(selectedTask.updated_at)} | ${formatOwner(selectedTask)}`}
               nextAction={
                 <Link
                   className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
@@ -747,7 +757,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
                   : `/party/${selectedTask.canonical_id}`
               }
               status={<StatusTag status={taskStatusTag(selectedTask.status)} />}
-              subtitle={selectedTask.canonical_id}
+              subtitle={selectedTask.party_name ?? selectedTask.canonical_id}
               title={reasonLabel(selectedTask.reason_code)}
             >
               <div className="grid grid-cols-2 gap-3">

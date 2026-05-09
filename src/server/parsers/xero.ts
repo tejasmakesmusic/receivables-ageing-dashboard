@@ -343,6 +343,7 @@ export function parseXeroAgedReceivables(
   }
 
   let currentParty: string | null = null;
+  let currentXeroContactId: string | null = null;
   let pastGrandTotal = false;
   const okInvoices: ParsedInvoiceRow[] = [];
 
@@ -367,7 +368,8 @@ export function parseXeroAgedReceivables(
     }
 
     if (isPartyHeader(row, contactCol, invoiceDateCol)) {
-      currentParty = stringifyCell(row[contactCol]) ?? "";
+      currentXeroContactId = stringifyCell(row[contactCol]);
+      currentParty = currentXeroContactId ?? "";
       continue;
     }
 
@@ -405,6 +407,8 @@ export function parseXeroAgedReceivables(
           status: "PARSE_ERROR",
           source_currency: "AED",
           party_name_raw: currentParty ?? "",
+          gstin: null,
+          xero_contact_id: currentXeroContactId,
           invoice_ref: null,
           invoice_date: null,
           amount: null,
@@ -422,6 +426,8 @@ export function parseXeroAgedReceivables(
         status: "OK",
         source_currency: "AED",
         party_name_raw: currentParty ?? "",
+        gstin: null,
+        xero_contact_id: currentXeroContactId,
         invoice_ref: invoiceRef,
         invoice_date: invoiceDate,
         amount: scaledToDecimalString(amountScaled),
@@ -439,6 +445,8 @@ export function parseXeroAgedReceivables(
         status: "PARSE_ERROR",
         source_currency: "AED",
         party_name_raw: currentParty ?? "",
+        gstin: null,
+        xero_contact_id: currentXeroContactId,
         invoice_ref: null,
         invoice_date: null,
         amount: null,
@@ -454,6 +462,8 @@ export function parseXeroAgedReceivables(
       status: "PARSE_ERROR",
       source_currency: "AED",
       party_name_raw: currentParty ?? "",
+      gstin: null,
+      xero_contact_id: currentXeroContactId,
       invoice_ref: null,
       invoice_date: null,
       amount: null,

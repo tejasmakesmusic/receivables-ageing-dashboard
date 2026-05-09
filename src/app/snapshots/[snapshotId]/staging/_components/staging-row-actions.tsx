@@ -2,18 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Check, Plus } from "lucide-react";
 import type {
   StagingCreditPeriodRow,
   StagingInvoiceRow,
 } from "@/server/snapshots/service";
 
 type StagingRow = StagingInvoiceRow | StagingCreditPeriodRow;
-type ActionState = "idle" | "submitting" | "error";
-
-type ApiError = {
-  error?: string;
-  message?: string;
-};
 
 function isInvoiceRow(row: StagingRow): row is StagingInvoiceRow {
   return "party_name_raw" in row;
@@ -31,25 +26,19 @@ export function StagingRowActions({
   snapshotId: string;
 }) {
   const router = useRouter();
-  const [state, setState] = useState<ActionState>("idle");
+  const [state, setState] = useState<"idle" | "submitting" | "error">("idle");
   const [message, setMessage] = useState("");
+
   const isInvoice = isInvoiceRow(row);
   const isResolved = Boolean(row.analyst_overrides.resolved_canonical_id);
+  const resolutionState = isInvoice ? row.alias_resolution.resolutionState : "OK";
   const candidate = isInvoice ? row.alias_resolution.topMatches[0] : null;
-
-  async function readError(response: Response) {
-    const payload = (await response.json().catch(() => null)) as ApiError | null;
-    return (
-      payload?.message ?? payload?.error ?? `Request failed with ${response.status}`
-    );
-  }
 
   async function patchRow(body: Record<string, unknown>) {
     setState("submitting");
     setMessage("");
-
     try {
-      const response = await fetch(
+      const res = await fetch(
         `/api/snapshots/${snapshotId}/staging/${row.row_index}`,
         {
           method: "PATCH",
@@ -57,34 +46,69 @@ export function StagingRowActions({
           body: JSON.stringify(body),
         },
       );
-
-      if (!response.ok) {
-        throw new Error(await readError(response));
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as {
+          message?: string;
+          error?: string;
+        } | null;
+        throw new Error(
+          err?.message ?? err?.error ?? `Request failed ${res.status}`,
+        );
       }
-
       router.refresh();
       setState("idle");
-    } catch (error) {
+    } catch (err) {
       setState("error");
       setMessage(
-        error instanceof Error ? error.message : "Could not update staging row",
+        err instanceof Error ? err.message : "Could not update staging row",
       );
     }
   }
 
+  // Analyst override applied
   if (isResolved) {
-    return <span className="text-xs text-emerald-700">Resolved</span>;
+    return (
+      <div className="flex items-center gap-1.5 text-sm text-[var(--color-status-current-text)]">
+        <Check className="h-3.5 w-3.5 shrink-0" />
+        Resolved
+      </div>
+    );
   }
 
-  if (isInvoice && row.status === "PARSE_ERROR") {
-    if (row.analyst_overrides.dismissed) {
-      return <span className="text-xs text-emerald-700">Reviewed</span>;
-    }
-
+  // Credit period row or exact auto-match — no action needed
+  if (!isInvoice || resolutionState === "EXACT") {
     return (
-      <div className="grid gap-1">
+      <div className="text-xs text-[var(--color-text-muted)]">
+        {candidate ? (
+          <span>→ {candidate.canonicalName}</span>
+        ) : (
+          <span className="text-[var(--color-status-current-text)]">
+            Auto-matched
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  // Parse error row
+  if (row.status === "PARSE_ERROR") {
+    if (row.analyst_overrides.dismissed) {
+      return (
+        <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+          <Check className="h-3 w-3 shrink-0" />
+          Reviewed
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-1.5">
+        {row.parse_error_reason ? (
+          <p className="max-w-[200px] text-xs text-[var(--color-status-danger-text)]">
+            {row.parse_error_reason}
+          </p>
+        ) : null}
         <button
-          className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:pointer-events-none disabled:opacity-60"
+          className="inline-flex h-7 items-center rounded-[var(--radius-sm)] border border-[var(--color-status-warning-border)] bg-[var(--color-status-warning-bg)] px-2.5 text-xs font-medium text-[var(--color-status-warning-text)] hover:opacity-80 disabled:pointer-events-none disabled:opacity-50"
           disabled={state === "submitting"}
           onClick={() =>
             patchRow({
@@ -94,18 +118,31 @@ export function StagingRowActions({
           }
           type="button"
         >
-          {state === "submitting" ? "Saving..." : "Mark Reviewed"}
+          {state === "submitting" ? "Saving…" : "Mark Reviewed"}
         </button>
-        {message ? <span className="text-xs text-red-700">{message}</span> : null}
+        {message ? (
+          <p className="text-xs text-[var(--color-status-danger-text)]">
+            {message}
+          </p>
+        ) : null}
       </div>
     );
   }
 
+  // Fuzzy high — candidate likely correct, accent-colored accept button
+  // Fuzzy low / unmapped — candidate uncertain or absent, create new is primary
+  const isFuzzyHigh = resolutionState === "FUZZY_HIGH";
+
   return (
-    <div className="grid max-w-56 gap-1">
+    <div className="space-y-1">
       {candidate ? (
         <button
-          className="rounded border border-slate-200 bg-white px-2 py-1 text-left text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-60"
+          className={[
+            "inline-flex h-7 w-full max-w-[220px] items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 text-xs font-medium disabled:pointer-events-none disabled:opacity-50",
+            isFuzzyHigh
+              ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white"
+              : "border-[var(--color-status-warning-border)] bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning-text)] hover:opacity-80",
+          ].join(" ")}
           disabled={state === "submitting"}
           onClick={() =>
             patchRow({
@@ -114,25 +151,46 @@ export function StagingRowActions({
               create_alias: true,
             })
           }
+          title={`Accept: ${candidate.canonicalName} (${candidate.ratio.toFixed(0)}% confidence)`}
           type="button"
         >
-          Use {candidate.canonicalName}
+          <Check className="h-3 w-3 shrink-0" />
+          <span className="min-w-0 truncate">{candidate.canonicalName}</span>
+          <span className="ml-auto shrink-0 tabular-nums opacity-70">
+            {candidate.ratio.toFixed(0)}%
+          </span>
         </button>
       ) : null}
       <button
-        className="rounded border border-slate-200 bg-white px-2 py-1 text-left text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-60"
+        className={[
+          "inline-flex h-7 w-full max-w-[220px] items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 text-xs font-medium disabled:pointer-events-none disabled:opacity-50",
+          !candidate || !isFuzzyHigh
+            ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white"
+            : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+        ].join(" ")}
         disabled={state === "submitting"}
         onClick={() =>
           patchRow({
             action: "create_canonical",
             canonical_name: rowName(row),
+            ...(isInvoice && (row as StagingInvoiceRow).gstin
+              ? { gstin: (row as StagingInvoiceRow).gstin! }
+              : {}),
+            ...(isInvoice && (row as StagingInvoiceRow).xero_contact_id
+              ? { xero_contact_id: (row as StagingInvoiceRow).xero_contact_id! }
+              : {}),
           })
         }
         type="button"
       >
-        Create Canonical
+        <Plus className="h-3 w-3 shrink-0" />
+        <span className="min-w-0 truncate">Create New</span>
       </button>
-      {message ? <span className="text-xs text-red-700">{message}</span> : null}
+      {message ? (
+        <p className="text-xs text-[var(--color-status-danger-text)]">
+          {message}
+        </p>
+      ) : null}
     </div>
   );
 }

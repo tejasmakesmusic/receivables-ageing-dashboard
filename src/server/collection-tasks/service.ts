@@ -120,6 +120,10 @@ export async function listCollectionTasks(
   const [items, total] = await getPrisma().$transaction([
     getPrisma().collection_tasks.findMany({
       where,
+      include: {
+        parties_canonical: { select: { name: true } },
+        users_collection_tasks_owner_user_idTousers: { select: { name: true, email: true } },
+      },
       orderBy: [{ priority_score: "desc" }, { created_at: "desc" }],
       skip: (page - 1) * page_size,
       take: page_size,
@@ -131,7 +135,13 @@ export async function listCollectionTasks(
 }
 
 export async function getCollectionTask(id: string, user: AuthenticatedUser) {
-  const task = await getPrisma().collection_tasks.findUnique({ where: { id } });
+  const task = await getPrisma().collection_tasks.findUnique({
+    where: { id },
+    include: {
+      parties_canonical: { select: { name: true } },
+      users_collection_tasks_owner_user_idTousers: { select: { name: true, email: true } },
+    },
+  });
 
   if (!task) {
     throw new HttpError("not_found", 404, "Collection task not found");

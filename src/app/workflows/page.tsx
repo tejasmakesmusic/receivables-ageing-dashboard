@@ -182,11 +182,13 @@ function WorkflowStep({
 }
 
 function WorkflowBand({
+  bandStatus,
   items,
   number,
   subtitle,
   title,
 }: {
+  bandStatus: string;
   items: readonly {
     href: string;
     icon: ComponentType<{ className?: string }>;
@@ -212,7 +214,7 @@ function WorkflowBand({
             <p className="text-xs text-[var(--color-text-muted)]">{subtitle}</p>
           </div>
         </div>
-        <StatusTag status="WORKFLOW_DRAFT" />
+        <StatusTag status={bandStatus} />
       </div>
       <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {items.map((item) => (
@@ -261,18 +263,21 @@ export default async function WorkflowsPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
           <WorkflowBand
+            bandStatus="TASK_IN_PROGRESS"
             items={dailyFlow}
             number={1}
             subtitle="Drive daily execution and move parties forward."
             title="Daily Analyst Flow"
           />
           <WorkflowBand
+            bandStatus="TASK_OPEN"
             items={lifecycle}
             number={2}
             subtitle="Manage parties through structured stages to resolution."
             title="Task Lifecycle"
           />
           <WorkflowBand
+            bandStatus="RECONCILIATION_PENDING"
             items={closeFlow}
             number={3}
             subtitle="Reconcile activity, ensure accuracy, and close the cycle."

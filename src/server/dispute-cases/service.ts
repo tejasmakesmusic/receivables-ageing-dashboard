@@ -90,6 +90,8 @@ export async function listDisputeCases(
       include: {
         parties_canonical: { select: { name: true } },
         entities: { select: { code: true } },
+        invoices: { select: { invoice_ref: true } },
+        users_dispute_cases_owner_user_idTousers: { select: { name: true, email: true } },
       },
       orderBy: { created_at: "desc" },
       skip: (page - 1) * page_size,

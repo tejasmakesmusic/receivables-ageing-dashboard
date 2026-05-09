@@ -14,6 +14,8 @@ export interface ParsedInvoiceRow {
   status: ParseStatus;
   source_currency: "INR" | "AED";
   party_name_raw: string;
+  gstin: string | null;
+  xero_contact_id: string | null;
   invoice_ref: string | null;
   invoice_date: Date | null;
   amount: string | null;

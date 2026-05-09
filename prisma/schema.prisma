@@ -231,6 +231,8 @@ model parties_canonical {
   id                   String                @id(map: "pk_parties_canonical") @db.Uuid
   entity_id            String                @db.Uuid
   name                 String
+  gstin                String?               @db.VarChar(15)
+  xero_contact_id      String?
   notes                String?
   created_by           String                @db.Uuid
   created_at           DateTime              @default(now()) @db.Timestamptz(6)
@@ -246,6 +248,7 @@ model parties_canonical {
 
   @@unique([entity_id, name], map: "uq_parties_canonical_entity_name")
   @@index([entity_id], map: "ix_parties_canonical_entity_id")
+  @@index([entity_id, xero_contact_id], map: "ix_parties_canonical_entity_xero_contact", where: raw("(xero_contact_id IS NOT NULL)"))
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

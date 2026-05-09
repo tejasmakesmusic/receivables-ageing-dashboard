@@ -77,6 +77,12 @@ export const stagingPatchSchema = z.discriminatedUnion("action", [
     canonical_name: z.string().trim().min(1),
     alias_text: z.string().trim().optional(),
     notes: z.string().trim().optional(),
+    gstin: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/)
+      .optional(),
+    xero_contact_id: z.string().trim().min(1).optional(),
   }),
   z.object({
     action: z.literal("override_credit_days"),
@@ -116,6 +122,7 @@ export interface SnapshotListRow {
   uploaded_by_email: string;
   row_count: number | null;
   total_outstanding: string | null;
+  warnings_count: number | null;
 }
 
 export interface SnapshotListResponse {
@@ -196,6 +203,8 @@ export interface StagingInvoiceRow {
   row_index: number;
   status: "OK" | "PARSE_ERROR";
   party_name_raw: string;
+  gstin: string | null;
+  xero_contact_id: string | null;
   invoice_ref: string | null;
   invoice_date: string | null;
   amount: string | null;
@@ -368,6 +377,14 @@ async function assertSnapshotAccess(
   return snapshot;
 }
 
+function parseResultWarningsCount(parseResultJson: unknown): number | null {
+  if (!parseResultJson || typeof parseResultJson !== "object") return null;
+  const result = parseResultJson as Record<string, unknown>;
+  const warnings = result.warnings;
+  if (!Array.isArray(warnings)) return null;
+  return warnings.length;
+}
+
 function toListRow(snapshot: SnapshotRow): SnapshotListRow {
   return {
     id: snapshot.id,
@@ -381,6 +398,7 @@ function toListRow(snapshot: SnapshotRow): SnapshotListRow {
     total_outstanding: snapshot.total_outstanding
       ? formatDecimal(snapshot.total_outstanding)
       : null,
+    warnings_count: parseResultWarningsCount(snapshot.parse_result_json),
   };
 }
 
@@ -542,6 +560,8 @@ async function loadAliasCorpus(entityId: string): Promise<CanonicalParty[]> {
     select: {
       id: true,
       name: true,
+      gstin: true,
+      xero_contact_id: true,
       party_aliases: {
         select: { alias_text: true },
       },
@@ -553,6 +573,8 @@ async function loadAliasCorpus(entityId: string): Promise<CanonicalParty[]> {
     canonicalId: party.id,
     canonicalName: party.name,
     aliases: party.party_aliases.map((alias) => alias.alias_text),
+    gstin: party.gstin,
+    xeroContactId: party.xero_contact_id,
   }));
 }
 
@@ -860,12 +882,17 @@ async function buildStagingRows(
           resolutionState: "EXACT" as const,
           topMatches: [],
         }
-      : resolveAlias(row.party_name_raw, parties);
+      : resolveAlias(row.party_name_raw, parties, {
+          gstin: row.gstin,
+          xeroContactId: row.xero_contact_id,
+        });
 
     return {
       row_index: row.row_index,
       status: row.status,
       party_name_raw: row.party_name_raw,
+      gstin: row.gstin,
+      xero_contact_id: row.xero_contact_id,
       invoice_ref: row.invoice_ref,
       invoice_date: row.invoice_date,
       amount: row.amount,
@@ -1084,6 +1111,8 @@ export async function patchStagingRow(
           id: createId(),
           entity_id: targetEntityId,
           name: body.canonical_name,
+          gstin: body.gstin ?? null,
+          xero_contact_id: body.xero_contact_id ?? null,
           notes: body.notes ?? null,
           created_by: currentUser.id,
         },

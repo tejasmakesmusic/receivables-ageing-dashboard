@@ -8,6 +8,8 @@ export interface CanonicalParty {
   canonicalId: string;
   canonicalName: string;
   aliases?: string[];
+  gstin?: string | null;
+  xeroContactId?: string | null;
 }
 
 export interface AliasCandidate {
@@ -35,8 +37,21 @@ export interface AliasCorpusEntry {
 
 const WS = /\s+/g;
 
+// Strip common legal-entity suffixes before fuzzy comparison so
+// "Acme Pvt Ltd" and "Acme Private Limited" normalize to the same stem.
+const LEGAL_SUFFIX_RE =
+  /[,\s]+(?:private\s+limited|pvt\.?\s*ltd\.?|pvt|ltd|limited|llc|l\.l\.c\.?|inc\.?|incorporated|corporation|corp|company|co|plc|llp|gmbh|ag|bv|nv|sas|sarl|spa|srl|pty)\.?\s*$/i;
+
+function stripLegalSuffix(value: string): string {
+  // Strip up to two suffix tokens (e.g. "Pvt" then "Ltd" if combined form wasn't caught)
+  let s = value.replace(LEGAL_SUFFIX_RE, "").trim();
+  s = s.replace(LEGAL_SUFFIX_RE, "").trim();
+  return s;
+}
+
 function normalizePartyText(value: string): string {
-  return value.replace(WS, " ").trim().toLowerCase();
+  const collapsed = value.replace(WS, " ").trim().toLowerCase();
+  return stripLegalSuffix(collapsed);
 }
 
 function buildCorpus(parties: CanonicalParty[]): AliasCorpusEntry[] {
@@ -103,6 +118,54 @@ function buildMatcher(entries: AliasCorpusEntry[]) {
     threshold: 0.45,
   });
   return fuse;
+}
+
+function makeExactResolution(
+  rawName: string,
+  party: CanonicalParty,
+  matchedText: string,
+  matchedOn: MatchSource,
+): AliasResolution {
+  return {
+    rawName,
+    resolutionState: "EXACT",
+    topMatches: [
+      {
+        canonicalId: party.canonicalId,
+        canonicalName: party.canonicalName,
+        matchedOn,
+        matchedText,
+        ratio: 100,
+        isExact: true,
+      },
+    ],
+  };
+}
+
+// Try identity-based matches before any text matching:
+// 1. GSTIN match (Indian parties only — bypasses fuzzy entirely)
+// 2. Xero contact ID match (Xero parties)
+function identityMatch(
+  parties: CanonicalParty[],
+  rawName: string,
+  gstin: string | null | undefined,
+  xeroContactId: string | null | undefined,
+): AliasResolution | null {
+  if (gstin) {
+    const match = parties.find((p) => p.gstin && p.gstin === gstin);
+    if (match) {
+      return makeExactResolution(rawName, match, match.canonicalName, "CANONICAL_NAME");
+    }
+  }
+  if (xeroContactId) {
+    const match = parties.find(
+      (p) => p.xeroContactId && p.xeroContactId === xeroContactId,
+    );
+    if (match) {
+      return makeExactResolution(rawName, match, match.canonicalName, "CANONICAL_NAME");
+    }
+  }
+  return null;
 }
 
 function exactMatch(
@@ -183,27 +246,33 @@ function fuzzyMatch(
   };
 }
 
+export interface ResolveAliasOptions {
+  highThreshold?: number;
+  lowThreshold?: number;
+  gstin?: string | null;
+  xeroContactId?: string | null;
+}
+
 export function resolveAlias(
   rawName: string,
   parties: CanonicalParty[],
-  options?: {
-    highThreshold?: number;
-    lowThreshold?: number;
-  },
+  options?: ResolveAliasOptions,
 ): AliasResolution {
-  const corpus = buildCorpus(parties);
-  if (corpus.length === 0) {
-    return {
-      rawName,
-      resolutionState: "UNMAPPED",
-      topMatches: [],
-    };
+  if (parties.length === 0) {
+    return { rawName, resolutionState: "UNMAPPED", topMatches: [] };
   }
 
+  const identity = identityMatch(
+    parties,
+    rawName,
+    options?.gstin,
+    options?.xeroContactId,
+  );
+  if (identity) return identity;
+
+  const corpus = buildCorpus(parties);
   const exact = exactMatch(corpus, rawName);
-  if (exact) {
-    return exact;
-  }
+  if (exact) return exact;
 
   const engine = buildMatcher(corpus);
   const high = options?.highThreshold ?? 90;
@@ -212,33 +281,39 @@ export function resolveAlias(
   return fuzzyMatch(corpus, rawName, high, low, engine);
 }
 
+export interface BatchResolveItem {
+  rawName: string;
+  gstin?: string | null;
+  xeroContactId?: string | null;
+}
+
 export function resolveAliasBatch(
-  rawNames: string[],
+  items: BatchResolveItem[],
   parties: CanonicalParty[],
   options?: {
     highThreshold?: number;
     lowThreshold?: number;
   },
 ): AliasResolution[] {
-  const corpus = buildCorpus(parties);
-
-  if (corpus.length === 0) {
-    return rawNames.map((rawName) => ({
+  if (parties.length === 0) {
+    return items.map(({ rawName }) => ({
       rawName,
       resolutionState: "UNMAPPED",
       topMatches: [],
     }));
   }
 
+  const corpus = buildCorpus(parties);
   const engine = buildMatcher(corpus);
   const high = options?.highThreshold ?? 90;
   const low = options?.lowThreshold ?? 70;
 
-  return rawNames.map((rawName) => {
+  return items.map(({ rawName, gstin, xeroContactId }) => {
+    const identity = identityMatch(parties, rawName, gstin, xeroContactId);
+    if (identity) return identity;
+
     const exact = exactMatch(corpus, rawName);
-    if (exact) {
-      return exact;
-    }
+    if (exact) return exact;
 
     return fuzzyMatch(corpus, rawName, high, low, engine);
   });

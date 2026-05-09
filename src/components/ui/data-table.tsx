@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
+import { DataTableRow } from "./data-table-row";
 import { twMerge } from "tailwind-merge";
 
 const cn = (...inputs: Array<string | false | null | undefined>) =>
@@ -277,49 +278,39 @@ export function DataTable<Row>({
           ) : (
             rows.map((row) => {
               const key = rowKey(row);
-              const href = rowHref?.(row);
+              const href = rowHref?.(row) ?? undefined;
               const selected = selectedRowKey === key;
 
               return (
-                <tr
+                <DataTableRow
                   className={cn(
-                    "transition-colors hover:bg-[var(--color-bg-subtle)]",
+                    "transition-colors",
+                    href
+                      ? "cursor-pointer hover:bg-[var(--color-bg-subtle)]"
+                      : "hover:bg-[var(--color-bg-subtle)]",
                     selected && "bg-[var(--color-accent-soft)]",
                   )}
-                  data-row-key={key}
+                  dataRowKey={key}
+                  href={href}
                   key={key}
                 >
-                  {columns.map((column) => {
-                    const cellContent = column.cell(row);
-                    const cellInner = href ? (
-                      <Link
-                        className="-mx-1 -my-0.5 block rounded-sm px-1 py-0.5 text-inherit"
-                        href={href}
-                      >
-                        {cellContent}
-                      </Link>
-                    ) : (
-                      cellContent
-                    );
-
-                    return (
-                      <td
-                        className={cn(
-                          "px-4 py-3 align-middle",
-                          alignClass(column.align),
-                          stickyClasses(column.sticky),
-                          selected && column.sticky === "left"
-                            ? "bg-[var(--color-accent-soft)]"
-                            : "",
-                          column.className,
-                        )}
-                        key={column.key}
-                      >
-                        {cellInner}
-                      </td>
-                    );
-                  })}
-                </tr>
+                  {columns.map((column) => (
+                    <td
+                      className={cn(
+                        "px-4 py-3 align-middle",
+                        alignClass(column.align),
+                        stickyClasses(column.sticky),
+                        selected && column.sticky === "left"
+                          ? "bg-[var(--color-accent-soft)]"
+                          : "",
+                        column.className,
+                      )}
+                      key={column.key}
+                    >
+                      {column.cell(row)}
+                    </td>
+                  ))}
+                </DataTableRow>
               );
             })
           )}

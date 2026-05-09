@@ -20,96 +20,142 @@ import {
 
 const SHEET_NAME = "Sundry Debtors";
 const HEADER_ROWS = 5;
-const COLUMNS = [
-  "date",
-  "ref_no",
-  "party_name",
-  "opening_amount",
-  "pending_amount",
-  "due_on",
-  "overdue_days",
-] as const;
-const TOLERANCE = 1n;
 
-type TallyRow = Record<(typeof COLUMNS)[number], string | null>;
+// GSTIN format: 2-digit state code + 10-char PAN + 1-char entity + 1-char Z + 1-char check digit
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
-const ROW_MAP = Object.freeze({
-  [COLUMNS[0]]: 0,
-  [COLUMNS[1]]: 1,
-  [COLUMNS[2]]: 2,
-  [COLUMNS[3]]: 3,
-  [COLUMNS[4]]: 4,
-  [COLUMNS[5]]: 5,
-  [COLUMNS[6]]: 6,
-}) satisfies Record<string, number>;
+function extractGstin(value: unknown): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim().toUpperCase();
+  return GSTIN_REGEX.test(trimmed) ? trimmed : null;
+}
 
-function normalizeRow(row: unknown[]): (unknown | null)[] {
-  const normalized = row.slice(0, COLUMNS.length);
-  while (normalized.length < COLUMNS.length) {
-    normalized.push(null);
+// Column positions vary by whether the Tally export includes a GSTIN column.
+// 7-col format: Date | Ref No. | Party Name | Opening | Pending | Due On | Overdue Days
+// 8-col format: Date | Ref No. | Party Name | GSTIN   | Opening | Pending | Due On | Overdue Days
+type RowMap = {
+  date: number;
+  ref_no: number;
+  party_name: number;
+  gstin: number; // -1 means not present
+  opening_amount: number;
+  pending_amount: number;
+  due_on: number;
+  overdue_days: number;
+};
+
+const ROW_MAP_7: RowMap = {
+  date: 0,
+  ref_no: 1,
+  party_name: 2,
+  gstin: -1,
+  opening_amount: 3,
+  pending_amount: 4,
+  due_on: 5,
+  overdue_days: 6,
+};
+
+const ROW_MAP_8: RowMap = {
+  date: 0,
+  ref_no: 1,
+  party_name: 2,
+  gstin: 3,
+  opening_amount: 4,
+  pending_amount: 5,
+  due_on: 6,
+  overdue_days: 7,
+};
+
+function normalizeRow(
+  row: unknown[],
+  minLength: number,
+): (unknown | null)[] {
+  const result = row.slice();
+  while (result.length < minLength) result.push(null);
+  return result.map((value) => (isEmptyCell(value) ? null : value));
+}
+
+function detectRowMap(rows: (unknown | null)[][]): RowMap {
+  for (let idx = HEADER_ROWS; idx < rows.length; idx++) {
+    const row = rows[idx];
+    // Party header rows: col 0 empty, col 1 empty, col 2 (party name) non-empty
+    if (
+      isEmptyCell(row[0]) &&
+      isEmptyCell(row[1]) &&
+      !isEmptyCell(row[2]) &&
+      extractGstin(row[3])
+    ) {
+      return ROW_MAP_8;
+    }
   }
-  return normalized.map((value) => (isEmptyCell(value) ? null : value));
+  return ROW_MAP_7;
 }
 
-function rowToRawJson(row: (unknown | null)[]): TallyRow {
-  return {
-    date: stringifyCell(row[ROW_MAP.date]),
-    ref_no: stringifyCell(row[ROW_MAP.ref_no]),
-    party_name: stringifyCell(row[ROW_MAP.party_name]),
-    opening_amount: stringifyCell(row[ROW_MAP.opening_amount]),
-    pending_amount: stringifyCell(row[ROW_MAP.pending_amount]),
-    due_on: stringifyCell(row[ROW_MAP.due_on]),
-    overdue_days: stringifyCell(row[ROW_MAP.overdue_days]),
+function rowToRawJson(
+  row: (unknown | null)[],
+  rm: RowMap,
+): Record<string, string | null> {
+  const base: Record<string, string | null> = {
+    date: stringifyCell(row[rm.date]),
+    ref_no: stringifyCell(row[rm.ref_no]),
+    party_name: stringifyCell(row[rm.party_name]),
+    opening_amount: stringifyCell(row[rm.opening_amount]),
+    pending_amount: stringifyCell(row[rm.pending_amount]),
+    due_on: stringifyCell(row[rm.due_on]),
+    overdue_days: stringifyCell(row[rm.overdue_days]),
   };
+  if (rm.gstin >= 0) {
+    base.gstin = stringifyCell(row[rm.gstin]);
+  }
+  return base;
 }
 
-function isPartyHeader(row: (unknown | null)[]): boolean {
+function isPartyHeader(row: (unknown | null)[], rm: RowMap): boolean {
   return (
-    !isEmptyCell(row[ROW_MAP.party_name]) &&
-    isEmptyCell(row[ROW_MAP.date]) &&
-    isEmptyCell(row[ROW_MAP.ref_no])
+    !isEmptyCell(row[rm.party_name]) &&
+    isEmptyCell(row[rm.date]) &&
+    isEmptyCell(row[rm.ref_no])
   );
 }
 
-function isInvoiceRow(row: (unknown | null)[]): boolean {
-  return !isEmptyCell(row[ROW_MAP.date]) && !isEmptyCell(row[ROW_MAP.ref_no]);
+function isInvoiceRow(row: (unknown | null)[], rm: RowMap): boolean {
+  return !isEmptyCell(row[rm.date]) && !isEmptyCell(row[rm.ref_no]);
 }
 
-function isBlankRow(row: (unknown | null)[]): boolean {
-  return COLUMNS.every((column) => isEmptyCell(row[ROW_MAP[column]]));
-}
-
-function isSubtotalOrGrandTotal(row: (unknown | null)[]): boolean {
+function isBlankRow(row: (unknown | null)[], rm: RowMap): boolean {
   return (
-    isEmptyCell(row[ROW_MAP.date]) &&
-    isEmptyCell(row[ROW_MAP.ref_no]) &&
-    isEmptyCell(row[ROW_MAP.party_name]) &&
-    (!isEmptyCell(row[ROW_MAP.opening_amount]) ||
-      !isEmptyCell(row[ROW_MAP.pending_amount]))
+    isEmptyCell(row[rm.date]) &&
+    isEmptyCell(row[rm.ref_no]) &&
+    isEmptyCell(row[rm.party_name]) &&
+    isEmptyCell(row[rm.opening_amount]) &&
+    isEmptyCell(row[rm.pending_amount])
+  );
+}
+
+function isSubtotalOrGrandTotal(row: (unknown | null)[], rm: RowMap): boolean {
+  return (
+    isEmptyCell(row[rm.date]) &&
+    isEmptyCell(row[rm.ref_no]) &&
+    isEmptyCell(row[rm.party_name]) &&
+    (!isEmptyCell(row[rm.opening_amount]) || !isEmptyCell(row[rm.pending_amount]))
   );
 }
 
 function detectGrandTotal(
   rows: (unknown | null)[][],
+  rm: RowMap,
 ): [number | null, bigint | null] {
   const subtotalRows: Array<[number, bigint]> = [];
 
   for (let idx = HEADER_ROWS; idx < rows.length; idx += 1) {
     const row = rows[idx];
-    if (!isSubtotalOrGrandTotal(row)) {
-      continue;
-    }
-
-    const pending = parseScaledAmount(row[ROW_MAP.pending_amount]);
-    if (!pending) {
-      continue;
-    }
+    if (!isSubtotalOrGrandTotal(row, rm)) continue;
+    const pending = parseScaledAmount(row[rm.pending_amount]);
+    if (!pending) continue;
     subtotalRows.push([idx, pending.scaled]);
   }
 
-  if (!subtotalRows.length) {
-    return [null, null];
-  }
+  if (!subtotalRows.length) return [null, null];
 
   const [rowIndex, pendingScaled] = subtotalRows[subtotalRows.length - 1];
   return [rowIndex, pendingScaled];
@@ -173,21 +219,28 @@ export function parseTallyGrpbills(
     };
   }
 
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     raw: true,
     blankrows: true,
     defval: null,
   }) as unknown[][];
 
-  const expectedCols = COLUMNS.length;
-  const maxCols = rows.reduce((acc, row) => Math.max(acc, row.length), 0);
-  if (maxCols < expectedCols) {
+  // Detect whether the file has a GSTIN column (8-col) or not (7-col)
+  const probeRows = rawRows.map((row) =>
+    normalizeRow(Array.isArray(row) ? row : [], 9),
+  );
+  const rm = detectRowMap(probeRows);
+  const minCols = rm.gstin >= 0 ? 8 : 7;
+
+  const maxCols = rawRows.reduce((acc, row) => Math.max(acc, row.length), 0);
+  if (maxCols < minCols - 1) {
+    // Allow one column short as a soft tolerance
     errors.push(
       makeParseError(
         -1,
         "UNEXPECTED_SHAPE",
-        `Sheet has ${maxCols} columns; expected at least ${expectedCols}.`,
+        `Sheet has ${maxCols} columns; expected at least ${minCols}.`,
       ),
     );
     return {
@@ -202,32 +255,33 @@ export function parseTallyGrpbills(
     };
   }
 
-  const normalizedRows = rows.map((row) =>
-    normalizeRow(Array.isArray(row) ? row : []),
+  const normalizedRows = rawRows.map((row) =>
+    normalizeRow(Array.isArray(row) ? row : [], minCols),
   );
 
-  const [grandTotalRowIdx, grandTotalPending] =
-    detectGrandTotal(normalizedRows);
+  const [grandTotalRowIdx, grandTotalPending] = detectGrandTotal(
+    normalizedRows,
+    rm,
+  );
 
   const partyInvoiceSums = new Map<string, bigint>();
   const partySubtotals = new Map<string, bigint | null>();
   const partySubtotalRows = new Map<string, number>();
   const partyOrder: string[] = [];
   let currentParty: string | null = null;
+  let currentPartyGstin: string | null = null;
 
   for (let rawIdx = HEADER_ROWS; rawIdx < normalizedRows.length; rawIdx += 1) {
-    if (rawIdx === grandTotalRowIdx) {
-      continue;
-    }
+    if (rawIdx === grandTotalRowIdx) continue;
 
     const row = normalizedRows[rawIdx];
 
-    if (isBlankRow(row)) {
-      continue;
-    }
+    if (isBlankRow(row, rm)) continue;
 
-    if (isPartyHeader(row)) {
-      currentParty = stringifyCell(row[ROW_MAP.party_name]);
+    if (isPartyHeader(row, rm)) {
+      currentParty = stringifyCell(row[rm.party_name]);
+      currentPartyGstin =
+        rm.gstin >= 0 ? extractGstin(row[rm.gstin]) : null;
       if (currentParty && !partyInvoiceSums.has(currentParty)) {
         partyInvoiceSums.set(currentParty, 0n);
         partyOrder.push(currentParty);
@@ -235,21 +289,21 @@ export function parseTallyGrpbills(
       continue;
     }
 
-    if (isSubtotalOrGrandTotal(row)) {
+    if (isSubtotalOrGrandTotal(row, rm)) {
       if (currentParty !== null && !partySubtotals.has(currentParty)) {
-        const pending = parseScaledAmount(row[ROW_MAP.pending_amount]);
+        const pending = parseScaledAmount(row[rm.pending_amount]);
         partySubtotals.set(currentParty, pending?.scaled ?? null);
         partySubtotalRows.set(currentParty, rawIdx);
       }
       continue;
     }
 
-    if (isInvoiceRow(row)) {
-      const refRaw = row[ROW_MAP.ref_no];
-      const dateRaw = row[ROW_MAP.date];
+    if (isInvoiceRow(row, rm)) {
+      const refRaw = row[rm.ref_no];
+      const dateRaw = row[rm.date];
       const party = currentParty ?? "";
-      const pendingRaw = row[ROW_MAP.pending_amount];
-      const rawJsonForRow = rowToRawJson(row);
+      const pendingRaw = row[rm.pending_amount];
+      const rawJsonForRow = rowToRawJson(row, rm);
 
       let invoiceDate: Date | null = null;
       let amountScaled: bigint | null = null;
@@ -286,6 +340,8 @@ export function parseTallyGrpbills(
           status: "PARSE_ERROR",
           source_currency: "INR",
           party_name_raw: party,
+          gstin: currentPartyGstin,
+          xero_contact_id: null,
           invoice_ref: null,
           invoice_date: null,
           amount: null,
@@ -301,6 +357,8 @@ export function parseTallyGrpbills(
         status: "OK",
         source_currency: "INR",
         party_name_raw: party,
+        gstin: currentPartyGstin,
+        xero_contact_id: null,
         invoice_ref: invoiceRef,
         invoice_date: invoiceDate,
         amount: scaledToDecimalString(amountScaled),
@@ -322,10 +380,12 @@ export function parseTallyGrpbills(
       status: "PARSE_ERROR",
       source_currency: "INR",
       party_name_raw: currentParty ?? "",
+      gstin: currentPartyGstin,
+      xero_contact_id: null,
       invoice_ref: null,
       invoice_date: null,
       amount: null,
-      raw_row_json: rowToRawJson(row),
+      raw_row_json: rowToRawJson(row, rm),
       xero_metadata: null,
       parse_error_reason: `Row ${rawIdx} has unexpected shape: not invoice, party header, subtotal, or blank.`,
     });
@@ -333,9 +393,7 @@ export function parseTallyGrpbills(
 
   for (const party of partyOrder) {
     const partySubtotal = partySubtotals.get(party);
-    if (partySubtotal === undefined || partySubtotal === null) {
-      continue;
-    }
+    if (partySubtotal === undefined || partySubtotal === null) continue;
 
     const invoiceSum = partyInvoiceSums.get(party) ?? 0n;
     const delta =
@@ -438,3 +496,5 @@ export function parseTallyGrpbills(
     is_valid: errors.length === 0,
   };
 }
+
+const TOLERANCE = 1n;

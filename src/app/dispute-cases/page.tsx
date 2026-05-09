@@ -46,11 +46,13 @@ type DisputeRow = {
   expected_resolution_date: Date | null;
   id: string;
   invoice_id: string | null;
+  invoices?: { invoice_ref?: string | null } | null;
   owner_user_id: string | null;
   parties_canonical?: { name?: string | null } | null;
   reason_code: string;
   status: dispute_case_status;
   updated_at: Date;
+  users_dispute_cases_owner_user_idTousers?: { name?: string | null; email?: string | null } | null;
 };
 
 const STATUS_FILTERS: { label: string; value: dispute_case_status | "" }[] = [
@@ -79,8 +81,10 @@ function truncate(value: string, max = 80) {
   return value.length > max ? `${value.slice(0, max)}...` : value;
 }
 
-function ownerLabel(ownerUserId: string | null) {
-  return ownerUserId ? shortId(ownerUserId) : "Unassigned";
+function ownerLabel(dispute: Pick<DisputeRow, "owner_user_id" | "users_dispute_cases_owner_user_idTousers">) {
+  if (!dispute.owner_user_id) return "Unassigned";
+  const user = dispute.users_dispute_cases_owner_user_idTousers;
+  return user?.name ?? user?.email ?? shortId(dispute.owner_user_id);
 }
 
 function disputeStatusMeta(status: dispute_case_status) {
@@ -133,12 +137,11 @@ function disputeColumns(
       width: "min-w-[160px]",
       cell: (dispute) =>
         dispute.invoice_id ? (
-          // TODO: Replace this invoice_id preview with invoice_ref when listDisputeCases exposes it.
           <Link
             className="font-mono text-[13px] font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
             href={`/invoice/${dispute.invoice_id}`}
           >
-            {shortId(dispute.invoice_id)}
+            {dispute.invoices?.invoice_ref ?? shortId(dispute.invoice_id)}
           </Link>
         ) : (
           <span className="font-mono text-[13px] text-[var(--color-text-muted)]">
@@ -196,7 +199,7 @@ function disputeColumns(
       header: "Owner",
       cell: (dispute) => (
         <span className="text-[var(--color-text-muted)]">
-          {ownerLabel(dispute.owner_user_id)}
+          {ownerLabel(dispute)}
         </span>
       ),
     },
@@ -481,7 +484,9 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
             >
               <div className="grid grid-cols-2 gap-3">
                 <SidePanelField label="Invoice">
-                  {selected.invoice_id ? shortId(selected.invoice_id) : "No invoice"}
+                  {selected.invoice_id
+                    ? selected.invoices?.invoice_ref ?? shortId(selected.invoice_id)
+                    : "No invoice"}
                 </SidePanelField>
                 <SidePanelField label="Reason">
                   <span className="font-mono text-xs">{selected.reason_code}</span>
@@ -490,7 +495,7 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
                   {formatDate(selected.expected_resolution_date)}
                 </SidePanelField>
                 <SidePanelField label="Owner">
-                  {ownerLabel(selected.owner_user_id)}
+                  {ownerLabel(selected)}
                 </SidePanelField>
               </div>
 

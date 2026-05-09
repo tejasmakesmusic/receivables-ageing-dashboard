@@ -103,7 +103,6 @@ function currencyFor(snapshot: SnapshotRow) {
 }
 
 function warningCount(snapshot: SnapshotRow) {
-  // TODO: Replace this fallback when SnapshotListRow exposes parse warning totals.
   return typeof snapshot.warnings_count === "number"
     ? snapshot.warnings_count
     : "-";
@@ -120,12 +119,9 @@ function snapshotColumns(
       width: "min-w-[180px]",
       cell: (snapshot) => (
         <div>
-          <Link
-            className="font-mono text-[13px] font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
-            href={`/snapshots/${snapshot.id}`}
-          >
+          <span className="font-mono text-[13px] font-semibold text-[var(--color-accent)]">
             {snapshot.id.slice(0, 8)}
-          </Link>
+          </span>
           <div className="text-xs text-[var(--color-text-muted)]">
             {formatDate(snapshot.as_of_date)}
           </div>
