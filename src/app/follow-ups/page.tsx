@@ -153,6 +153,7 @@ export default async function FollowUpsPage({ searchParams }: PageProps) {
     "/follow-ups",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
 

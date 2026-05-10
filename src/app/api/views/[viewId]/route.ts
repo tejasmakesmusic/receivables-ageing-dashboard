@@ -89,6 +89,7 @@ export async function PATCH(
     const user = await requireRole(
       role_enum.ANALYST,
       role_enum.CFO,
+      role_enum.REVIEWER,
       role_enum.ADMIN,
     );
     assertNotPending(user);
@@ -120,6 +121,7 @@ export async function DELETE(
     const user = await requireRole(
       role_enum.ANALYST,
       role_enum.CFO,
+      role_enum.REVIEWER,
       role_enum.ADMIN,
     );
     assertNotPending(user);

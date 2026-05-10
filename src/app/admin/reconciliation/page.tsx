@@ -11,7 +11,7 @@ import {
   PanelHeader,
 } from "@/components/ui/workspace";
 import { role_enum } from "@/generated/prisma/enums";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrencyCompact, formatDate } from "@/lib/format";
 import { getPrisma } from "@/lib/prisma";
 import { requirePageRole } from "@/server/core/page-auth";
 
@@ -125,7 +125,10 @@ export default async function AdminReconciliationPage() {
                   const currency = snapshot.entities.base_currency;
 
                   return (
-                    <tr className="hover:bg-[var(--color-bg-subtle)]" key={snapshot.id}>
+                      <tr
+                        className="transition-colors hover:bg-[var(--color-bg-subtle)]"
+                        key={snapshot.id}
+                      >
                       <td className="px-4 py-3">
                         {formatDate(snapshot.as_of_date)}
                       </td>
@@ -139,16 +142,16 @@ export default async function AdminReconciliationPage() {
                         <StatusTag status={status} />
                       </td>
                       <td className="px-4 py-3 text-right font-medium">
-                        {formatCurrency(money(reconciliation?.dashboard_ar), currency)}
+                        {formatCurrencyCompact(money(reconciliation?.dashboard_ar), currency)}
                       </td>
                       <td className="px-4 py-3 text-right font-medium">
-                        {formatCurrency(
+                        {formatCurrencyCompact(
                           money(reconciliation?.tally_xero_closing_ar),
                           currency,
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-medium">
-                        {formatCurrency(money(reconciliation?.delta), currency)}
+                        {formatCurrencyCompact(money(reconciliation?.delta), currency)}
                       </td>
                       <td className="px-4 py-3 text-[var(--color-text-muted)]">
                         {reconciliation?.users?.email ?? "-"}

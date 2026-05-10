@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
+import {
+  TABLE_ROW_INTERACTIVE_CLASS,
+  TABLE_ROW_SELECTED_CLASS,
+} from "./table-row-styles";
 import { DataTableRow } from "./data-table-row";
 import { twMerge } from "tailwind-merge";
 
@@ -35,6 +39,8 @@ export type DataTableProps<Row> = {
   rows: Row[];
   rowKey: (row: Row) => string;
   rowHref?: (row: Row) => string | null | undefined;
+  rowCreateHref?: (row: Row) => string | null | undefined;
+  rowEditHref?: (row: Row) => string | null | undefined;
   selectedRowKey?: string | null;
   sort?: DataTableSort;
   sortHref?: (sort: DataTableSort) => string;
@@ -157,6 +163,8 @@ export function DataTable<Row>({
   rows,
   rowKey,
   rowHref,
+  rowCreateHref,
+  rowEditHref,
   selectedRowKey,
   sort,
   sortHref,
@@ -279,18 +287,20 @@ export function DataTable<Row>({
             rows.map((row) => {
               const key = rowKey(row);
               const href = rowHref?.(row) ?? undefined;
+              const createHref = rowCreateHref?.(row) ?? undefined;
+              const editHref = rowEditHref?.(row) ?? undefined;
               const selected = selectedRowKey === key;
 
               return (
                 <DataTableRow
                   className={cn(
-                    "transition-colors",
-                    href
-                      ? "cursor-pointer hover:bg-[var(--color-bg-subtle)]"
-                      : "hover:bg-[var(--color-bg-subtle)]",
-                    selected && "bg-[var(--color-accent-soft)]",
+                    TABLE_ROW_INTERACTIVE_CLASS,
+                    href ? "cursor-pointer" : "",
+                    selected && TABLE_ROW_SELECTED_CLASS,
                   )}
+                  createHref={createHref}
                   dataRowKey={key}
+                  editHref={editHref}
                   href={href}
                   key={key}
                 >

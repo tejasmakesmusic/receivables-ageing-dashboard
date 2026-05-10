@@ -2,7 +2,6 @@
 
 import { useEffect, type CSSProperties } from "react";
 import Link from "next/link";
-
 import { captureException } from "@/lib/sentry";
 
 type GlobalErrorBoundaryProps = {
@@ -13,8 +12,8 @@ type GlobalErrorBoundaryProps = {
 const bodyStyle: CSSProperties = {
   margin: 0,
   minHeight: "100vh",
-  background: "#ffffff",
-  color: "#333333",
+  background: "var(--color-bg)",
+  color: "var(--color-text)",
   fontFamily:
     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 };
@@ -30,10 +29,10 @@ const shellStyle: CSSProperties = {
 const panelStyle: CSSProperties = {
   width: "100%",
   maxWidth: "440px",
-  border: "1px solid #ebebeb",
+  border: "1px solid var(--color-border-medium)",
   borderRadius: "8px",
   padding: "24px",
-  background: "#ffffff",
+  background: "var(--color-bg)",
 };
 
 const titleStyle: CSSProperties = {
@@ -45,7 +44,7 @@ const titleStyle: CSSProperties = {
 
 const copyStyle: CSSProperties = {
   margin: "0 0 20px",
-  color: "#666666",
+  color: "var(--color-text-muted)",
   fontSize: "14px",
   lineHeight: 1.5,
 };
@@ -57,10 +56,10 @@ const actionsStyle: CSSProperties = {
 };
 
 const buttonStyle: CSSProperties = {
-  border: "1px solid #2563eb",
+  border: "1px solid var(--color-accent)",
   borderRadius: "6px",
-  background: "#2563eb",
-  color: "#ffffff",
+  background: "var(--color-accent)",
+  color: "var(--color-bg)",
   fontSize: "14px",
   fontWeight: 600,
   padding: "9px 14px",
@@ -68,7 +67,7 @@ const buttonStyle: CSSProperties = {
 };
 
 const linkStyle: CSSProperties = {
-  color: "#2563eb",
+  color: "var(--color-accent)",
   fontSize: "14px",
   fontWeight: 600,
   textDecoration: "none",

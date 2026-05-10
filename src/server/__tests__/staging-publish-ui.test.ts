@@ -27,7 +27,10 @@ describe("staging publish UI", () => {
     const pageSource = readFileSync(STAGING_PAGE, "utf8");
 
     expect(pageSource).toContain("StagingPublishPanel");
-    expect(pageSource).toContain("publishGate={staging.publish_gate}");
+    // The page destructures the gate via `const gate = staging.publish_gate`
+    // before passing it; check both the destructure + the prop wiring.
+    expect(pageSource).toMatch(/const gate = staging\.publish_gate/);
+    expect(pageSource).toContain("publishGate={gate}");
   });
 
   it("lets analysts acknowledge warnings and publish without API navigation", () => {

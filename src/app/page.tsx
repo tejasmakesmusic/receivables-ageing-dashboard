@@ -13,7 +13,7 @@ import {
   ProgressRing,
   RightRail,
 } from "@/components/ui/workspace";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrencyCompact, formatDate } from "@/lib/format";
 import { requirePageRole } from "@/server/core/page-auth";
 import {
   FOCUS_QUEUE_PAGE_ROLES,
@@ -90,7 +90,7 @@ export default async function HomePage() {
           }
           value={
             dashboard
-              ? formatCurrency(dashboard.kpis.total_outstanding, dashboardCurrency)
+              ? formatCurrencyCompact(dashboard.kpis.total_outstanding, dashboardCurrency)
               : "-"
           }
         />
@@ -99,7 +99,7 @@ export default async function HomePage() {
           label="Overdue"
           meta={dashboard ? `${dashboard.kpis.pct_overdue.toFixed(1)}% of AR` : "No ageing yet"}
           value={
-            dashboard ? formatCurrency(overdueAmount(dashboard), dashboardCurrency) : "-"
+            dashboard ? formatCurrencyCompact(overdueAmount(dashboard), dashboardCurrency) : "-"
           }
         />
         <MetricCard
@@ -257,7 +257,7 @@ export default async function HomePage() {
                       <div key={bucket}>
                         <StatusTag status={bucket} />
                         <div className="mt-1 font-semibold text-[var(--color-text)]">
-                          {formatCurrency(amount, dashboardCurrency)}
+                          {formatCurrencyCompact(amount, dashboardCurrency)}
                         </div>
                       </div>
                     ))}
@@ -319,7 +319,7 @@ export default async function HomePage() {
                         <StatusTag status={party.overdue_bucket} />
                       </div>
                       <div className="text-right font-medium text-[var(--color-text)]">
-                        {formatCurrency(party.outstanding, dashboardCurrency)}
+                        {formatCurrencyCompact(party.outstanding, dashboardCurrency)}
                       </div>
                     </li>
                   ))}

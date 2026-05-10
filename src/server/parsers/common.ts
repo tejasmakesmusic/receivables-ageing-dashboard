@@ -59,6 +59,31 @@ export interface ParseResult {
   file_sha256: string;
   source_hint: SourceHint;
   is_valid: boolean;
+  /**
+   * PR 8a — what the parser actually mapped. Surfaces in the staging
+   * "Column mapping" card so analysts see what was assumed and can spot
+   * drift vs. the saved default.
+   */
+  column_mapping?: ColumnMappingResult;
+}
+
+/**
+ * PR 8a — per-parser introspection of the column layout used. `fields`
+ * keys are canonical names (party_name, invoice_ref, …); values describe
+ * where the parser looked. `layout_variant` is a short tag for known
+ * shapes (e.g. "TALLY_7COL").
+ */
+export interface ColumnMappingResult {
+  source_hint: SourceHint;
+  layout_variant: string;
+  fields: Record<string, ColumnMappingField>;
+}
+
+export interface ColumnMappingField {
+  /** Source-side identifier — header text, column index, or descriptor. */
+  source: string | null;
+  /** EXACT = canonical match, HEURISTIC = inferred, MISSING = absent. */
+  confidence: "EXACT" | "HEURISTIC" | "MISSING";
 }
 
 export interface MonetaryValue {

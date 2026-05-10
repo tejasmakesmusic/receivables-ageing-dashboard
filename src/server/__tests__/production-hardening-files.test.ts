@@ -6,7 +6,9 @@ const expectedFiles = [
   "instrumentation.ts",
   "src/lib/sentry.ts",
   "src/lib/rate-limit.ts",
-  "src/middleware.ts",
+  // Next.js 16 renamed middleware → proxy. The previous src/middleware.ts
+  // file is intentionally removed; src/proxy.ts is the active runtime.
+  "src/proxy.ts",
   "src/lib/upload-validation.ts",
   "src/app/api/snapshots/upload/route.ts",
   "src/app/error.tsx",

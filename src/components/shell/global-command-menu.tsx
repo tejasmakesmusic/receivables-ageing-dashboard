@@ -5,17 +5,21 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Search, X } from "lucide-react";
 import {
   COMMAND_GROUPS,
-  filterCommandItems,
+  type ScoredCommandItem,
+  type FilteredCommandGroup,
+  filterCommandItemsGrouped,
   type CommandItem,
 } from "@/components/shell/command-menu-data";
 
 function CommandRow({
   active,
+  hasScores,
   item,
   onSelect,
 }: {
   active: boolean;
-  item: CommandItem;
+  hasScores: boolean;
+  item: ScoredCommandItem;
   onSelect: () => void;
 }) {
   return (
@@ -30,17 +34,22 @@ function CommandRow({
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
       type="button"
-    >
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold">
-          {item.label}
+      >
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold">
+            {item.label}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
+            {item.description}
+          </span>
         </span>
-        <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
-          {item.description}
-        </span>
-      </span>
-      <ArrowRight className="h-4 w-4 shrink-0" />
-    </button>
+        {hasScores ? (
+          <span className="shrink-0 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-subtle)]">
+            {item.score}
+          </span>
+        ) : null}
+        <ArrowRight className="h-4 w-4 shrink-0" />
+      </button>
   );
 }
 
@@ -50,16 +59,64 @@ export function GlobalCommandMenu() {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const results = useMemo(
-    () => filterCommandItems(query, COMMAND_GROUPS).slice(0, 10),
+  const groupedResults = useMemo(
+    () => filterCommandItemsGrouped(query, COMMAND_GROUPS),
     [query],
   );
+  const visibleGroups = useMemo(() => {
+    const limitedGroups: FilteredCommandGroup[] = [];
+    let remaining = 10;
+
+    for (const group of groupedResults) {
+      if (remaining <= 0) {
+        break;
+      }
+
+      const items = group.items.slice(0, remaining);
+
+      if (items.length === 0) {
+        continue;
+      }
+
+      limitedGroups.push({
+        id: group.id,
+        label: group.label,
+        items,
+      });
+      remaining -= items.length;
+    }
+
+    return limitedGroups;
+  }, [groupedResults]);
+  const flatResults = useMemo(
+    () => visibleGroups.flatMap((group) => group.items),
+    [visibleGroups],
+  );
+  const hasVisibleResults = flatResults.length > 0;
+  const hasSearchScores = query.trim().length > 1;
+  let renderIndex = 0;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setOpen(true);
+        return;
+      }
+
+      if (event.key === "/") {
+        const target = event.target as HTMLElement | null;
+        const targetTag = target?.tagName?.toLowerCase();
+        const isEditable =
+          targetTag === "input" ||
+          targetTag === "textarea" ||
+          targetTag === "select" ||
+          target?.isContentEditable;
+
+        if (!isEditable) {
+          event.preventDefault();
+          setOpen(true);
+        }
       }
     };
 
@@ -87,8 +144,14 @@ export function GlobalCommandMenu() {
     setActiveIndex(0);
   }
 
-  function selectItem(item: CommandItem) {
+  function selectItem(item: CommandItem, openInNewTab = false) {
     close();
+
+    if (openInNewTab) {
+      window.open(item.href, "_blank", "noopener,noreferrer");
+      return;
+    }
+
     if (item.href.startsWith("/api/")) {
       window.location.href = item.href;
       return;
@@ -107,7 +170,7 @@ export function GlobalCommandMenu() {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((index) =>
-        results.length > 0 ? (index + 1) % results.length : 0,
+        flatResults.length > 0 ? (index + 1) % flatResults.length : 0,
       );
       return;
     }
@@ -115,14 +178,17 @@ export function GlobalCommandMenu() {
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((index) =>
-        results.length > 0 ? (index - 1 + results.length) % results.length : 0,
+        flatResults.length > 0 ? (index - 1 + flatResults.length) % flatResults.length : 0,
       );
       return;
     }
 
-    if (event.key === "Enter" && results[activeIndex]) {
+    if (event.key === "Enter" && flatResults[activeIndex]) {
       event.preventDefault();
-      selectItem(results[activeIndex]);
+      selectItem(
+        flatResults[activeIndex],
+        event.ctrlKey || event.metaKey,
+      );
     }
   }
 
@@ -137,6 +203,9 @@ export function GlobalCommandMenu() {
         <span className="truncate">Search workspaces, actions, records...</span>
         <kbd className="ml-auto hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-subtle)] sm:inline-flex">
           Ctrl K
+        </kbd>
+        <kbd className="ml-2 hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-subtle)] sm:inline-flex">
+          /
         </kbd>
       </button>
 
@@ -173,22 +242,57 @@ export function GlobalCommandMenu() {
             </div>
 
             <div className="max-h-[52vh] overflow-y-auto p-2">
-              {results.length === 0 ? (
+              {flatResults.length === 0 ? (
                 <div className="grid min-h-32 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] p-6 text-center text-sm text-[var(--color-text-muted)]">
                   No matching command.
                 </div>
               ) : (
-                <div className="space-y-1">
-                  {results.map((item, index) => (
-                    <CommandRow
-                      active={index === activeIndex}
-                      item={item}
-                      key={item.id}
-                      onSelect={() => selectItem(item)}
-                    />
+                <div className="space-y-3">
+                  {visibleGroups.map((group, groupIndex) => (
+                    <div key={`${group.id}-${groupIndex}`} className="space-y-1">
+                      <div className="px-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                        {group.label}
+                      </div>
+                      <div className="space-y-1">
+                        {group.items.map((item) => {
+                          const rowIndex = renderIndex;
+                          renderIndex += 1;
+                          return (
+                            <CommandRow
+                              active={rowIndex === activeIndex}
+                              hasScores={hasSearchScores}
+                              item={item}
+                              key={item.id}
+                              onSelect={() => selectItem(item)}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
+            </div>
+            <div className="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-[11px] text-[var(--color-text-subtle)]">
+              <span>
+                {hasVisibleResults
+                  ? `Showing ${flatResults.length} command${flatResults.length === 1 ? "" : "s"}`
+                  : "No matches"}
+              </span>
+              <span>
+                <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
+                  Up/Down
+                </kbd>{" "}
+                navigate,{" "}
+                <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
+                  Enter
+                </kbd>{" "}
+                open,{" "}
+                <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
+                  Ctrl/Cmd + Enter
+                </kbd>{" "}
+                open new tab
+              </span>
             </div>
           </div>
         </div>

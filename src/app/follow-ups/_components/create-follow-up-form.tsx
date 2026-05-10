@@ -92,7 +92,7 @@ export default function CreateFollowUpForm({
   return (
     <section className="card-grid">
       <form
-        className="rounded-lg border border-slate-200 bg-white p-4"
+        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
         onSubmit={handleSubmit}
       >
         <h2 className="mb-3 text-sm font-semibold">Create Follow-Up</h2>
@@ -101,7 +101,7 @@ export default function CreateFollowUpForm({
           <label className="text-xs font-medium">
             Target
             <select
-              className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+              className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
               value={target}
               onChange={(event) =>
                 setTarget(event.target.value as FollowUpTarget)
@@ -116,7 +116,7 @@ export default function CreateFollowUpForm({
             <label className="text-xs font-medium">
               Canonical ID
               <input
-                className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+                className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
                 name="canonical_id"
                 value={canonicalId}
                 onChange={(event) => setCanonicalId(event.target.value)}
@@ -127,7 +127,7 @@ export default function CreateFollowUpForm({
             <label className="text-xs font-medium">
               Invoice ID
               <input
-                className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+                className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
                 name="invoice_id"
                 value={invoiceId}
                 onChange={(event) => setInvoiceId(event.target.value)}
@@ -140,7 +140,7 @@ export default function CreateFollowUpForm({
             Date
             <input
               required
-              className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+              className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
               name="date"
               type="date"
               value={date}
@@ -151,7 +151,7 @@ export default function CreateFollowUpForm({
           <label className="text-xs font-medium">
             Channel
             <select
-              className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+              className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
               value={channel}
               onChange={(event) => setChannel(event.target.value)}
             >
@@ -165,7 +165,7 @@ export default function CreateFollowUpForm({
           <label className="text-xs font-medium">
             Contact Person
             <input
-              className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+              className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
               value={contactPerson}
               onChange={(event) => setContactPerson(event.target.value)}
               placeholder="Optional"
@@ -175,7 +175,7 @@ export default function CreateFollowUpForm({
           <label className="text-xs font-medium">
             Next Action Date
             <input
-              className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+              className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
               type="date"
               value={nextActionDate}
               onChange={(event) => setNextActionDate(event.target.value)}
@@ -186,7 +186,7 @@ export default function CreateFollowUpForm({
         <label className="mb-3 block text-xs font-medium">
           Notes
           <textarea
-            className="mt-1 block w-full rounded border border-slate-200 px-2 py-2 text-sm"
+            className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2 text-sm"
             rows={3}
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
@@ -199,7 +199,9 @@ export default function CreateFollowUpForm({
         </Button>
 
         {feedback ? (
-          <p className="mt-2 text-sm text-slate-600">{feedback}</p>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            {feedback}
+          </p>
         ) : null}
       </form>
     </section>

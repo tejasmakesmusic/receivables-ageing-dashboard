@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const currentUser = await requireRole(
       role_enum.ANALYST,
       role_enum.CFO,
+      role_enum.REVIEWER,
       role_enum.ADMIN,
     );
     const query = parseAliasListQuery(

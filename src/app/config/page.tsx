@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { role_enum } from "@/generated/prisma/enums";
+import { getInteractiveRowClass } from "@/components/ui/table-row-styles";
 import { requirePageRole } from "@/server/core/page-auth";
 import {
   listCreditPeriods,
@@ -14,6 +15,7 @@ export default async function ConfigPage() {
     "/config",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
 
@@ -25,7 +27,7 @@ export default async function ConfigPage() {
   const fxRates = await listFxRates(parseFxRateListQuery({}), currentUser);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
+    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-7xl space-y-6">
         <h1 className="text-2xl font-semibold">Configuration</h1>
 
@@ -35,10 +37,12 @@ export default async function ConfigPage() {
           </CardHeader>
           <CardContent>
             {creditPeriods.items.length === 0 ? (
-              <p className="text-sm text-slate-500">No credit-period rows.</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                No credit-period rows.
+              </p>
             ) : (
               <table className="w-full table-auto text-sm">
-                <thead className="bg-slate-100 text-left text-xs uppercase text-slate-500">
+                <thead className="bg-[var(--color-bg-muted)] text-left text-xs uppercase text-[var(--color-text-muted)]">
                   <tr>
                     <th className="px-3 py-2">Canonical</th>
                     <th className="px-3 py-2">Entity</th>
@@ -47,9 +51,9 @@ export default async function ConfigPage() {
                     <th className="px-3 py-2">Valid To</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {creditPeriods.items.slice(0, 5).map((row) => (
-                    <tr key={row.id} className="odd:bg-white">
+                    <tr className={getInteractiveRowClass()} key={row.id}>
                       <td className="px-3 py-2">{row.canonical_name}</td>
                       <td className="px-3 py-2">{row.entity_code}</td>
                       <td className="px-3 py-2">{row.credit_days}</td>
@@ -69,10 +73,10 @@ export default async function ConfigPage() {
           </CardHeader>
           <CardContent>
             {aliases.items.length === 0 ? (
-              <p className="text-sm text-slate-500">No aliases.</p>
+                <p className="text-sm text-[var(--color-text-muted)]">No aliases.</p>
             ) : (
               <table className="w-full table-auto text-sm">
-                <thead className="bg-slate-100 text-left text-xs uppercase text-slate-500">
+                <thead className="bg-[var(--color-bg-muted)] text-left text-xs uppercase text-[var(--color-text-muted)]">
                   <tr>
                     <th className="px-3 py-2">Canonical</th>
                     <th className="px-3 py-2">Alias</th>
@@ -80,12 +84,12 @@ export default async function ConfigPage() {
                     <th className="px-3 py-2">Entity</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {aliases.items.slice(0, 5).map((row) => (
-                    <tr key={row.id} className="odd:bg-white">
+                    <tr className={getInteractiveRowClass()} key={row.id}>
                       <td className="px-3 py-2">
                         <Link
-                          className="text-blue-700 hover:underline"
+                          className="text-[var(--color-accent)] hover:underline"
                           href={`/party/${row.canonical_id}`}
                         >
                           {row.canonical_name}
@@ -108,10 +112,10 @@ export default async function ConfigPage() {
           </CardHeader>
           <CardContent>
             {fxRates.items.length === 0 ? (
-              <p className="text-sm text-slate-500">No FX rates.</p>
+                <p className="text-sm text-[var(--color-text-muted)]">No FX rates.</p>
             ) : (
               <table className="w-full table-auto text-sm">
-                <thead className="bg-slate-100 text-left text-xs uppercase text-slate-500">
+                <thead className="bg-[var(--color-bg-muted)] text-left text-xs uppercase text-[var(--color-text-muted)]">
                   <tr>
                     <th className="px-3 py-2">Pair</th>
                     <th className="px-3 py-2">Rate</th>
@@ -119,9 +123,9 @@ export default async function ConfigPage() {
                     <th className="px-3 py-2">Source</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {fxRates.items.slice(0, 5).map((row) => (
-                    <tr key={row.id} className="odd:bg-white">
+                    <tr className={getInteractiveRowClass()} key={row.id}>
                       <td className="px-3 py-2">
                         {row.from_ccy}/{row.to_ccy}
                       </td>

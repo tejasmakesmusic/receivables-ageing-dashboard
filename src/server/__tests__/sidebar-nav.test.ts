@@ -28,13 +28,17 @@ function navItemPattern({
   icon,
   label,
 }: (typeof EXPECTED_NAV_ITEMS)[number]) {
-  return String.raw`\{\s*href:\s*"${href.replace("/", "\\/")}",\s*label:\s*"${label}",\s*icon:\s*${icon}\s*\}`;
+  // Items now carry `allowedRoles` (and possibly other keys) after the
+  // canonical href/label/icon triple. Match the triple in any contiguous
+  // order; let `[\s\S]*?` consume the trailing fields up to the `}`.
+  return String.raw`\{\s*href:\s*"${href.replace("/", "\\/")}",\s*label:\s*"${label}",\s*icon:\s*${icon}[\s\S]*?\}`;
 }
 
 describe("sidebar navigation", () => {
   it("exposes the PRD navigation items in canonical order", () => {
+    // Sidebar declares NAV_ITEMS as a typed array (not `as const`).
     const navBlock = SIDEBAR_SOURCE.match(
-      /const NAV_ITEMS = \[(?<items>[\s\S]*?)\] as const;/,
+      /const NAV_ITEMS(?::\s*NavItem\[\])?\s*=\s*\[(?<items>[\s\S]*?)\];/,
     )?.groups?.items;
 
     expect(navBlock).toBeDefined();

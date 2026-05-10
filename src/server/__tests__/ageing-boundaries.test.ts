@@ -8,12 +8,14 @@ import {
 } from "@/server/ageing/buckets";
 
 describe("ageing bucket boundaries", () => {
-  it("treats invoices due on the snapshot date as NOT_DUE", () => {
-    expect(ageingBucket(0)).toBe("NOT_DUE");
+  it("treats invoices due on the snapshot date as DUE_TODAY", () => {
+    expect(ageingBucket(0)).toBe("DUE_TODAY");
   });
 
   it.each([
+    [-2, "NOT_DUE"],
     [-1, "NOT_DUE"],
+    [0, "DUE_TODAY"],
     [1, "0_30"],
     [30, "0_30"],
     [31, "31_60"],
@@ -53,7 +55,7 @@ describe("ageing bucket boundaries", () => {
     ).toEqual({
       dueDate: new Date("2026-05-06T00:00:00.000Z"),
       overdueDays: 0,
-      bucket: "NOT_DUE",
+      bucket: "DUE_TODAY",
     });
   });
 });

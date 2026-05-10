@@ -36,6 +36,7 @@ function tag(label: string, tone: StatusTagTone): StatusTagDefinition {
 
 export const STATUS_TAGS = {
   NOT_DUE: tag("Not Due", "current"),
+  DUE_TODAY: tag("Due Today", "warning"),
   "0_30": tag("0-30", "neutral"),
   "31_60": tag("31-60", "warning"),
   "61_90": tag("61-90", "alert"),

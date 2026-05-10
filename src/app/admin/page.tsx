@@ -30,6 +30,7 @@ export const dynamic = "force-dynamic";
 
 const adminLinks = [
   ["Users & Roles", "/admin"],
+  ["Lines of Business", "/admin/lobs"],
   ["Digest Events", "/admin/digest"],
   ["Email Rules", "/admin/email-rules"],
   ["Reconciliation", "/admin/reconciliation"],
@@ -151,7 +152,10 @@ export default async function AdminPage() {
                     </EmptyTableRow>
                   ) : (
                     users.items.map((user) => (
-                      <tr className="hover:bg-[var(--color-bg-subtle)]" key={user.id}>
+                      <tr
+                        className="transition-colors hover:bg-[var(--color-bg-subtle)]"
+                        key={user.id}
+                      >
                         <td className="px-4 py-3">
                           <div className="font-medium text-[var(--color-text)]">
                             {user.name || user.email}
@@ -193,7 +197,7 @@ export default async function AdminPage() {
               <div className="divide-y divide-[var(--color-border)]">
                 {adminQueues.map(({ description, href, icon: Icon, label, status }) => (
                   <Link
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-[var(--color-bg-subtle)]"
+                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm transition-colors hover:bg-[var(--color-bg-subtle)]"
                     href={href}
                     key={href}
                   >

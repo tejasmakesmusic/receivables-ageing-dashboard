@@ -10,8 +10,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { ProgressBar } from "@/components/ui/mini-chart";
+import { RowActionLink } from "@/components/ui/row-actions";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
+import { ViewPreferenceSync } from "@/components/interaction/view-preference-sync";
 import {
   EmptyState,
   MetricCard,
@@ -76,6 +78,18 @@ const REASON_LABELS: Record<string, string> = {
   NINETY_PLUS: "90+ Days",
   STALE_FOLLOW_UP: "Stale Follow-up",
 };
+
+type ViewModeIcon = typeof KanbanSquare | typeof CalendarDays | typeof ListChecks;
+
+const VIEW_TABS: Array<{
+  icon: ViewModeIcon;
+  label: string;
+  value: CollectionsTab;
+}> = [
+  { icon: KanbanSquare, label: "Board", value: "board" },
+  { icon: CalendarDays, label: "Calendar", value: "calendar" },
+  { icon: ListChecks, label: "Queue", value: "queue" },
+];
 
 const tabIcons = {
   board: KanbanSquare,
@@ -311,6 +325,22 @@ function taskColumns(): DataTableColumn<CollectionTaskView>[] {
         </span>
       ),
     },
+    {
+      key: "action",
+      header: "Action",
+      align: "right",
+      width: "w-16",
+      cell: (task) => (
+        <RowActionLink
+          href={
+            task.invoice_id
+              ? `/invoice/${task.invoice_id}`
+              : `/party/${task.canonical_id}`
+          }
+          label={`Open ${reasonLabel(task.reason_code)}`}
+        />
+      ),
+    },
   ];
 }
 
@@ -320,6 +350,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
     "/tasks",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   assertNotPending(user);
@@ -400,28 +431,33 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
     <PageFrame>
       <PageHeader
         actions={
-          <>
-            <Link
-              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
-              href="/tasks?tab=calendar"
-            >
-              <CalendarDays className="h-4 w-4" />
-              Calendar
-            </Link>
-            <Link
-              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
-              href="/tasks?tab=queue"
-            >
-              <ListChecks className="h-4 w-4" />
-              Queue
-            </Link>
-          </>
+          <SavedViewTabs>
+            {VIEW_TABS.map((tab) => (
+              <SavedViewLink
+                active={activeTab === tab.value}
+                href={collectionHref({ ...baseParams, page: 1, tab: tab.value })}
+                key={tab.value}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <tab.icon className="h-4 w-4" />
+                  {tab.label}
+                </span>
+              </SavedViewLink>
+            ))}
+          </SavedViewTabs>
         }
         title="Tasks"
       >
         Manage follow-ups, promises, disputes, and task ownership from one
         queue.
       </PageHeader>
+
+      <ViewPreferenceSync
+        currentView={activeTab}
+        paramName="tab"
+        storageKey="receivables.tasks.view-mode.v1"
+        validViews={["board", "calendar", "queue"]}
+      />
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Total Tasks" meta={`${total} in current filters`} value={total} />
@@ -432,28 +468,6 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
-          <SavedViewTabs>
-            {(["board", "calendar", "queue"] as const).map((tab) => {
-              const Icon = tabIcons[tab];
-              return (
-                <SavedViewLink
-                  active={activeTab === tab}
-                  href={collectionHref({ ...baseParams, page: 1, tab })}
-                  key={tab}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    {tab === "board"
-                      ? "Board"
-                      : tab === "calendar"
-                        ? "Calendar"
-                        : "Queue"}
-                  </span>
-                </SavedViewLink>
-              );
-            })}
-          </SavedViewTabs>
-
           <Panel>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
@@ -685,6 +699,12 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
                 isFiltered={activeFilterCount > 0}
                 minWidthClass="min-w-[1080px]"
                 rowHref={(task) => taskHref(task.id, baseParams)}
+                rowCreateHref={(task) => followUpHref(task)}
+                rowEditHref={(task) =>
+                  task.invoice_id
+                    ? `/invoice/${task.invoice_id}`
+                    : `/party/${task.canonical_id}`
+                }
                 rowKey={(task) => task.id}
                 rows={tasks}
                 selectedRowKey={selectedTask?.id ?? null}
@@ -806,8 +826,16 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
                 </div>
               </div>
 
-              {user.role === role_enum.CFO ? (
-                <StatusTag label="Read-only CFO view" status="READ_ONLY" />
+              {user.role === role_enum.CFO ||
+              user.role === role_enum.REVIEWER ? (
+                <StatusTag
+                  label={
+                    user.role === role_enum.REVIEWER
+                      ? "Read-only Reviewer view"
+                      : "Read-only CFO view"
+                  }
+                  status="READ_ONLY"
+                />
               ) : null}
             </SidePanel>
           ) : (

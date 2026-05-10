@@ -145,6 +145,7 @@ export default async function ExceptionsPage({ searchParams }: PageProps) {
     "/exceptions",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   const rawParams = await searchParams;

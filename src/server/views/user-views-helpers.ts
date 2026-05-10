@@ -13,6 +13,7 @@ export async function listSavedViewsForCurrentUser(
   const currentUser = await requireRole(
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
 

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { GoalChip } from "@/components/engagement/goal-chip";
 import {
   OnboardingChecklist,
@@ -7,6 +6,7 @@ import {
 import { StreakBadge } from "@/components/engagement/streak-badge";
 import { NudgeStack } from "@/components/engagement/nudge-stack";
 import { StatusTag } from "@/components/ui/status-tag";
+import { FocusQueueTable } from "./_components/focus-queue-table";
 import { collection_task_status, role_enum } from "@/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "@/server/core/auth";
@@ -14,7 +14,6 @@ import { requirePageRole } from "@/server/core/page-auth";
 import {
   FOCUS_QUEUE_PAGE_ROLES,
   getFocusQueue,
-  type FocusQueueItem,
 } from "@/server/focus/service";
 
 export const dynamic = "force-dynamic";
@@ -109,34 +108,8 @@ async function getFocusEngagementState(
   };
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return "-";
-  const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function queueTypeLabel(type: FocusQueueItem["type"]): string {
-  switch (type) {
-    case "TASK":
-      return "Task";
-    case "PTP":
-      return "PTP";
-    case "DISPUTE":
-      return "Dispute";
-    case "STAGING_BLOCKER":
-      return "Staging";
-    case "RECONCILIATION":
-      return "Reconciliation";
-  }
-}
-
 function visibleRoleLabel(role: role_enum): string {
-  if (role === role_enum.CFO) return "Read-only";
+  if (role === role_enum.CFO || role === role_enum.REVIEWER) return "Read-only";
   if (role === role_enum.ADMIN) return "Admin";
   return "Analyst";
 }
@@ -149,6 +122,21 @@ export default async function FocusPage() {
     queue.visible_entity_codes.length > 0
       ? queue.visible_entity_codes.join(", ")
       : "None";
+  const generatedDateKey = new Date(queue.generated_at).toISOString().slice(0, 10);
+  const dueNowCount = queue.items.filter((item) => {
+    if (!item.due_date) return false;
+    return item.due_date <= generatedDateKey;
+  }).length;
+  const highPriorityCount = queue.items.filter(
+    (item) => item.priority_score >= 90,
+  ).length;
+  const blockerCount = queue.items.filter(
+    (item) =>
+      item.type === "STAGING_BLOCKER" ||
+      item.type === "RECONCILIATION" ||
+      item.status === "PTP_BROKEN" ||
+      item.status === "DISPUTE_ESCALATED",
+  ).length;
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg)]">
@@ -184,6 +172,26 @@ export default async function FocusPage() {
           <StreakBadge />
         </div>
 
+        <div className="mt-[var(--spacing-3)] flex flex-wrap gap-[var(--spacing-2)]">
+          {[
+            ["Due now", dueNowCount],
+            ["High priority", highPriorityCount],
+            ["Blockers", blockerCount],
+            ["Completed today", engagement.completedToday],
+          ].map(([label, value]) => (
+            <span
+              className="inline-flex h-8 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--spacing-2)] text-xs text-[var(--color-text-muted)]"
+              data-focus-progress-chip={label}
+              key={label}
+            >
+              <span className="font-semibold text-[var(--color-text)]">
+                {value}
+              </span>
+              {label}
+            </span>
+          ))}
+        </div>
+
         <div className="mt-[var(--spacing-3)]">
           <OnboardingChecklist completion={engagement.onboarding} />
         </div>
@@ -196,69 +204,7 @@ export default async function FocusPage() {
             No current focus items for your scope.
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
-              <tr>
-                <th className="px-[var(--spacing-6)] py-[var(--spacing-2)] text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Work item
-                </th>
-                <th className="px-[var(--spacing-4)] py-[var(--spacing-2)] text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Entity
-                </th>
-                <th className="px-[var(--spacing-4)] py-[var(--spacing-2)] text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Status
-                </th>
-                <th className="px-[var(--spacing-4)] py-[var(--spacing-2)] text-left text-xs font-medium text-[var(--color-text-muted)]">
-                  Due
-                </th>
-                <th className="px-[var(--spacing-4)] py-[var(--spacing-2)] text-right text-xs font-medium text-[var(--color-text-muted)]">
-                  Priority
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
-              {queue.items.map((item) => (
-                <tr
-                  key={`${item.type}-${item.id}`}
-                  className="hover:bg-[var(--color-bg-subtle)]"
-                >
-                  <td className="px-[var(--spacing-6)] py-[var(--spacing-3)]">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex flex-wrap items-center gap-[var(--spacing-2)]">
-                        <span className="rounded-[var(--radius-sm)] bg-[var(--color-bg-muted)] px-[var(--spacing-2)] py-0.5 text-xs text-[var(--color-text-muted)]">
-                          {queueTypeLabel(item.type)}
-                        </span>
-                        <Link
-                          href={item.href}
-                          className="font-medium text-[var(--color-accent)] hover:underline"
-                        >
-                          {item.title}
-                        </Link>
-                      </div>
-                      <p className="text-xs text-[var(--color-text-muted)]">
-                        {item.subtitle}
-                      </p>
-                      <p className="text-xs text-[var(--color-text-subtle)]">
-                        {item.reason}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-[var(--spacing-4)] py-[var(--spacing-3)] text-[var(--color-text-muted)]">
-                    {item.entity_code}
-                  </td>
-                  <td className="px-[var(--spacing-4)] py-[var(--spacing-3)]">
-                    <StatusTag status={item.status} />
-                  </td>
-                  <td className="px-[var(--spacing-4)] py-[var(--spacing-3)] text-[var(--color-text-muted)]">
-                    {formatDate(item.due_date)}
-                  </td>
-                  <td className="px-[var(--spacing-4)] py-[var(--spacing-3)] text-right font-mono text-xs text-[var(--color-text)]">
-                    {item.priority_score.toFixed(0)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <FocusQueueTable items={queue.items} />
         )}
       </div>
     </div>

@@ -13,6 +13,15 @@ import { requirePageRole } from "@/server/core/page-auth";
 import { getStagingView, stagingQuerySchema } from "@/server/snapshots/service";
 import { StagingDataTable } from "./_components/staging-data-table";
 import { StagingPublishPanel } from "./_components/staging-publish-panel";
+import {
+  ColumnMappingPanel,
+  type ColumnMappingViewModel,
+} from "./_components/column-mapping-panel";
+import {
+  compareColumnMappings,
+  getSavedColumnMapping,
+} from "@/server/column-mappings/service";
+import type { ColumnMappingResult } from "@/server/parsers/common";
 
 type PageProps = {
   params: Promise<{ snapshotId: string }>;
@@ -41,6 +50,25 @@ export default async function SnapshotStagingPage({
   });
   const staging = await getStagingView(snapshotId, query, currentUser);
   const currency = staging.entity_code === "IND" ? "INR" : "AED";
+
+  // PR 8a — load saved default and compute drift to surface in the staging
+  // Column Mapping panel.
+  const detected =
+    (staging.column_mapping as ColumnMappingViewModel | null) ?? null;
+  const savedRow = await getSavedColumnMapping(
+    staging.entity_id,
+    staging.source_hint,
+  );
+  const savedMapping = savedRow
+    ? (savedRow.mapping as ColumnMappingViewModel)
+    : null;
+  const drift =
+    detected && savedMapping
+      ? compareColumnMappings(
+          savedMapping as unknown as ColumnMappingResult,
+          detected as unknown as ColumnMappingResult,
+        )
+      : [];
 
   const totalRows =
     staging.totals.invoices_total || staging.totals.credit_periods_total;
@@ -94,6 +122,14 @@ export default async function SnapshotStagingPage({
       <StagingPublishPanel
         publishGate={gate}
         snapshotId={snapshotId}
+        sourceHint={staging.source_hint}
+      />
+
+      <ColumnMappingPanel
+        detected={detected}
+        drift={drift}
+        entity={staging.entity_code}
+        saved={savedMapping}
         sourceHint={staging.source_hint}
       />
 

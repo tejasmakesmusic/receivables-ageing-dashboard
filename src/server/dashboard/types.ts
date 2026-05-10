@@ -2,6 +2,7 @@ export type DashboardEntity = "IND" | "UAE" | "ALL";
 
 export type DashboardBucket =
   | "NOT_DUE"
+  | "DUE_TODAY"
   | "0_30"
   | "31_60"
   | "61_90"

@@ -120,7 +120,7 @@ async function resolveDashboardEntity(
 }
 
 async function countTodayActions(user: AuthenticatedUser, now: Date) {
-  if (user.role === role_enum.CFO) return 0;
+  if (user.role === role_enum.CFO || user.role === role_enum.REVIEWER) return 0;
 
   const start = new Date(now);
   start.setUTCHours(0, 0, 0, 0);

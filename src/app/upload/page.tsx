@@ -8,12 +8,12 @@ export default async function UploadPage() {
   await requirePageRole("/upload", role_enum.ANALYST, role_enum.ADMIN);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
+    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-3xl space-y-4">
         <div className="space-y-2">
           <Link
             href="/snapshots"
-            className="text-sm text-blue-700 hover:underline"
+            className="text-sm text-[var(--color-accent)] hover:underline"
           >
             {"<- Snapshots"}
           </Link>

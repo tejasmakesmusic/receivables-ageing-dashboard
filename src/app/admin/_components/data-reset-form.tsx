@@ -110,7 +110,7 @@ export default function DataResetForm({
 
   return (
     <form className="space-y-4 p-4" onSubmit={handleSubmit}>
-      <div className="rounded-[var(--radius-sm)] border border-red-200 bg-red-50 p-3 text-sm text-red-950">
+      <div className="rounded-[var(--radius-sm)] border border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] p-3 text-sm text-[var(--color-status-danger-text)]">
         <div className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
@@ -178,7 +178,7 @@ export default function DataResetForm({
           aria-live="polite"
           className={
             status === "error"
-              ? "text-sm text-red-700"
+              ? "text-sm text-[var(--color-status-danger-text)]"
               : "text-sm text-[var(--color-text-muted)]"
           }
         >

@@ -27,6 +27,9 @@ import {
   type CanonicalParty,
 } from "@/server/matching/fuse-alias";
 import { generateSuggestedTasks } from "@/server/collection-tasks/suggest";
+import { autoResolveCascadeOnSettle } from "@/server/snapshots/auto-resolve";
+import { diffInvoice } from "@/server/snapshots/invoice-diff";
+import { compareColumnMappings } from "@/server/column-mappings/service";
 import { storeUploadedWorkbook } from "@/server/storage/workbooks";
 import { addDaysUtc, calculateAgeing } from "@/server/ageing/buckets";
 
@@ -138,6 +141,11 @@ export interface SnapshotDetailResponse extends SnapshotListRow {
   published_as: string | null;
   discarded_at: string | null;
   discarded_by_email: string | null;
+  /** PR 7 — review state. `null` until a REVIEWER acts. */
+  reviewed_at: string | null;
+  reviewed_by_email: string | null;
+  review_decision: "APPROVED" | "REJECTED" | null;
+  review_note: string | null;
 }
 
 export interface UserRef {
@@ -197,6 +205,12 @@ export interface PublishGate {
   parse_errors_unresolved_count: number;
   warnings_unacknowledged: string[];
   role_permits_publish: boolean;
+  /**
+   * PR 10 — review state. NOT_REQUIRED means the entity flag is off.
+   * PENDING_REVIEW blocks publish until a REVIEWER approves; REJECTED
+   * blocks indefinitely until re-uploaded; APPROVED unblocks.
+   */
+  review_status: "NOT_REQUIRED" | "PENDING_REVIEW" | "APPROVED" | "REJECTED";
 }
 
 export interface StagingInvoiceRow {
@@ -236,6 +250,7 @@ export interface StagingCreditPeriodRow {
 export interface StagingViewResponse {
   snapshot_id: string;
   snapshot_status: string;
+  entity_id: string;
   entity_code: EntityCode;
   as_of_date: string | null;
   source_hint: SourceHint;
@@ -245,12 +260,23 @@ export interface StagingViewResponse {
   totals: StagingTotals;
   publish_gate: PublishGate;
   rows: Array<StagingInvoiceRow | StagingCreditPeriodRow>;
+  /** PR 8a — what the parser captured for this snapshot. */
+  column_mapping: ColumnMappingResultJson | null;
   pagination: {
     offset: number;
     limit: number;
     total: number;
   };
 }
+
+type ColumnMappingResultJson = {
+  source_hint: string;
+  layout_variant: string;
+  fields: Record<
+    string,
+    { source: string | null; confidence: "EXACT" | "HEURISTIC" | "MISSING" }
+  >;
+};
 
 export interface StagingPatchResponse {
   row: StagingInvoiceRow | StagingCreditPeriodRow;
@@ -266,10 +292,22 @@ export interface PublishSnapshotResponse {
   snapshot_id: string;
   status: "PUBLISHED";
   published_at: string;
-  published_as: "SELF" | "OVERRIDE";
+  published_as: "NORMAL" | "OVERRIDE";
   invoices_upserted: number;
   invoice_snapshots_created: number;
   invoices_settled: number;
+  /** PR 2: per-table counts of auto-resolved operational objects. */
+  auto_resolved?: {
+    promises_to_pay: number;
+    dispute_cases: number;
+    collection_tasks: number;
+    exception_tags: number;
+  };
+  /** PR 3: invoice field changes captured during publish. */
+  changes_detected?: {
+    total: number;
+    by_field: Record<string, number>;
+  };
   credit_period_configs_written?: number;
 }
 
@@ -304,6 +342,7 @@ type SnapshotRow = Prisma.snapshotsGetPayload<{
     users_snapshots_uploaded_byTousers: { select: { email: true } };
     users_snapshots_published_byTousers: { select: { email: true } };
     users_snapshots_discarded_byTousers: { select: { email: true } };
+    users_snapshots_reviewed_byTousers: { select: { email: true } };
   };
 }>;
 
@@ -313,6 +352,7 @@ function snapshotInclude() {
     users_snapshots_uploaded_byTousers: { select: { email: true } },
     users_snapshots_published_byTousers: { select: { email: true } },
     users_snapshots_discarded_byTousers: { select: { email: true } },
+    users_snapshots_reviewed_byTousers: { select: { email: true } },
   } satisfies Prisma.snapshotsInclude;
 }
 
@@ -412,6 +452,15 @@ function toDetailRow(snapshot: SnapshotRow): SnapshotDetailResponse {
     discarded_at: toDateTime(snapshot.discarded_at),
     discarded_by_email:
       snapshot.users_snapshots_discarded_byTousers?.email ?? null,
+    reviewed_at: toDateTime(snapshot.reviewed_at),
+    reviewed_by_email:
+      snapshot.users_snapshots_reviewed_byTousers?.email ?? null,
+    review_decision:
+      snapshot.review_decision === "APPROVED" ||
+      snapshot.review_decision === "REJECTED"
+        ? snapshot.review_decision
+        : null,
+    review_note: snapshot.review_note,
   };
 }
 
@@ -451,6 +500,7 @@ function parseDateInput(value: string | null | undefined): Date | null {
 function parseSnapshotSource(
   fileBytes: Uint8Array,
   body: SnapshotUploadInput,
+  options: { xeroOverride?: import("@/server/parsers/xero").XeroColumnOverride } = {},
 ): { sourceHint: SourceHint; parseResult: ParseResult } {
   const detected = body.source_hint ?? detectSourceFromXlsx(fileBytes);
   if (!detected) {
@@ -469,10 +519,49 @@ function parseSnapshotSource(
     detected === "TALLY"
       ? parseTallyGrpbills(fileBytes)
       : detected === "XERO"
-        ? parseXeroAgedReceivables(fileBytes)
+        ? parseXeroAgedReceivables(fileBytes, options.xeroOverride ?? {})
         : parseCreditPeriodMaster(fileBytes);
 
   return { sourceHint: detected, parseResult };
+}
+
+/**
+ * PR 8b — convert a saved column_mappings row into the per-parser override
+ * shape. Currently only Xero parsers consume overrides. Tally is
+ * auto-detected from layout.
+ */
+function buildParserOverrideFromSaved(
+  sourceHint: SourceHint,
+  saved:
+    | {
+        mapping: import("@/server/parsers/common").ColumnMappingResult;
+      }
+    | null,
+): { xeroOverride?: import("@/server/parsers/xero").XeroColumnOverride } {
+  if (sourceHint !== "XERO" || !saved) return {};
+  const fields = saved.mapping.fields ?? {};
+  const out: import("@/server/parsers/xero").XeroColumnOverride = {};
+  const map: Array<
+    [string, keyof import("@/server/parsers/xero").XeroColumnOverride]
+  > = [
+    ["contact_account_number", "contact_account_number"],
+    ["invoice_date", "invoice_date"],
+    ["invoice_ref", "invoice_ref"],
+    ["total", "total"],
+    ["invoice_seen", "invoice_seen"],
+    ["invoice_sent", "invoice_sent"],
+    ["project_id", "project_id"],
+    ["service_month", "service_month"],
+    ["primary_person", "primary_person"],
+    ["email", "email"],
+  ];
+  for (const [savedKey, overrideKey] of map) {
+    const f = fields[savedKey];
+    if (f && typeof f.source === "string" && f.source.length) {
+      out[overrideKey] = f.source;
+    }
+  }
+  return { xeroOverride: out };
 }
 
 function snapshotRowCount(result: ParseResult): number {
@@ -584,6 +673,9 @@ function gateFromRows(params: {
   warnings: string[];
   acknowledged: string[];
   currentUser: AuthenticatedUser;
+  /** PR 10 — entity flag + snapshot review state. */
+  reviewRequired: boolean;
+  reviewDecision: string | null;
 }): PublishGate {
   const unacknowledged = params.warnings.filter(
     (code) => !params.acknowledged.includes(code),
@@ -616,6 +708,22 @@ function gateFromRows(params: {
     params.currentUser.role === role_enum.ANALYST ||
     params.currentUser.role === role_enum.ADMIN;
 
+  // PR 10 — derive review_status. When the entity flag is off, review is
+  // a soft signal; the gate ignores it. When on, anything other than
+  // APPROVED blocks publish.
+  let reviewStatus: PublishGate["review_status"];
+  if (!params.reviewRequired) {
+    reviewStatus = "NOT_REQUIRED";
+  } else if (params.reviewDecision === "APPROVED") {
+    reviewStatus = "APPROVED";
+  } else if (params.reviewDecision === "REJECTED") {
+    reviewStatus = "REJECTED";
+  } else {
+    reviewStatus = "PENDING_REVIEW";
+  }
+  const reviewBlocks =
+    params.reviewRequired && reviewStatus !== "APPROVED";
+
   return {
     ok:
       rolePermits &&
@@ -623,13 +731,15 @@ function gateFromRows(params: {
       parseErrorsUnresolved === 0 &&
       unmapped === 0 &&
       fuzzyHigh === 0 &&
-      fuzzyLow === 0,
+      fuzzyLow === 0 &&
+      !reviewBlocks,
     unmapped_parties_count: unmapped,
     fuzzy_high_pending_count: fuzzyHigh,
     fuzzy_low_pending_count: fuzzyLow,
     parse_errors_unresolved_count: parseErrorsUnresolved,
     warnings_unacknowledged: unacknowledged,
     role_permits_publish: rolePermits,
+    review_status: reviewStatus,
   };
 }
 
@@ -773,9 +883,37 @@ export async function createSnapshotFromUpload(params: {
     );
   }
 
+  // PR 8b — if the analyst (or auto-save) has previously saved a column
+  // mapping for this entity + source, apply it as an override on parse.
+  // Two-pass: detect once cheaply via source-detect, then look up + parse.
+  const detectedHint =
+    params.body.source_hint ?? detectSourceFromXlsx(params.fileBytes);
+  let xeroOverride: import("@/server/parsers/xero").XeroColumnOverride | undefined;
+  if (detectedHint === "XERO") {
+    const saved = await prisma.column_mappings.findUnique({
+      where: {
+        entity_id_source_hint: {
+          entity_id: entity.id,
+          source_hint: "XERO",
+        },
+      },
+      select: { mapping_json: true },
+    });
+    if (saved?.mapping_json) {
+      const built = buildParserOverrideFromSaved(
+        "XERO",
+        {
+          mapping:
+            saved.mapping_json as unknown as import("@/server/parsers/common").ColumnMappingResult,
+        },
+      );
+      xeroOverride = built.xeroOverride;
+    }
+  }
   const { sourceHint, parseResult } = parseSnapshotSource(
     params.fileBytes,
     params.body,
+    { xeroOverride },
   );
   const effectiveAsOf =
     params.body.as_of_date ??
@@ -800,6 +938,35 @@ export async function createSnapshotFromUpload(params: {
     fileSha256,
   });
 
+  // PR 8a — compare detected mapping against any saved default for this
+  // (entity, source). If they differ, drop a `column_mapping_drift`
+  // warning into the parse result so the staging gate surfaces it.
+  const detectedMapping = parseResult.column_mapping ?? null;
+  if (detectedMapping) {
+    const saved = await prisma.column_mappings.findUnique({
+      where: {
+        entity_id_source_hint: {
+          entity_id: entity.id,
+          source_hint: sourceHint,
+        },
+      },
+      select: { mapping_json: true },
+    });
+    if (saved && saved.mapping_json) {
+      const drift = compareColumnMappings(
+        saved.mapping_json as unknown as typeof detectedMapping,
+        detectedMapping,
+      );
+      if (drift.length > 0) {
+        parseResult.warnings.push({
+          row_index: -1,
+          code: "COLUMN_MAPPING_DRIFT",
+          message: `Detected mapping differs from saved default for ${sourceHint}: ${drift.join(", ")}`,
+        });
+      }
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.snapshots.create({
       data: {
@@ -818,6 +985,9 @@ export async function createSnapshotFromUpload(params: {
         parse_result_json: serializeParseResult(
           parseResult,
         ) as unknown as Prisma.InputJsonValue,
+        column_mapping_json: detectedMapping
+          ? (detectedMapping as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
         warnings_acknowledged_json: [],
         staging_overrides_json: [],
       },
@@ -937,12 +1107,19 @@ async function buildStagingRows(
     parse_warnings: parseResult.warnings.length,
     parse_errors_file_level: parseResult.errors.length,
   };
+  // PR 10 — fetch the entity's require_review flag for the publish gate.
+  const entityForGate = await getPrisma().entities.findUnique({
+    where: { id: snapshot.entity_id },
+    select: { require_review_before_publish: true },
+  });
   const gate = gateFromRows({
     sourceHint: snapshot.source_hint as SourceHint,
     rows,
     warnings: warningCodes,
     acknowledged,
     currentUser,
+    reviewRequired: entityForGate?.require_review_before_publish ?? false,
+    reviewDecision: snapshot.review_decision ?? null,
   });
 
   return { rows, totals, gate };
@@ -993,6 +1170,7 @@ export async function getStagingView(
   return {
     snapshot_id: snapshot.id,
     snapshot_status: snapshot.status,
+    entity_id: snapshot.entity_id,
     entity_code: snapshot.entities.code as EntityCode,
     as_of_date: toDate(snapshot.as_of_date),
     source_hint: snapshot.source_hint as SourceHint,
@@ -1002,6 +1180,8 @@ export async function getStagingView(
     totals,
     publish_gate: gate,
     rows: filtered.slice(query.offset, query.offset + query.limit),
+    column_mapping:
+      (snapshot.column_mapping_json as ColumnMappingResultJson | null) ?? null,
     pagination: {
       offset: query.offset,
       limit: query.limit,
@@ -1179,6 +1359,109 @@ export async function patchStagingRow(
   }
 
   return { row, publish_gate: gate };
+}
+
+export interface AutoCanonicalizeInput {
+  row_indices?: number[];
+}
+
+export interface AutoCanonicalizeResult {
+  snapshot_id: string;
+  attempted_rows: number;
+  canonicals_created: number;
+  canonicals_resolved: number;
+  skipped_rows: number;
+}
+
+export async function autoCreateCanonicals(
+  snapshotId: string,
+  currentUser: AuthenticatedUser,
+  body: AutoCanonicalizeInput,
+): Promise<AutoCanonicalizeResult> {
+  const snapshot = await assertSnapshotAccess(snapshotId, currentUser);
+  if (snapshot.status !== "STAGED") {
+    throw new HttpError("snapshot_not_staged", 409, "Snapshot is not STAGED");
+  }
+
+  if (snapshot.source_hint === "CREDIT_PERIOD") {
+    throw new HttpError(
+      "invalid_snapshot_source",
+      422,
+      "Auto canonicalization is only supported for invoice staging snapshots",
+    );
+  }
+
+  const requested = new Set<number>(body?.row_indices ?? []);
+  const { rows } = await buildStagingRows(snapshot, currentUser);
+  const candidateRows = rows.filter(
+    (row): row is StagingInvoiceRow =>
+      "party_name_raw" in row &&
+      row.status === "OK" &&
+      !row.analyst_overrides.resolved_canonical_id &&
+      row.alias_resolution.topMatches.length === 0 &&
+      row.party_name_raw.trim().length > 0 &&
+      (requested.size === 0 || requested.has(row.row_index)),
+  );
+
+  let canonicalsCreated = 0;
+  let canonicalsResolved = 0;
+  let skipped = 0;
+
+  for (const row of candidateRows) {
+    const canonicalName = row.party_name_raw.trim();
+    if (!canonicalName) {
+      skipped += 1;
+      continue;
+    }
+
+    const existingCanonical = await getPrisma().parties_canonical.findFirst({
+      where: {
+        entity_id: snapshot.entity_id,
+        OR: [
+          { name: canonicalName },
+          { party_aliases: { some: { alias_text: canonicalName } } },
+        ],
+      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+
+    if (existingCanonical) {
+      await patchStagingRow(
+        snapshot.id,
+        row.row_index,
+        {
+          action: "resolve_alias",
+          canonical_id: existingCanonical.id,
+          create_alias: true,
+        },
+        currentUser,
+      );
+      canonicalsResolved += 1;
+      continue;
+    }
+
+    await patchStagingRow(
+      snapshot.id,
+      row.row_index,
+      {
+        action: "create_canonical",
+        canonical_name: canonicalName,
+        alias_text: canonicalName,
+        notes: "Auto-created from staging",
+      },
+      currentUser,
+    );
+    canonicalsCreated += 1;
+  }
+
+  return {
+    snapshot_id: snapshot.id,
+    attempted_rows: candidateRows.length,
+    canonicals_created: canonicalsCreated,
+    canonicals_resolved: canonicalsResolved,
+    skipped_rows: skipped,
+  };
 }
 
 export async function ackSnapshotWarnings(
@@ -1415,7 +1698,7 @@ async function publishCreditPeriodSnapshot(
   const now = new Date();
   const publishedAs =
     snapshot.users_snapshots_uploaded_byTousers.email === currentUser.email
-      ? "SELF"
+      ? "NORMAL"
       : "OVERRIDE";
   let configsWritten = 0;
   const priorValidTo = addDaysUtc(validFrom, -1);
@@ -1601,6 +1884,32 @@ export async function publishSnapshot(
     throw new HttpError("snapshot_not_staged", 409, "Snapshot is not STAGED");
   }
 
+  // Gap 4: daily-cadence guard. Run BEFORE the (expensive) staging-row build
+  // so a same-day collision fails fast. Receivables snapshots only — the
+  // CREDIT_PERIOD source uses a separate publish path below and is exempt.
+  if (
+    snapshot.source_hint !== "CREDIT_PERIOD" &&
+    snapshot.as_of_date
+  ) {
+    const sameDayPublished = await getPrisma().snapshots.findFirst({
+      where: {
+        entity_id: snapshot.entity_id,
+        as_of_date: snapshot.as_of_date,
+        status: "PUBLISHED",
+        source_hint: { not: "CREDIT_PERIOD" },
+        id: { not: snapshot.id },
+      },
+      select: { id: true },
+    });
+    if (sameDayPublished) {
+      throw new HttpError(
+        "snapshot_same_day_exists",
+        409,
+        `A published snapshot for this entity and as-of date already exists (${sameDayPublished.id}). Discard it before publishing a new one, or change the as-of date.`,
+      );
+    }
+  }
+
   const { rows, gate } = await buildStagingRows(snapshot, currentUser);
   if (!gate.ok) {
     throw new HttpError(
@@ -1642,17 +1951,41 @@ export async function publishSnapshot(
       "No publishable invoice rows",
     );
   }
+
+  // PR 9 — preload active LOBs so we can stamp invoices in O(1) at upsert
+  // time. Match is case-insensitive against the source `project_id`.
+  const activeLobs = await getPrisma().lobs.findMany({
+    where: { entity_id: snapshot.entity_id, active: true },
+    select: { id: true, code: true },
+  });
+  const lobByCode = new Map<string, string>(
+    activeLobs.map((l) => [l.code.toLowerCase(), l.id]),
+  );
   const now = new Date();
   const publishedAs =
     snapshot.users_snapshots_uploaded_byTousers.email === currentUser.email
-      ? "SELF"
+      ? "NORMAL"
       : "OVERRIDE";
   const touchedInvoiceIds: string[] = [];
   let upserted = 0;
   let snapshotRows = 0;
   let settledCount = 0;
+  let cascadeCounts = {
+    promises_to_pay: 0,
+    dispute_cases: 0,
+    collection_tasks: 0,
+    exception_tags: 0,
+  };
+  // PR 3 / Gap 3 counters — total deltas + per-field breakdown.
+  let changesDetected = 0;
+  const changesByField: Record<string, number> = {};
 
-  await getPrisma().$transaction(async (tx) => {
+  // The publish transaction does meaningful work per row (diff capture,
+  // upsert, invoice_snapshots write) — over a remote Neon connection that
+  // can mean tens of milliseconds per round trip. Default Prisma 5s
+  // timeout is far too tight for any real-world batch.
+  await getPrisma().$transaction(
+    async (tx) => {
     for (const row of invoiceRows) {
       const canonicalId =
         row.analyst_overrides.resolved_canonical_id ??
@@ -1697,9 +2030,25 @@ export async function publishSnapshot(
           canonical_id: canonicalId,
           invoice_ref: row.invoice_ref,
         },
-        select: { id: true },
+        select: {
+          id: true,
+          amount: true,
+          due_date: true,
+          credit_days_applied: true,
+          invoice_date: true,
+          currency: true,
+        },
       });
       const invoiceId = existing?.id ?? createId();
+      // PR 9 — auto-tag from Xero project_id. Case-insensitive match
+      // against active LOB codes for this entity. No match → lob_id stays
+      // null and the analyst can set it manually later.
+      const projectId =
+        (row.xero_metadata as { project_id?: string | null } | null)?.project_id ??
+        null;
+      const lobId = projectId
+        ? (lobByCode.get(projectId.trim().toLowerCase()) ?? null)
+        : null;
       const invoicePayload = {
         entity_id: snapshot.entity_id,
         canonical_id: canonicalId,
@@ -1711,12 +2060,33 @@ export async function publishSnapshot(
         credit_days_source: credit.source,
         due_date: dueDate,
         status: "OPEN",
+        lob_id: lobId,
         raw_row_json: row.raw_row_json as Prisma.InputJsonValue,
         xero_metadata: row.xero_metadata as Prisma.InputJsonValue,
         updated_at: now,
       };
 
       if (existing) {
+        // PR 3 / Gap 3 — capture the delta BEFORE we overwrite the row, so
+        // analysts can see exactly what shifted vs. the previously-published
+        // invoice. Write one invoice_changes row per changed field.
+        const deltas = diffInvoice(existing, invoicePayload);
+        if (deltas.length > 0) {
+          await tx.invoice_changes.createMany({
+            data: deltas.map((d) => ({
+              id: createId(),
+              invoice_id: invoiceId,
+              snapshot_id: snapshot.id,
+              field: d.field,
+              before_value: d.before as Prisma.InputJsonValue,
+              after_value: d.after as Prisma.InputJsonValue,
+            })),
+          });
+          changesDetected += deltas.length;
+          for (const d of deltas) {
+            changesByField[d.field] = (changesByField[d.field] ?? 0) + 1;
+          }
+        }
         await tx.invoices.update({
           where: { id: invoiceId },
           data: {
@@ -1750,6 +2120,18 @@ export async function publishSnapshot(
       snapshotRows += 1;
     }
 
+    // Capture which invoice IDs are about to be settled so the cascade
+    // can resolve their attached operational objects (PR 2 / Gap 2).
+    const aboutToSettle = await tx.invoices.findMany({
+      where: {
+        entity_id: snapshot.entity_id,
+        status: "OPEN",
+        id: { notIn: touchedInvoiceIds },
+      },
+      select: { id: true },
+    });
+    const settledInvoiceIds = aboutToSettle.map((i) => i.id);
+
     const settled = await tx.invoices.updateMany({
       where: {
         entity_id: snapshot.entity_id,
@@ -1763,6 +2145,45 @@ export async function publishSnapshot(
       },
     });
     settledCount = settled.count;
+
+    // PR 2 / Gap 2 — Option A: cascade-resolve operational objects on
+    // freshly settled invoices. Records counts in the publish audit row.
+    cascadeCounts = await autoResolveCascadeOnSettle(tx, {
+      snapshotId: snapshot.id,
+      settledInvoiceIds,
+      now,
+    });
+
+    // PR 8b — opportunistic save on first publish. If no saved mapping
+    // exists yet for (entity, source) and we captured one during parse,
+    // persist it as the baseline. Subsequent publishes leave the saved
+    // mapping alone — analysts must explicitly "Save as default" to
+    // change it (PR 8a UI). This gives drift detection something to
+    // compare against without forcing an extra click on first use.
+    if (snapshot.column_mapping_json) {
+      const existingMapping = await tx.column_mappings.findUnique({
+        where: {
+          entity_id_source_hint: {
+            entity_id: snapshot.entity_id,
+            source_hint: snapshot.source_hint,
+          },
+        },
+        select: { id: true },
+      });
+      if (!existingMapping) {
+        await tx.column_mappings.create({
+          data: {
+            id: createId(),
+            entity_id: snapshot.entity_id,
+            source_hint: snapshot.source_hint,
+            mapping_json: snapshot.column_mapping_json as Prisma.InputJsonValue,
+            created_by: currentUser.id,
+            created_at: now,
+            updated_at: now,
+          },
+        });
+      }
+    }
 
     await tx.snapshots.update({
       where: { id: snapshot.id },
@@ -1789,6 +2210,11 @@ export async function publishSnapshot(
           invoices_upserted: upserted,
           invoice_snapshots_created: snapshotRows,
           invoices_settled: settledCount,
+          auto_resolved: { ...cascadeCounts },
+          changes_detected: {
+            total: changesDetected,
+            by_field: { ...changesByField },
+          },
         },
       },
     });
@@ -1816,7 +2242,9 @@ export async function publishSnapshot(
         },
       },
     });
-  });
+    },
+    { timeout: 30_000, maxWait: 10_000 },
+  );
 
   return {
     snapshot_id: snapshot.id,
@@ -1826,6 +2254,11 @@ export async function publishSnapshot(
     invoices_upserted: upserted,
     invoice_snapshots_created: snapshotRows,
     invoices_settled: settledCount,
+    auto_resolved: cascadeCounts,
+    changes_detected: {
+      total: changesDetected,
+      by_field: changesByField,
+    },
   };
 }
 

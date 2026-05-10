@@ -1,5 +1,6 @@
 export type AgeingBucket =
   | "NOT_DUE"
+  | "DUE_TODAY"
   | "0_30"
   | "31_60"
   | "61_90"
@@ -35,7 +36,8 @@ export function daysBetweenUtc(from: Date, to: Date): number {
 }
 
 export function ageingBucket(overdueDays: number): AgeingBucket {
-  if (overdueDays <= 0) return "NOT_DUE";
+  if (overdueDays < 0) return "NOT_DUE";
+  if (overdueDays === 0) return "DUE_TODAY";
   if (overdueDays <= 30) return "0_30";
   if (overdueDays <= 60) return "31_60";
   if (overdueDays <= 90) return "61_90";

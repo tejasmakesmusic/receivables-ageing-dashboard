@@ -20,9 +20,11 @@ import {
 } from "@/components/ui/workspace";
 import { role_enum } from "@/generated/prisma/enums";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { getPrisma } from "@/lib/prisma";
 import { requirePageRole } from "@/server/core/page-auth";
 import { assertAnalystCanAccessEntity } from "@/server/core/scope";
 import { getPartyDetail, getPartyEntityId } from "@/server/parties/service";
+import { CreditPeriodPanel } from "./_components/credit-period-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,7 @@ export default async function PartyDetailPage({
     `/party/${canonicalId}`,
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   const entityId = await getPartyEntityId(canonicalId);
@@ -52,7 +55,19 @@ export default async function PartyDetailPage({
 
   await assertAnalystCanAccessEntity(currentUser, entityId);
 
-  const party = await getPartyDetail(canonicalId);
+  const [party, creditConfig] = await Promise.all([
+    getPartyDetail(canonicalId),
+    getPrisma().credit_period_config.findFirst({
+      where: { canonical_id: canonicalId, valid_to: null },
+      select: {
+        id: true,
+        days: true,
+        valid_from: true,
+        reason_note: true,
+        users: { select: { email: true } },
+      },
+    }),
+  ]);
 
   if (!party) {
     notFound();
@@ -79,7 +94,9 @@ export default async function PartyDetailPage({
     0,
     ...party.invoices.map((invoice) => invoice.overdue_days ?? 0),
   );
-  const isReadOnly = currentUser.role === role_enum.CFO;
+  const isReadOnly =
+    currentUser.role === role_enum.CFO ||
+    currentUser.role === role_enum.REVIEWER;
 
   return (
     <PageFrame>
@@ -110,7 +127,7 @@ export default async function PartyDetailPage({
                 "inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border px-3 text-sm font-medium transition-colors",
                 isReadOnly
                   ? "pointer-events-none border-[var(--color-border)] bg-[var(--color-bg-muted)] text-[var(--color-text-subtle)]"
-                  : "border-red-300 bg-white text-red-600 hover:bg-red-50",
+                  : "border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-text)] hover:bg-[var(--color-danger-soft)]",
               ].join(" ")}
               href={`/tasks?canonical_id=${party.canonical_id}`}
             >
@@ -356,6 +373,27 @@ export default async function PartyDetailPage({
                 Log Follow-up
               </Link>
             </div>
+          </Panel>
+
+          <Panel>
+            <PanelHeader title="Credit Terms">
+              Payment terms applied to invoices.
+            </PanelHeader>
+            <CreditPeriodPanel
+              canonicalId={canonicalId}
+              canEdit={currentUser.role === role_enum.ANALYST || currentUser.role === role_enum.ADMIN}
+              currentConfig={
+                creditConfig
+                  ? {
+                      id: creditConfig.id,
+                      days: creditConfig.days,
+                      valid_from: creditConfig.valid_from.toISOString(),
+                      reason_note: creditConfig.reason_note,
+                      updated_by_email: creditConfig.users?.email ?? null,
+                    }
+                  : null
+              }
+            />
           </Panel>
 
           <Panel>

@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 
 import {
+  ColumnMappingResult,
   ParseErrorRow,
   ParseResult,
   ParsedInvoiceRow,
@@ -33,13 +34,6 @@ const COL_INVOICE_SENT = "Invoice Sent";
 const COL_PROJECT_ID = "PROJECT ID";
 const COL_SERVICE_MONTH = "SERVICE MONTH";
 const COL_EMAIL = "Email";
-
-const REQUIRED_COLUMNS = [
-  COL_CONTACT_ACCOUNT_NUMBER,
-  COL_INVOICE_DATE,
-  COL_INVOICE_NUMBER,
-  COL_TOTAL,
-];
 
 const AS_OF_DATE_RE = /as\s+at\s+(\d{1,2}\s+[A-Za-z]+\s+\d{4})/i;
 
@@ -88,6 +82,7 @@ function buildRawJson(
 function rowToMetadata(
   row: unknown[],
   colMap: Record<string, number>,
+  metaKeys: typeof XERO_META_KEYS = XERO_META_KEYS,
 ): ParsedInvoiceRow["xero_metadata"] {
   const metadata: ParsedInvoiceRow["xero_metadata"] = {
     invoice_seen: null,
@@ -98,7 +93,7 @@ function rowToMetadata(
     email: null,
   };
 
-  for (const { key, colName } of XERO_META_KEYS) {
+  for (const { key, colName } of metaKeys) {
     if (colName in colMap) {
       metadata[key] = stringifyCell(row[colMap[colName]]);
     }
@@ -188,18 +183,72 @@ function sniffAsOfDate(rows: unknown[][]): Date | null {
   );
 }
 
-function parseXeroMetadataRow(row: unknown[], colMap: Record<string, number>) {
-  return rowToMetadata(row, colMap);
+// PR 8b — overload-friendly wrapper; per-call metaKeys override XERO_META_KEYS
+// so override-driven parses pick up renamed metadata headers.
+function parseXeroMetadataRow(
+  row: unknown[],
+  colMap: Record<string, number>,
+  metaKeys: typeof XERO_META_KEYS = XERO_META_KEYS,
+) {
+  return rowToMetadata(row, colMap, metaKeys);
+}
+
+/**
+ * PR 8b — optional override mapping. Keys are canonical field names; values
+ * are the *source-side header text* the analyst wants the parser to read
+ * from instead of the default. When omitted, we fall back to the original
+ * Xero defaults (`Contact Account Number`, `Invoice Date`, …).
+ */
+export interface XeroColumnOverride {
+  contact_account_number?: string;
+  invoice_date?: string;
+  invoice_ref?: string;
+  total?: string;
+  invoice_seen?: string;
+  invoice_sent?: string;
+  project_id?: string;
+  service_month?: string;
+  primary_person?: string;
+  email?: string;
 }
 
 export function parseXeroAgedReceivables(
   fileBytes: ArrayBuffer | Uint8Array,
+  override: XeroColumnOverride = {},
 ): ParseResult {
   const fileSha = computeFileSha256(fileBytes);
   const resultSourceHint: SourceHint = "XERO";
   const invoices: ParsedInvoiceRow[] = [];
   const errors: ParseErrorRow[] = [];
   const warnings: ParseWarning[] = [];
+
+  // Resolve effective column names — override wins, defaults fill in.
+  const colNames = {
+    contact: override.contact_account_number ?? COL_CONTACT_ACCOUNT_NUMBER,
+    invoiceDate: override.invoice_date ?? COL_INVOICE_DATE,
+    invoiceNumber: override.invoice_ref ?? COL_INVOICE_NUMBER,
+    total: override.total ?? COL_TOTAL,
+    invoiceSeen: override.invoice_seen ?? COL_INVOICE_SEEN,
+    invoiceSent: override.invoice_sent ?? COL_INVOICE_SENT,
+    projectId: override.project_id ?? COL_PROJECT_ID,
+    serviceMonth: override.service_month ?? COL_SERVICE_MONTH,
+    primaryPerson: override.primary_person ?? COL_PRIMARY_PERSON,
+    email: override.email ?? COL_EMAIL,
+  };
+  const requiredColumns = [
+    colNames.contact,
+    colNames.invoiceDate,
+    colNames.invoiceNumber,
+    colNames.total,
+  ];
+  const xeroMetaKeys: typeof XERO_META_KEYS = [
+    { key: "invoice_seen", colName: colNames.invoiceSeen },
+    { key: "invoice_sent", colName: colNames.invoiceSent },
+    { key: "project_id", colName: colNames.projectId },
+    { key: "service_month", colName: colNames.serviceMonth },
+    { key: "primary_person", colName: colNames.primaryPerson },
+    { key: "email", colName: colNames.email },
+  ];
 
   let workbook: XLSX.WorkBook;
   try {
@@ -286,7 +335,7 @@ export function parseXeroAgedReceivables(
   const headerRow = rows[HEADER_ROW_IDX] ?? [];
   const colMap = buildColMap(Array.isArray(headerRow) ? headerRow : []);
 
-  const missingColumns = REQUIRED_COLUMNS.filter(
+  const missingColumns = requiredColumns.filter(
     (column) => !(column in colMap),
   );
   if (missingColumns.length > 0) {
@@ -313,10 +362,10 @@ export function parseXeroAgedReceivables(
     };
   }
 
-  const contactCol = colMap[COL_CONTACT_ACCOUNT_NUMBER];
-  const invoiceDateCol = colMap[COL_INVOICE_DATE];
-  const invoiceNumberCol = colMap[COL_INVOICE_NUMBER];
-  const totalCol = colMap[COL_TOTAL];
+  const contactCol = colMap[colNames.contact];
+  const invoiceDateCol = colMap[colNames.invoiceDate];
+  const invoiceNumberCol = colMap[colNames.invoiceNumber];
+  const totalCol = colMap[colNames.total];
 
   const namedColumns = Object.entries(colMap)
     .filter(([, idx]) => idx >= 0)
@@ -375,7 +424,7 @@ export function parseXeroAgedReceivables(
 
     if (isInvoiceRow(row, invoiceDateCol, invoiceNumberCol)) {
       const reasonParts: string[] = [];
-      const rawMetadata = parseXeroMetadataRow(row, colMap);
+      const rawMetadata = parseXeroMetadataRow(row, colMap, xeroMetaKeys);
 
       let invoiceDate: Date | null = null;
       let amountScaled: bigint | null = null;
@@ -451,7 +500,7 @@ export function parseXeroAgedReceivables(
         invoice_date: null,
         amount: null,
         raw_row_json: rawJson,
-        xero_metadata: parseXeroMetadataRow(row, colMap),
+        xero_metadata: parseXeroMetadataRow(row, colMap, xeroMetaKeys),
         parse_error_reason: "no invoice number (credit note / adjustment)",
       });
       continue;
@@ -468,7 +517,7 @@ export function parseXeroAgedReceivables(
       invoice_date: null,
       amount: null,
       raw_row_json: rawJson,
-      xero_metadata: parseXeroMetadataRow(row, colMap),
+      xero_metadata: parseXeroMetadataRow(row, colMap, xeroMetaKeys),
       parse_error_reason: `Row ${rawIndex} has unexpected shape: not invoice, party header, sub-total, grand total, credit note, or blank.`,
     });
   }
@@ -531,6 +580,39 @@ export function parseXeroAgedReceivables(
     }
   }
 
+  // PR 8a — capture the headers we found vs. the canonical names. EXACT
+  // when the canonical header text was found verbatim; MISSING when absent.
+  const fieldFor = (canonical: string, columnName: string) => {
+    const idx = colMap[columnName];
+    return idx === undefined
+      ? { source: null, confidence: "MISSING" as const }
+      : { source: columnName, confidence: "EXACT" as const };
+  };
+  // PR 8b — when an override was provided, the layout_variant tags it so
+  // analysts can see at a glance that we used custom headers, not defaults.
+  const usedOverride = Object.keys(override).length > 0;
+  const column_mapping: ColumnMappingResult = {
+    source_hint: resultSourceHint,
+    layout_variant: usedOverride
+      ? "XERO_AGED_RECEIVABLES_DETAIL_OVERRIDE"
+      : "XERO_AGED_RECEIVABLES_DETAIL",
+    fields: {
+      contact_account_number: fieldFor(
+        "contact_account_number",
+        colNames.contact,
+      ),
+      invoice_date: fieldFor("invoice_date", colNames.invoiceDate),
+      invoice_ref: fieldFor("invoice_ref", colNames.invoiceNumber),
+      total: fieldFor("total", colNames.total),
+      invoice_seen: fieldFor("invoice_seen", colNames.invoiceSeen),
+      invoice_sent: fieldFor("invoice_sent", colNames.invoiceSent),
+      project_id: fieldFor("project_id", colNames.projectId),
+      service_month: fieldFor("service_month", colNames.serviceMonth),
+      primary_person: fieldFor("primary_person", colNames.primaryPerson),
+      email: fieldFor("email", colNames.email),
+    },
+  };
+
   return {
     invoices,
     credit_periods: [],
@@ -540,5 +622,6 @@ export function parseXeroAgedReceivables(
     file_sha256: fileSha,
     source_hint: resultSourceHint,
     is_valid: errors.length === 0,
+    column_mapping,
   };
 }

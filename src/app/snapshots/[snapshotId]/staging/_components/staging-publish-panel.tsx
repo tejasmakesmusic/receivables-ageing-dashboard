@@ -175,6 +175,16 @@ export function StagingPublishPanel({
           {!gate.role_permits_publish ? (
             <GateBlockerItem>Your role cannot publish this snapshot</GateBlockerItem>
           ) : null}
+          {gate.review_status === "PENDING_REVIEW" ? (
+            <GateBlockerItem>
+              Review required before publish — ask a REVIEWER to approve
+            </GateBlockerItem>
+          ) : null}
+          {gate.review_status === "REJECTED" ? (
+            <GateBlockerItem>
+              Snapshot was rejected by review — discard and re-upload
+            </GateBlockerItem>
+          ) : null}
         </div>
       ) : null}
 

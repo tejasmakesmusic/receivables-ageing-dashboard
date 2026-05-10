@@ -219,6 +219,7 @@ export default async function SnapshotsPage({ searchParams }: PageProps) {
     "/snapshots",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   const raw = await searchParams;
