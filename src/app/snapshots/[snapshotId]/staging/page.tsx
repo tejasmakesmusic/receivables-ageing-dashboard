@@ -138,7 +138,7 @@ export default async function SnapshotStagingPage({
           state and the primary action while they scroll through hundreds
           of staging rows. The negative margin extends the sticky bar to
           the page edges on wide screens. */}
-      <div className="sticky top-0 z-20 -mx-6 border-b border-[var(--color-border)] bg-[var(--color-bg)]/95 px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-bg)]/85">
+      <div className="sticky top-0 z-20 -mx-4 border-b border-[var(--color-border)] bg-[var(--color-bg)]/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-bg)]/85 sm:-mx-6 sm:px-6">
         <StagingPublishPanel
           parseErrorRowIndices={staging.unresolved_parse_error_row_indices}
           publishGate={gate}

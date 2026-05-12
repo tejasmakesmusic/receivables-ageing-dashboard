@@ -74,7 +74,17 @@ export function TableShell({
         className,
       )}
     >
-      <div className="overflow-x-auto">{children}</div>
+      {/* PR C+ — mobile/tablet scroll affordance. The right-edge fade hints
+          that there's more content sideways when the inner table is wider
+          than the viewport (which happens on every list table below ~1100px).
+          Sticky-left columns keep context while horizontally scrolling. */}
+      <div className="relative">
+        <div className="overflow-x-auto">{children}</div>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--color-surface)] to-transparent xl:hidden"
+        />
+      </div>
     </div>
   );
 }

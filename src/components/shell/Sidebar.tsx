@@ -445,8 +445,13 @@ export function Sidebar() {
     );
   };
 
+  // PR C+ — hide the full 256px sidebar below the lg breakpoint
+  // (1024px). On phones/tablets the layout would otherwise lose half
+  // its width to nav chrome. Mobile users navigate via the topbar's
+  // command palette (Ctrl+K / tap-to-open) which already lists every
+  // surface.
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+    <aside className="hidden h-screen w-64 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-subtle)] lg:flex">
       <div className="flex h-16 items-center gap-3 border-b border-[var(--color-border)] px-5">
         <div className="grid h-9 w-9 place-items-center rounded-[var(--radius-md)] bg-[var(--color-accent)] text-white">
           <ShieldCheck className="h-5 w-5" aria-hidden="true" />
