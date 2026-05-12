@@ -38,12 +38,12 @@ describe("Phase 2a - Snapshots DataTable + SidePanel", () => {
     expect(source).toContain("<StatusTag");
   });
 
-  it("Snapshots route ships a loading skeleton via DataTable state=loading", () => {
-    expect(existsSync(SNAPSHOTS_LOADING)).toBe(true);
-
-    const source = readFileSync(SNAPSHOTS_LOADING, "utf8");
-
-    expect(source).toContain("state=\"loading\"");
-    expect(source).toContain("DataTable");
+  it("does NOT ship a colocated loading.tsx (Next 16 + Turbopack streaming bug)", () => {
+    // Intentionally deleted. The Suspense boundary triggered by a
+    // colocated loading.tsx never gets swapped in by Next.js 16
+    // streaming under Turbopack dev — users saw the skeleton forever
+    // while the real content sat at width=0, height=0 outside <main>.
+    // Re-adding this file will reintroduce the bug.
+    expect(existsSync(SNAPSHOTS_LOADING)).toBe(false);
   });
 });

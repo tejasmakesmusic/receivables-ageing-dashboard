@@ -42,12 +42,9 @@ describe("Phase 2a - Dispute Cases DataTable + SidePanel", () => {
     expect(source).toContain("<StatusTag");
   });
 
-  it("Dispute Cases route ships a loading skeleton via DataTable state=loading", () => {
-    expect(existsSync(DISPUTES_LOADING)).toBe(true);
-
-    const source = readFileSync(DISPUTES_LOADING, "utf8");
-
-    expect(source).toContain("state=\"loading\"");
-    expect(source).toContain("DataTable");
+  it("does NOT ship a colocated loading.tsx (Next 16 + Turbopack streaming bug)", () => {
+    // Intentionally deleted — see snapshots-data-table-ui.test.ts for
+    // the full bug story. Re-adding will reintroduce the issue.
+    expect(existsSync(DISPUTES_LOADING)).toBe(false);
   });
 });

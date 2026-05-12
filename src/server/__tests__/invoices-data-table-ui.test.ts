@@ -50,12 +50,9 @@ describe("Phase 2a — Invoices DataTable + SidePanel", () => {
     expect(source).toContain("openFullPageHref=");
   });
 
-  it("Invoices route ships a loading skeleton via DataTable state=loading", () => {
-    expect(existsSync(INVOICES_LOADING)).toBe(true);
-
-    const source = readFileSync(INVOICES_LOADING, "utf8");
-
-    expect(source).toContain("state=\"loading\"");
-    expect(source).toContain("DataTable");
+  it("does NOT ship a colocated loading.tsx (Next 16 + Turbopack streaming bug)", () => {
+    // Intentionally deleted — see snapshots-data-table-ui.test.ts for
+    // the full bug story. Re-adding will reintroduce the issue.
+    expect(existsSync(INVOICES_LOADING)).toBe(false);
   });
 });
