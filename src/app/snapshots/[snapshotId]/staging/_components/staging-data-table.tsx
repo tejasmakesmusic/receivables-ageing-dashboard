@@ -85,10 +85,16 @@ export function StagingDataTable({
   const columns: DataTableColumn<StagingRow>[] = [
     {
       key: "row",
-      header: "#",
-      width: "w-[52px]",
+      // PR B — label as "Row" not "#"; the value is the original row index
+      // from the source workbook, useful when analysts need to trace a row
+      // back to the Tally/Xero export.
+      header: "Row",
+      width: "w-[64px]",
       cell: (row) => (
-        <span className="tabular-nums text-[var(--color-text-subtle)]">
+        <span
+          className="tabular-nums text-[var(--color-text-subtle)]"
+          title="Row number in the original workbook"
+        >
           {row.row_index}
         </span>
       ),

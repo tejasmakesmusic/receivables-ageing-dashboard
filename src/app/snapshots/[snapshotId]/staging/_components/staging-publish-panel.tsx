@@ -6,13 +6,25 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { StatusTag } from "@/components/ui/status-tag";
 import type { PublishGate } from "@/server/snapshots/service";
 
-type ActionState = "idle" | "acknowledging" | "publishing" | "error";
+// PR B — drop the previous useState(publishGate) local copy. It diverged from
+// server state after router.refresh() because useState only initialises on
+// mount, leaving the publish button disabled even when the server's gate
+// said OK. Trust the prop; the server is the source of truth.
+
+type ActionState =
+  | "idle"
+  | "acknowledging"
+  | "publishing"
+  | "dismissing"
+  | "error";
 
 type ApiError = {
   error?: string;
   message?: string;
 };
 
+// Kept for typing the warnings-ack response. We no longer copy the returned
+// gate into local state — router.refresh() re-renders with the fresh prop.
 type WarningsAckResponse = {
   publish_gate: PublishGate;
 };
@@ -30,19 +42,26 @@ export function StagingPublishPanel({
   publishGate,
   snapshotId,
   sourceHint,
+  parseErrorRowIndices = [],
 }: {
   publishGate: PublishGate;
   snapshotId: string;
   sourceHint: string;
+  /** PR B — when set, enables a bulk "Dismiss all parse errors" action. */
+  parseErrorRowIndices?: number[];
 }) {
   const router = useRouter();
-  const [gate, setGate] = useState(publishGate);
+  // Single source of truth: the server-rendered prop. Local copy used to
+  // diverge after router.refresh() and stranded the publish button as
+  // disabled even when the gate had cleared. See note at top of file.
+  const gate = publishGate;
   const [state, setState] = useState<ActionState>("idle");
   const [message, setMessage] = useState("");
 
   const warningCodes = gate.warnings_unacknowledged;
   const hasWarnings = warningCodes.length > 0;
   const canPublish = gate.ok && state !== "publishing";
+  const hasParseErrorsToBulkDismiss = parseErrorRowIndices.length > 0;
   const publishLabel =
     sourceHint === "CREDIT_PERIOD" ? "Publish Credit Periods" : "Publish Snapshot";
 
@@ -67,14 +86,52 @@ export function StagingPublishPanel({
         },
       );
       if (!response.ok) throw new Error(await readError(response));
-      const payload = (await response.json()) as WarningsAckResponse;
-      setGate(payload.publish_gate);
+      // Drain the body for typing; we don't mutate local state because
+      // router.refresh() reseeds the prop with the fresh gate.
+      (await response.json()) as WarningsAckResponse;
       setState("idle");
       router.refresh();
     } catch (error) {
       setState("error");
       setMessage(
         error instanceof Error ? error.message : "Could not acknowledge warnings",
+      );
+    }
+  }
+
+  // PR B — bulk-dismiss every undismissed parse-error row. Runs the per-row
+  // PATCHes SEQUENTIALLY: patchStagingRow does read-modify-write on the
+  // snapshot's staging_overrides_json, so parallel requests race each other
+  // and only the last write survives. Sequential is slower but correct.
+  async function dismissAllParseErrors() {
+    if (parseErrorRowIndices.length === 0) return;
+    setState("dismissing");
+    setMessage("");
+    let done = 0;
+    try {
+      for (const rowIndex of parseErrorRowIndices) {
+        const res = await fetch(
+          `/api/snapshots/${snapshotId}/staging/${rowIndex}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "dismiss_parse_error",
+              reason: "Bulk-reviewed from staging gate",
+            }),
+          },
+        );
+        if (!res.ok) throw new Error(await readError(res));
+        done += 1;
+      }
+      setState("idle");
+      router.refresh();
+    } catch (error) {
+      setState("error");
+      setMessage(
+        error instanceof Error
+          ? `${error.message} (after ${done}/${parseErrorRowIndices.length} dismissed)`
+          : "Bulk dismiss failed",
       );
     }
   }
@@ -127,6 +184,19 @@ export function StagingPublishPanel({
               {state === "acknowledging"
                 ? "Acknowledging…"
                 : `Acknowledge Warnings (${warningCodes.length})`}
+            </button>
+          ) : null}
+          {hasParseErrorsToBulkDismiss ? (
+            <button
+              className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-status-warning-border)] bg-[var(--color-status-warning-bg)] px-3 text-sm font-medium text-[var(--color-status-warning-text)] hover:opacity-80 disabled:pointer-events-none disabled:opacity-60"
+              disabled={state !== "idle"}
+              onClick={dismissAllParseErrors}
+              type="button"
+              title="Mark every parse-error row as Reviewed in one click"
+            >
+              {state === "dismissing"
+                ? "Dismissing…"
+                : `Dismiss Parse Errors (${parseErrorRowIndices.length})`}
             </button>
           ) : null}
           <button

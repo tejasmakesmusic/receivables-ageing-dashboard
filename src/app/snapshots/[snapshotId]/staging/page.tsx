@@ -51,8 +51,7 @@ export default async function SnapshotStagingPage({
   const staging = await getStagingView(snapshotId, query, currentUser);
   const currency = staging.entity_code === "IND" ? "INR" : "AED";
 
-  // PR 8a — load saved default and compute drift to surface in the staging
-  // Column Mapping panel.
+  // PR 8a — drift vs. saved default surfaces in the Column Mapping panel.
   const detected =
     (staging.column_mapping as ColumnMappingViewModel | null) ?? null;
   const savedRow = await getSavedColumnMapping(
@@ -119,11 +118,18 @@ export default async function SnapshotStagingPage({
         />
       </section>
 
-      <StagingPublishPanel
-        publishGate={gate}
-        snapshotId={snapshotId}
-        sourceHint={staging.source_hint}
-      />
+      {/* PR B — sticky publish gate. Keeps the analyst aware of the gate
+          state and the primary action while they scroll through hundreds
+          of staging rows. The negative margin extends the sticky bar to
+          the page edges on wide screens. */}
+      <div className="sticky top-0 z-20 -mx-6 border-b border-[var(--color-border)] bg-[var(--color-bg)]/95 px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-bg)]/85">
+        <StagingPublishPanel
+          parseErrorRowIndices={staging.unresolved_parse_error_row_indices}
+          publishGate={gate}
+          snapshotId={snapshotId}
+          sourceHint={staging.source_hint}
+        />
+      </div>
 
       <ColumnMappingPanel
         detected={detected}

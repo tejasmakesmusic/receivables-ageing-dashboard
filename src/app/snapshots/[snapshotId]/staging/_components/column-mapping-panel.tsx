@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { CheckCircle2, History, ScanLine } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, History, ScanLine } from "lucide-react";
 
 type Confidence = "EXACT" | "HEURISTIC" | "MISSING";
 
@@ -48,6 +48,14 @@ export function ColumnMappingPanel({
     "idle",
   );
   const [message, setMessage] = useState<string | null>(null);
+  // PR B — collapse the per-field grid by default when all fields are EXACT
+  // and there's no drift. Hooks must be declared before any early return,
+  // so we compute the initial value from the prop directly.
+  const allExactInit =
+    !!detected &&
+    Object.values(detected.fields).every((f) => f.confidence === "EXACT") &&
+    drift.length === 0;
+  const [expanded, setExpanded] = useState(!allExactInit);
 
   if (!detected) {
     return (
@@ -90,6 +98,9 @@ export function ColumnMappingPanel({
 
   const fieldKeys = Object.keys(detected.fields);
   const hasDrift = drift.length > 0;
+  const allExact = fieldKeys.every(
+    (k) => detected.fields[k].confidence === "EXACT",
+  );
 
   return (
     <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -133,38 +144,62 @@ export function ColumnMappingPanel({
         </div>
       ) : null}
 
-      <div className="grid gap-1 p-4 text-sm">
-        {fieldKeys.map((field) => {
-          const f = detected.fields[field];
-          const savedF = saved?.fields[field];
-          return (
-            <div
-              className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-3 rounded-[var(--radius-sm)] px-2 py-1 hover:bg-[var(--color-bg-subtle)]"
-              key={field}
-            >
-              <span className="font-mono text-xs text-[var(--color-text-muted)]">
-                {field}
-              </span>
-              <span className="text-xs text-[var(--color-text-subtle)]">
-                ←
-              </span>
-              <span className="font-mono text-xs text-[var(--color-text)]">
-                {f.source ?? <em>(missing)</em>}
-                {savedF && savedF.source !== f.source ? (
-                  <span className="ml-2 text-[var(--color-status-warning-text)]">
-                    (saved: {savedF.source ?? "(missing)"})
-                  </span>
-                ) : null}
-              </span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase ${CONFIDENCE_TONE[f.confidence]}`}
+      <button
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-subtle)]"
+        onClick={() => setExpanded((v) => !v)}
+        type="button"
+      >
+        <span className="flex items-center gap-1.5">
+          {expanded ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+          <span>
+            {allExact
+              ? `${fieldKeys.length} fields · all exact match`
+              : `${fieldKeys.length} fields`}
+          </span>
+        </span>
+        <span className="text-[var(--color-text-subtle)]">
+          {expanded ? "Hide" : "Show"} field map
+        </span>
+      </button>
+
+      {expanded ? (
+        <div className="grid gap-1 px-4 pb-4 text-sm sm:grid-cols-2">
+          {fieldKeys.map((field) => {
+            const f = detected.fields[field];
+            const savedF = saved?.fields[field];
+            return (
+              <div
+                className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1 hover:bg-[var(--color-bg-subtle)]"
+                key={field}
               >
-                {f.confidence}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+                <span className="min-w-0">
+                  <span className="block truncate font-mono text-[11px] text-[var(--color-text-muted)]">
+                    {field}
+                  </span>
+                  <span className="block truncate font-mono text-xs text-[var(--color-text)]">
+                    {f.source ?? <em>(missing)</em>}
+                  </span>
+                  {savedF && savedF.source !== f.source ? (
+                    <span className="block truncate text-[10px] text-[var(--color-status-warning-text)]">
+                      was: {savedF.source ?? "(missing)"}
+                    </span>
+                  ) : null}
+                </span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase ${CONFIDENCE_TONE[f.confidence]}`}
+                >
+                  {f.confidence}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       {message ? (
         <p

@@ -65,39 +65,29 @@ export function StagingRowActions({
     }
   }
 
-  // Analyst override applied
+  // Analyst override applied — Match column already shows "Resolved", so the
+  // Action column would just echo it. Render a tiny dash so the column isn't
+  // empty visually, but no duplicated status text.
   if (isResolved) {
     return (
-      <div className="flex items-center gap-1.5 text-sm text-[var(--color-status-current-text)]">
-        <Check className="h-3.5 w-3.5 shrink-0" />
-        Resolved
-      </div>
+      <span className="text-xs text-[var(--color-text-subtle)]">—</span>
     );
   }
 
-  // Credit period row or exact auto-match — no action needed
+  // Credit period row or exact auto-match — no action needed. The Match
+  // column already shows "Auto-matched"; don't duplicate it here.
   if (!isInvoice || resolutionState === "EXACT") {
     return (
-      <div className="text-xs text-[var(--color-text-muted)]">
-        {candidate ? (
-          <span>→ {candidate.canonicalName}</span>
-        ) : (
-          <span className="text-[var(--color-status-current-text)]">
-            Auto-matched
-          </span>
-        )}
-      </div>
+      <span className="text-xs text-[var(--color-text-subtle)]">—</span>
     );
   }
 
   // Parse error row
   if (row.status === "PARSE_ERROR") {
     if (row.analyst_overrides.dismissed) {
+      // Match column already shows "Reviewed" — no duplication needed.
       return (
-        <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
-          <Check className="h-3 w-3 shrink-0" />
-          Reviewed
-        </div>
+        <span className="text-xs text-[var(--color-text-subtle)]">—</span>
       );
     }
     return (

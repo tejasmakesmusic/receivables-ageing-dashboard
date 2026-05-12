@@ -262,6 +262,12 @@ export interface StagingViewResponse {
   rows: Array<StagingInvoiceRow | StagingCreditPeriodRow>;
   /** PR 8a — what the parser captured for this snapshot. */
   column_mapping: ColumnMappingResultJson | null;
+  /**
+   * PR B — every undismissed parse-error row index across the full
+   * snapshot (not just the current page). Drives the "Dismiss Parse
+   * Errors" bulk action on the publish gate.
+   */
+  unresolved_parse_error_row_indices: number[];
   pagination: {
     offset: number;
     limit: number;
@@ -1167,6 +1173,18 @@ export async function getStagingView(
   const { rows, totals, gate } = await buildStagingRows(snapshot, currentUser);
   const filtered = filterStagingRows(rows, query.filter);
 
+  // PR B — collect every undismissed parse-error row index across the full
+  // (unpaginated, unfiltered) staging set so the publish-gate bulk action
+  // can target them regardless of what page the analyst is on.
+  const unresolvedParseErrorRowIndices = rows
+    .filter(
+      (row): row is StagingInvoiceRow =>
+        "status" in row &&
+        row.status === "PARSE_ERROR" &&
+        !row.analyst_overrides.dismissed,
+    )
+    .map((row) => row.row_index);
+
   return {
     snapshot_id: snapshot.id,
     snapshot_status: snapshot.status,
@@ -1182,6 +1200,7 @@ export async function getStagingView(
     rows: filtered.slice(query.offset, query.offset + query.limit),
     column_mapping:
       (snapshot.column_mapping_json as ColumnMappingResultJson | null) ?? null,
+    unresolved_parse_error_row_indices: unresolvedParseErrorRowIndices,
     pagination: {
       offset: query.offset,
       limit: query.limit,
