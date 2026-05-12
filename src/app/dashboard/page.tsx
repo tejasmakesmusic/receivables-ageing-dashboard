@@ -1,7 +1,27 @@
 import Link from "next/link";
+import {
+  ActivityIcon,
+  AlertTriangle,
+  ArrowRight,
+  CalendarClock,
+  FileWarning,
+  GitCompare,
+  Layers,
+  Upload,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  EmptyState,
+  PageFrame,
+  PageHeader,
+} from "@/components/ui/workspace";
 import { role_enum } from "@/generated/prisma/enums";
-import type { DashboardResponse } from "@/server/dashboard/types";
+import type {
+  DashboardEntity,
+  DashboardResponse,
+} from "@/server/dashboard/types";
 import { DashboardError } from "@/server/dashboard/types";
 import { getDashboard } from "@/server/dashboard/service";
 import { getPrisma } from "@/lib/prisma";
@@ -21,7 +41,41 @@ const AGEING_BUCKET_CHART = [
   { key: "90_PLUS", label: "90+" },
 ] as const;
 
-export default async function DashboardPage() {
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isEntityCode(value: string | undefined): value is DashboardEntity {
+  return value === "IND" || value === "UAE" || value === "ALL";
+}
+
+/**
+ * Resolve which entity the dashboard should show. Honoring role scope:
+ *   • ANALYST → their own entity (never "ALL")
+ *   • CFO / REVIEWER / ADMIN → the ?entity= query param, defaulting to
+ *     "ALL" so the consolidated view is the first thing they see.
+ */
+async function resolveEntity(
+  user: { role: role_enum; entityIdScope: string | null },
+  raw: string | undefined,
+): Promise<DashboardEntity> {
+  if (user.role === role_enum.ANALYST) {
+    if (!user.entityIdScope) return "IND"; // unreachable: analyst always scoped
+    const entity = await getPrisma().entities.findUnique({
+      where: { id: user.entityIdScope },
+      select: { code: true },
+    });
+    return entity?.code === "UAE" ? "UAE" : "IND";
+  }
+  if (isEntityCode(raw)) return raw;
+  return "ALL";
+}
+
+export default async function DashboardPage({ searchParams }: PageProps) {
   const currentUser = await requirePageRole(
     "/dashboard",
     role_enum.ANALYST,
@@ -29,13 +83,18 @@ export default async function DashboardPage() {
     role_enum.REVIEWER,
     role_enum.ADMIN,
   );
-  await assertAnalystCanAccessEntityCode(currentUser, "IND");
+  const raw = await searchParams;
+  const entity = await resolveEntity(currentUser, first(raw.entity));
+
+  // ANALYST scope check (skips when entity is "ALL" or matches their scope).
+  if (entity !== "ALL") {
+    await assertAnalystCanAccessEntityCode(currentUser, entity);
+  }
 
   let dashboard: DashboardResponse | null = null;
   let dashboardError: DashboardError | null = null;
-
   try {
-    dashboard = await getDashboard({ entity: "IND", as_of: "latest" });
+    dashboard = await getDashboard({ entity, as_of: "latest" });
   } catch (error) {
     if (error instanceof DashboardError) {
       dashboardError = error;
@@ -44,23 +103,15 @@ export default async function DashboardPage() {
     }
   }
 
+  // PR C+ — instead of dumping the raw error, render a real onboarding
+  // empty state that tells the analyst what's missing and where to go.
   if (!dashboard) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>Dashboard Unavailable</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              {dashboardError?.message || "No dashboard data available."}
-            </p>
-            <p className="text-xs text-[var(--color-text-muted)]">
-              {dashboardError ? JSON.stringify(dashboardError.detail) : null}
-            </p>
-          </CardContent>
-        </Card>
-      </main>
+      <DashboardEmptyState
+        entity={entity}
+        error={dashboardError}
+        showSwitcher={currentUser.role !== role_enum.ANALYST}
+      />
     );
   }
 
@@ -70,55 +121,53 @@ export default async function DashboardPage() {
     value: dashboard.ageing_buckets[bucket.key],
   }));
 
-  // PR 3 / Gap 3 — count unacked invoice_changes tied to the snapshot the
-  // dashboard is showing. One read; cheap (indexed). Drives the
-  // "Changes Detected" KPI card.
-  const unackedChangesCount = await getPrisma().invoice_changes.count({
-    where: {
-      snapshot_id: dashboard.snapshot_id,
-      acknowledged_at: null,
-    },
-  });
+  const [unackedChangesCount, entityRow] = await Promise.all([
+    getPrisma().invoice_changes.count({
+      where: {
+        snapshot_id: dashboard.snapshot_id,
+        acknowledged_at: null,
+      },
+    }),
+    getPrisma().entities.findUnique({
+      where: { code: dashboard.entity === "ALL" ? "IND" : dashboard.entity },
+      select: { id: true },
+    }),
+  ]);
 
-  // PR 4 — source-quality widget data. Latest snapshot row per non-CREDIT
-  // source for the dashboard's entity, plus the count of STAGED snapshots
-  // (useful "queue depth" indicator).
-  const entityRow = await getPrisma().entities.findUnique({
-    where: { code: dashboard.entity === "ALL" ? "IND" : dashboard.entity },
-    select: { id: true },
-  });
   const sourceFreshness = entityRow
     ? await Promise.all(
         ["TALLY", "XERO"].map(async (source) => {
-          const latest = await getPrisma().snapshots.findFirst({
-            where: {
-              entity_id: entityRow.id,
-              source_hint: source,
-              status: "PUBLISHED",
-            },
-            orderBy: { published_at: "desc" },
-            select: {
-              id: true,
-              uploaded_at: true,
-              published_at: true,
-              as_of_date: true,
-              row_count: true,
-            },
-          });
-          const stagedCount = await getPrisma().snapshots.count({
-            where: {
-              entity_id: entityRow.id,
-              source_hint: source,
-              status: "STAGED",
-            },
-          });
+          const [latest, stagedCount] = await Promise.all([
+            getPrisma().snapshots.findFirst({
+              where: {
+                entity_id: entityRow.id,
+                source_hint: source,
+                status: "PUBLISHED",
+              },
+              orderBy: { published_at: "desc" },
+              select: {
+                id: true,
+                uploaded_at: true,
+                published_at: true,
+                as_of_date: true,
+                row_count: true,
+              },
+            }),
+            getPrisma().snapshots.count({
+              where: {
+                entity_id: entityRow.id,
+                source_hint: source,
+                status: "STAGED",
+              },
+            }),
+          ]);
           return { source, latest, stagedCount };
         }),
       )
     : [];
 
-  // PR 4 — invoice count per top-party for the chart tooltip.
   const ninetyPlusAmount = dashboard.ageing_buckets["90_PLUS"] ?? 0;
+  const overdueShare = dashboard.kpis.pct_overdue;
   const topPartiesData = dashboard.top_parties.map((party) => ({
     canonical_id: party.canonical_id,
     name: party.canonical_name,
@@ -127,110 +176,82 @@ export default async function DashboardPage() {
   }));
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-8">
-      <section className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
-          <span>
-            Entity: {dashboard.entity} - Snapshot {dashboard.as_of_date}
+    <PageFrame>
+      <PageHeader
+        eyebrow={
+          <span className="text-xs text-[var(--color-text-muted)]">
+            Snapshot {formatDate(dashboard.as_of_date)} ·{" "}
+            <StatusTag status={dashboard.snapshot_status} />
           </span>
-          <StatusTag status={dashboard.snapshot_status} />
-        </p>
-      </section>
+        }
+        title="Dashboard"
+        actions={
+          currentUser.role !== role_enum.ANALYST ? (
+            <EntitySwitcher current={entity} />
+          ) : null
+        }
+      >
+        {entity === "ALL"
+          ? "Consolidated receivables across every entity."
+          : `Receivables for ${entity}, derived from the latest published snapshot.`}
+      </PageHeader>
 
-      <section className="card-grid">
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Outstanding</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">
-              {formatCurrencyCompact(
-                dashboard.kpis.total_outstanding,
-                dashboard.currency_display,
-              )}
-            </p>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              Snapshot ID: {dashboard.snapshot_id}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Overdue Share</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">
-              {dashboard.kpis.pct_overdue.toFixed(2)}%
-            </p>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              of total receivables overdue
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>90+ Days Overdue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold text-[var(--color-status-danger-text)]">
-              {formatCurrencyCompact(ninetyPlusAmount, dashboard.currency_display)}
-            </p>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              {dashboard.kpis.parties_with_90plus_count}{" "}
-              {dashboard.kpis.parties_with_90plus_count === 1
-                ? "party"
-                : "parties"}{" "}
-              ·{" "}
-              <Link
-                className="text-[var(--color-accent)] hover:underline"
-                href="/invoices?overdue_bucket=90_PLUS"
-              >
-                review
-              </Link>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Default Credit Period</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">
-              {dashboard.parties_on_default_credit_period_count}
-            </p>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              Parties currently on default credit terms
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Changes Detected</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">{unackedChangesCount}</p>
-            {unackedChangesCount > 0 ? (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                Field drifts in this snapshot —{" "}
-                <Link
-                  className="text-[var(--color-accent)] hover:underline"
-                  href="/invoices?change_status=changed"
-                >
-                  review
-                </Link>
-              </p>
-            ) : (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                No unacknowledged field drifts in this snapshot
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiCard
+          icon={<Wallet className="h-4 w-4" />}
+          label="Total Outstanding"
+          meta={`As of ${formatDate(dashboard.as_of_date)}`}
+          value={formatCurrencyCompact(
+            dashboard.kpis.total_outstanding,
+            dashboard.currency_display,
+          )}
+        />
+        <KpiCard
+          icon={<ActivityIcon className="h-4 w-4" />}
+          label="Overdue Share"
+          meta="of total receivables"
+          tone={
+            overdueShare >= 25
+              ? "warning"
+              : overdueShare >= 50
+                ? "danger"
+                : "neutral"
+          }
+          value={`${overdueShare.toFixed(1)}%`}
+        />
+        <KpiCard
+          href={`/invoices?overdue_bucket=90_PLUS${entity !== "ALL" ? `&entity=${entity}` : ""}`}
+          icon={<AlertTriangle className="h-4 w-4" />}
+          label="90+ Days Overdue"
+          meta={`${dashboard.kpis.parties_with_90plus_count} ${dashboard.kpis.parties_with_90plus_count === 1 ? "party" : "parties"} · review →`}
+          tone="danger"
+          value={formatCurrencyCompact(
+            ninetyPlusAmount,
+            dashboard.currency_display,
+          )}
+        />
+        <KpiCard
+          icon={<Users className="h-4 w-4" />}
+          label="Default Credit Period"
+          meta="Parties on default terms"
+          value={String(dashboard.parties_on_default_credit_period_count)}
+        />
+        <KpiCard
+          href={
+            unackedChangesCount > 0
+              ? "/invoices?change_status=changed"
+              : undefined
+          }
+          icon={<GitCompare className="h-4 w-4" />}
+          label="Changes Detected"
+          meta={
+            unackedChangesCount > 0
+              ? "Field drifts in this snapshot · review →"
+              : "No unacknowledged drifts"
+          }
+          tone={unackedChangesCount > 0 ? "warning" : "neutral"}
+          value={String(unackedChangesCount)}
+        />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
@@ -245,26 +266,56 @@ export default async function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Recent Exceptions</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Recent Exceptions</CardTitle>
+              <Link
+                className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] hover:underline"
+                href="/exceptions"
+              >
+                See all <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             {dashboard.recent_exceptions.length === 0 ? (
-              <p className="text-sm text-[var(--color-text-muted)]">No active exceptions.</p>
+              <div className="grid place-items-center gap-2 py-6 text-center">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-status-current-bg)] text-[var(--color-status-current-text)]">
+                  <FileWarning className="h-5 w-5" />
+                </div>
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  No active exceptions. The ledger is clean.
+                </p>
+              </div>
             ) : (
-              <ul className="space-y-3 text-sm">
+              <ul className="space-y-2 text-sm">
                 {dashboard.recent_exceptions.map((item) => (
-                  <li
-                    className="rounded border border-[var(--color-border)] p-2"
-                    key={item.exception_id}
-                  >
-                    <div className="font-medium">{item.invoice_ref}</div>
-                    <div className="text-[var(--color-text-muted)]">
-                      {item.bucket_type_name} - {item.canonical_name}
-                    </div>
-                    <div className="text-xs text-[var(--color-text-subtle)]">
-                      {formatDate(item.expected_resolution_date)} - tagged{" "}
-                      {formatDate(item.tagged_at)}
-                    </div>
+                  <li key={item.exception_id}>
+                    <Link
+                      className="block rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3 transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-bg-subtle)]"
+                      href={`/invoice/${item.invoice_id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-semibold text-[var(--color-accent)]">
+                          {item.invoice_ref}
+                        </span>
+                        <span className="text-xs text-[var(--color-text-subtle)]">
+                          tagged {formatDate(item.tagged_at)}
+                        </span>
+                      </div>
+                      <div className="mt-1 truncate text-sm text-[var(--color-text)]">
+                        {item.canonical_name}
+                      </div>
+                      <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                        {item.bucket_type_name}
+                        {item.expected_resolution_date ? (
+                          <>
+                            {" · "}
+                            <CalendarClock className="inline h-3 w-3" /> due{" "}
+                            {formatDate(item.expected_resolution_date)}
+                          </>
+                        ) : null}
+                      </div>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -276,7 +327,15 @@ export default async function DashboardPage() {
       <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Top Parties by Outstanding</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Top Parties by Outstanding</CardTitle>
+              <Link
+                className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] hover:underline"
+                href="/parties"
+              >
+                See all <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <TopPartiesChart data={topPartiesData} />
@@ -285,18 +344,26 @@ export default async function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Source Quality</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Source Quality</CardTitle>
+              <Link
+                className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] hover:underline"
+                href="/snapshots"
+              >
+                Snapshots <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             {sourceFreshness.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">
-                Entity not found.
+                No entity configured for this dashboard.
               </p>
             ) : (
-              <ul className="space-y-3 text-sm">
+              <ul className="space-y-2 text-sm">
                 {sourceFreshness.map((row) => (
                   <li
-                    className="rounded border border-[var(--color-border)] p-3"
+                    className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-3"
                     key={row.source}
                   >
                     <div className="flex items-center justify-between">
@@ -304,7 +371,7 @@ export default async function DashboardPage() {
                         {row.source}
                       </span>
                       {row.latest ? (
-                        <StatusTag status="GATE_OK" />
+                        <StatusTag status="PUBLISHED" />
                       ) : (
                         <StatusTag status="NO_DATA" />
                       )}
@@ -317,43 +384,196 @@ export default async function DashboardPage() {
                             {row.latest.as_of_date
                               ? formatDate(row.latest.as_of_date.toISOString())
                               : "—"}
-                          </span>
-                        </span>
-                        <span>
-                          Published:{" "}
-                          {row.latest.published_at
-                            ? formatDate(
-                                row.latest.published_at.toISOString(),
-                              )
-                            : "—"}{" "}
+                          </span>{" "}
                           · {row.latest.row_count ?? 0} rows
                         </span>
                         {row.stagedCount > 0 ? (
-                          <span className="text-[var(--color-status-warning-text)]">
-                            {row.stagedCount} staged awaiting publish
-                          </span>
+                          <Link
+                            className="text-[var(--color-status-warning-text)] hover:underline"
+                            href="/snapshots?status=STAGED"
+                          >
+                            {row.stagedCount} staged awaiting publish →
+                          </Link>
                         ) : null}
                       </div>
                     ) : (
                       <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                        No published snapshots yet.
+                        No published snapshots yet for this source.
                       </p>
                     )}
                   </li>
                 ))}
               </ul>
             )}
-            <p className="mt-3 text-xs text-[var(--color-text-muted)]">
-              <Link
-                className="text-[var(--color-accent)] hover:underline"
-                href="/snapshots"
-              >
-                View all snapshots →
-              </Link>
-            </p>
           </CardContent>
         </Card>
       </section>
-    </main>
+    </PageFrame>
+  );
+}
+
+/* ─── KPI card with icon, tone, and optional link ─────────────────── */
+
+function KpiCard({
+  icon,
+  label,
+  value,
+  meta,
+  tone = "neutral",
+  href,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  meta?: string;
+  tone?: "neutral" | "warning" | "danger";
+  href?: string;
+}) {
+  const valueColor =
+    tone === "danger"
+      ? "text-[var(--color-status-danger-text)]"
+      : tone === "warning"
+        ? "text-[var(--color-status-warning-text)]"
+        : "text-[var(--color-text)]";
+  const iconBg =
+    tone === "danger"
+      ? "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-text)]"
+      : tone === "warning"
+        ? "bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning-text)]"
+        : "bg-[var(--color-accent-soft)] text-[var(--color-accent)]";
+
+  const inner = (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <div
+          aria-hidden="true"
+          className={`grid h-7 w-7 place-items-center rounded-[var(--radius-sm)] ${iconBg}`}
+        >
+          {icon}
+        </div>
+        <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+          {label}
+        </span>
+      </div>
+      <p
+        className={`text-2xl font-semibold tabular-nums ${valueColor}`}
+      >
+        {value}
+      </p>
+      {meta ? (
+        <p className="text-xs text-[var(--color-text-muted)]">{meta}</p>
+      ) : null}
+    </div>
+  );
+
+  if (href) {
+    return (
+      <Link
+        className="block rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-accent)]"
+        href={href}
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      {inner}
+    </div>
+  );
+}
+
+/* ─── Entity switcher (CFO/Admin/Reviewer only) ─────────────────── */
+
+function EntitySwitcher({ current }: { current: DashboardEntity }) {
+  const opts: DashboardEntity[] = ["ALL", "IND", "UAE"];
+  return (
+    <div className="flex h-10 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
+      {opts.map((opt) => (
+        <Link
+          aria-current={current === opt ? "page" : undefined}
+          className={[
+            "inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-xs font-medium transition-colors",
+            current === opt
+              ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+              : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+          ].join(" ")}
+          href={opt === "ALL" ? "/dashboard" : `/dashboard?entity=${opt}`}
+          key={opt}
+        >
+          {opt}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Empty state (no published snapshot) ─────────────────────────── */
+
+async function DashboardEmptyState({
+  entity,
+  error,
+  showSwitcher = false,
+}: {
+  entity: DashboardEntity;
+  error: DashboardError | null;
+  showSwitcher?: boolean;
+}) {
+  // Surface any pending staged snapshots so the user knows publish is the
+  // next action — much more useful than a generic "upload something" CTA.
+  let pendingStaged: number = 0;
+  if (entity !== "ALL") {
+    pendingStaged = await getPrisma().snapshots.count({
+      where: {
+        entities: { is: { code: entity } },
+        status: "STAGED",
+      },
+    });
+  } else {
+    pendingStaged = await getPrisma().snapshots.count({
+      where: { status: "STAGED" },
+    });
+  }
+
+  return (
+    <PageFrame>
+      <PageHeader
+        actions={showSwitcher ? <EntitySwitcher current={entity} /> : null}
+        title="Dashboard"
+      >
+        {entity === "ALL"
+          ? "Consolidated receivables across every entity."
+          : `Receivables for ${entity}.`}
+      </PageHeader>
+      <EmptyState
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Link
+              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-strong)]"
+              href="/upload"
+            >
+              <Upload className="h-4 w-4" />
+              Upload a workbook
+            </Link>
+            {pendingStaged > 0 ? (
+              <Link
+                className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-status-warning-border)] bg-[var(--color-status-warning-bg)] px-3 text-sm font-medium text-[var(--color-status-warning-text)] transition-colors hover:opacity-80"
+                href="/snapshots?status=STAGED"
+              >
+                <Layers className="h-4 w-4" />
+                {pendingStaged} staged awaiting publish
+              </Link>
+            ) : null}
+          </div>
+        }
+        description={
+          pendingStaged > 0
+            ? `There are ${pendingStaged} staged snapshot${pendingStaged === 1 ? "" : "s"} waiting to be published. Once published, KPIs, ageing, and exceptions appear here.`
+            : error?.message ??
+              "Upload an AR workbook to populate KPIs, ageing buckets, top parties, and exception alerts on this dashboard."
+        }
+        title="No published data yet"
+      />
+    </PageFrame>
   );
 }
