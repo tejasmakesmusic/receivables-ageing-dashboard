@@ -191,6 +191,7 @@ describe("focus queue page roles", () => {
     expect(FOCUS_QUEUE_PAGE_ROLES).toEqual([
       role_enum.ANALYST,
       role_enum.CFO,
+      role_enum.REVIEWER,
       role_enum.ADMIN,
     ]);
     expect(isFocusQueuePageRole(role_enum.PENDING)).toBe(false);

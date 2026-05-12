@@ -6,9 +6,19 @@ export interface CommandItem {
   label: string;
 }
 
+export interface ScoredCommandItem extends CommandItem {
+  score: number;
+}
+
 export interface CommandGroup {
   id: string;
   items: readonly CommandItem[];
+  label: string;
+}
+
+export interface FilteredCommandGroup {
+  id: string;
+  items: readonly ScoredCommandItem[];
   label: string;
 }
 
@@ -160,6 +170,7 @@ const DEFAULT_COMMAND_IDS = [
   "upload-snapshot",
   "reports",
 ] as const;
+const DEFAULT_COMMAND_ID_SET = new Set<string>(DEFAULT_COMMAND_IDS);
 
 function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -195,20 +206,38 @@ export function filterCommandItems(
   query: string,
   groups: readonly CommandGroup[] = COMMAND_GROUPS,
 ): CommandItem[] {
-  const items = flattenCommandItems(groups);
+  return filterCommandItemsGrouped(query, groups).flatMap((group) => [...group.items]);
+}
+
+export function filterCommandItemsGrouped(
+  query: string,
+  groups: readonly CommandGroup[] = COMMAND_GROUPS,
+): FilteredCommandGroup[] {
   const normalizedQuery = normalize(query);
 
   if (!normalizedQuery) {
-    return DEFAULT_COMMAND_IDS.map((id) =>
-      items.find((item) => item.id === id),
-    ).filter((item): item is CommandItem => Boolean(item));
+    const defaults = DEFAULT_COMMAND_ID_SET;
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items
+          .filter((item) => defaults.has(item.id))
+          .map((item) => ({ ...item, score: 0 })),
+      }))
+      .filter((group) => group.items.length > 0);
   }
 
   const terms = normalizedQuery.split(" ").filter(Boolean);
+  const rankedGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items
+        .map((item) => ({ item, score: scoreItem(item, terms) }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score || a.item.label.localeCompare(b.item.label))
+        .map(({ item, score }) => ({ ...item, score })),
+    }))
+    .filter((group) => group.items.length > 0);
 
-  return items
-    .map((item) => ({ item, score: scoreItem(item, terms) }))
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score || a.item.label.localeCompare(b.item.label))
-    .map(({ item }) => item);
+  return rankedGroups;
 }

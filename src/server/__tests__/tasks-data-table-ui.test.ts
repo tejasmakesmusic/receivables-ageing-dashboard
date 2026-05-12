@@ -19,12 +19,9 @@ describe("Phase 2a - Tasks DataTable + SidePanel", () => {
     expect(source).toContain("nextAction=");
   });
 
-  it("Tasks route ships a loading skeleton via DataTable state=loading", () => {
-    expect(existsSync(TASKS_LOADING)).toBe(true);
-
-    const source = readFileSync(TASKS_LOADING, "utf8");
-
-    expect(source).toContain("state=\"loading\"");
-    expect(source).toContain("DataTable");
+  it("does NOT ship a colocated loading.tsx (Next 16 + Turbopack streaming bug)", () => {
+    // Intentionally deleted — see snapshots-data-table-ui.test.ts for
+    // the full bug story. Re-adding will reintroduce the issue.
+    expect(existsSync(TASKS_LOADING)).toBe(false);
   });
 });

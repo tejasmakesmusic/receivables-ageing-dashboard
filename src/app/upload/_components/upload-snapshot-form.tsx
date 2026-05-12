@@ -48,7 +48,7 @@ export function UploadSnapshotForm() {
       <label className="grid gap-1">
         <span className="font-medium">Entity</span>
         <select
-          className="rounded border border-slate-200 bg-white px-3 py-2"
+          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
           disabled={status === "submitting"}
           name="entity_code"
           required
@@ -60,7 +60,7 @@ export function UploadSnapshotForm() {
       <label className="grid gap-1">
         <span className="font-medium">Source</span>
         <select
-          className="rounded border border-slate-200 bg-white px-3 py-2"
+          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
           disabled={status === "submitting"}
           name="source_hint"
         >
@@ -73,7 +73,7 @@ export function UploadSnapshotForm() {
       <label className="grid gap-1">
         <span className="font-medium">As-of date</span>
         <input
-          className="rounded border border-slate-200 bg-white px-3 py-2"
+          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
           disabled={status === "submitting"}
           name="as_of_date"
           type="date"
@@ -83,7 +83,7 @@ export function UploadSnapshotForm() {
         <span className="font-medium">XLSX file</span>
         <input
           accept=".xlsx,.xls"
-          className="rounded border border-slate-200 bg-white px-3 py-2"
+          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
           disabled={status === "submitting"}
           name="file"
           required
@@ -91,14 +91,14 @@ export function UploadSnapshotForm() {
         />
       </label>
       <button
-        className="w-fit rounded bg-slate-900 px-4 py-2 text-white hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-60"
+        className="w-fit rounded bg-[var(--color-accent)] px-4 py-2 text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-strong)] disabled:pointer-events-none disabled:opacity-60"
         disabled={status === "submitting"}
         type="submit"
       >
         {status === "submitting" ? "Uploading..." : "Upload"}
       </button>
       {message ? (
-        <p aria-live="polite" className="text-sm text-red-700">
+        <p aria-live="polite" className="text-sm text-[var(--color-danger)]">
           {message}
         </p>
       ) : null}

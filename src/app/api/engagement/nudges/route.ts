@@ -12,6 +12,7 @@ export async function GET() {
     const currentUser = await requireRole(
       role_enum.ANALYST,
       role_enum.CFO,
+      role_enum.REVIEWER,
       role_enum.ADMIN,
     );
     assertNotPending(currentUser);

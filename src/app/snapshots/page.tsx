@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Filter, Upload } from "lucide-react";
+import { ArrowRight, Filter, Layers, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
@@ -219,6 +219,7 @@ export default async function SnapshotsPage({ searchParams }: PageProps) {
     "/snapshots",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   const raw = await searchParams;
@@ -349,22 +350,25 @@ export default async function SnapshotsPage({ searchParams }: PageProps) {
             <DataTable<SnapshotRow>
               columns={snapshotColumns(params)}
               emptyState={{
+                icon: <Layers className="h-6 w-6" />,
                 title: "No snapshots yet",
                 description:
-                  "Upload an AR workbook to start staging, warning review, and publish.",
+                  "Upload your first Tally or Xero AR workbook to start the staging → review → publish flow. The snapshot lands here once parsed.",
                 action: (
                   <Link
-                    className="text-sm font-medium text-[var(--color-accent)]"
+                    className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-strong)]"
                     href="/upload"
                   >
-                    Upload workbook
+                    <Upload className="h-4 w-4" />
+                    Upload your first workbook
                   </Link>
                 ),
               }}
               filteredEmptyState={{
-                title: "No snapshots match this filter",
+                icon: <Filter className="h-6 w-6" />,
+                title: "Nothing matches this filter",
                 description:
-                  "Switch the entity or lifecycle filter to inspect other upload batches.",
+                  "Try switching the entity or lifecycle status, or clear filters to see every snapshot you've uploaded.",
                 action: (
                   <Link
                     className="text-sm font-medium text-[var(--color-accent)]"

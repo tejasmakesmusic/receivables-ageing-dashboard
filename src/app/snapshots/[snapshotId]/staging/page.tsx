@@ -13,6 +13,19 @@ import { requirePageRole } from "@/server/core/page-auth";
 import { getStagingView, stagingQuerySchema } from "@/server/snapshots/service";
 import { StagingDataTable } from "./_components/staging-data-table";
 import { StagingPublishPanel } from "./_components/staging-publish-panel";
+import {
+  ColumnMappingPanel,
+  type ColumnMappingViewModel,
+} from "./_components/column-mapping-panel";
+import {
+  compareColumnMappings,
+  getSavedColumnMapping,
+} from "@/server/column-mappings/service";
+import type {
+  ColumnMappingResult,
+  SourceHint,
+} from "@/server/parsers/common";
+import { getPrisma } from "@/lib/prisma";
 
 type PageProps = {
   params: Promise<{ snapshotId: string }>;
@@ -39,8 +52,38 @@ export default async function SnapshotStagingPage({
     limit: first(raw.limit),
     filter: first(raw.filter),
   });
-  const staging = await getStagingView(snapshotId, query, currentUser);
+  // PR C — kick a tiny meta lookup in parallel with the heavy staging
+  // build so the saved-mapping fetch can start before getStagingView
+  // finishes. Net win: ~150-200ms on every staging hit.
+  const metaPromise = getPrisma().snapshots.findUnique({
+    where: { id: snapshotId },
+    select: { entity_id: true, source_hint: true },
+  });
+  const stagingPromise = getStagingView(snapshotId, query, currentUser);
+  const savedRowPromise = metaPromise.then((meta) =>
+    meta
+      ? getSavedColumnMapping(meta.entity_id, meta.source_hint as SourceHint)
+      : null,
+  );
+  const [staging, savedRow] = await Promise.all([
+    stagingPromise,
+    savedRowPromise,
+  ]);
   const currency = staging.entity_code === "IND" ? "INR" : "AED";
+
+  // PR 8a — drift vs. saved default surfaces in the Column Mapping panel.
+  const detected =
+    (staging.column_mapping as ColumnMappingViewModel | null) ?? null;
+  const savedMapping = savedRow
+    ? (savedRow.mapping as ColumnMappingViewModel)
+    : null;
+  const drift =
+    detected && savedMapping
+      ? compareColumnMappings(
+          savedMapping as unknown as ColumnMappingResult,
+          detected as unknown as ColumnMappingResult,
+        )
+      : [];
 
   const totalRows =
     staging.totals.invoices_total || staging.totals.credit_periods_total;
@@ -91,9 +134,24 @@ export default async function SnapshotStagingPage({
         />
       </section>
 
-      <StagingPublishPanel
-        publishGate={gate}
-        snapshotId={snapshotId}
+      {/* PR B — sticky publish gate. Keeps the analyst aware of the gate
+          state and the primary action while they scroll through hundreds
+          of staging rows. The negative margin extends the sticky bar to
+          the page edges on wide screens. */}
+      <div className="sticky top-0 z-20 -mx-4 border-b border-[var(--color-border)] bg-[var(--color-bg)]/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-bg)]/85 sm:-mx-6 sm:px-6">
+        <StagingPublishPanel
+          parseErrorRowIndices={staging.unresolved_parse_error_row_indices}
+          publishGate={gate}
+          snapshotId={snapshotId}
+          sourceHint={staging.source_hint}
+        />
+      </div>
+
+      <ColumnMappingPanel
+        detected={detected}
+        drift={drift}
+        entity={staging.entity_code}
+        saved={savedMapping}
         sourceHint={staging.source_hint}
       />
 

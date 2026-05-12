@@ -14,6 +14,7 @@ import {
 export const FOCUS_QUEUE_PAGE_ROLES = [
   role_enum.ANALYST,
   role_enum.CFO,
+  role_enum.REVIEWER,
   role_enum.ADMIN,
 ] as const;
 
@@ -578,7 +579,9 @@ export async function getFocusQueue(
     items: limitedItems,
     total: items.length,
     visible_entity_codes: uniqueVisibleEntityCodes(limitedItems),
-    is_read_only: currentUser.role === role_enum.CFO,
+    is_read_only:
+      currentUser.role === role_enum.CFO ||
+      currentUser.role === role_enum.REVIEWER,
     generated_at: asOfDate.toISOString(),
   };
 }

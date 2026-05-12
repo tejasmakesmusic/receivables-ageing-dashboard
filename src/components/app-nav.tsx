@@ -14,10 +14,10 @@ const NAV_ITEMS = [
 
 export function AppNav() {
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         <Link
-          className="text-sm font-semibold tracking-tight text-slate-900"
+          className="text-sm font-semibold tracking-tight text-[var(--color-text)]"
           href="/"
         >
           Receivables
@@ -25,7 +25,7 @@ export function AppNav() {
         <nav className="flex flex-wrap items-center gap-1 text-sm">
           {NAV_ITEMS.map((item) => (
             <Link
-              className="rounded px-3 py-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+              className="rounded px-3 py-2 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text)]"
               href={item.href}
               key={item.href}
             >
@@ -33,7 +33,7 @@ export function AppNav() {
             </Link>
           ))}
           <Link
-            className="rounded bg-slate-900 px-3 py-2 text-white hover:bg-slate-800"
+            className="rounded bg-[var(--color-accent)] px-3 py-2 text-[var(--color-bg)] hover:bg-[var(--color-accent-strong)]"
             href="/auth/google/login"
           >
             Login

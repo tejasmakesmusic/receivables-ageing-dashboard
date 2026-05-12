@@ -85,10 +85,16 @@ export function StagingDataTable({
   const columns: DataTableColumn<StagingRow>[] = [
     {
       key: "row",
-      header: "#",
-      width: "w-[52px]",
+      // PR B — label as "Row" not "#"; the value is the original row index
+      // from the source workbook, useful when analysts need to trace a row
+      // back to the Tally/Xero export.
+      header: "Row",
+      width: "w-[64px]",
       cell: (row) => (
-        <span className="tabular-nums text-[var(--color-text-subtle)]">
+        <span
+          className="tabular-nums text-[var(--color-text-subtle)]"
+          title="Row number in the original workbook"
+        >
           {row.row_index}
         </span>
       ),
@@ -104,6 +110,15 @@ export function StagingDataTable({
           ? row.alias_resolution.topMatches[0]
           : null;
         const gstin = isInvoiceRow(row) ? row.gstin : null;
+        // PR C — surface the resolved canonical name on RESOLVED rows so
+        // analysts see *what* the raw name was mapped to. Falls back to the
+        // fuzzy candidate's name on rows still in suspense.
+        const resolvedName =
+          isInvoiceRow(row) && row.resolved_canonical_name
+            ? row.resolved_canonical_name
+            : null;
+        const showCandidate =
+          candidate && state !== "RESOLVED" && state !== "DISMISSED";
         return (
           <div className="min-w-0">
             <div className="truncate font-medium text-[var(--color-text)]">
@@ -114,7 +129,14 @@ export function StagingDataTable({
                 {gstin}
               </div>
             ) : null}
-            {candidate && state !== "RESOLVED" && state !== "DISMISSED" ? (
+            {resolvedName ? (
+              <div
+                className="truncate text-xs text-[var(--color-status-current-text)]"
+                title={`Resolved to canonical party: ${resolvedName}`}
+              >
+                → {resolvedName}
+              </div>
+            ) : showCandidate ? (
               <div className="truncate text-xs text-[var(--color-text-muted)]">
                 → {candidate.canonicalName}
               </div>

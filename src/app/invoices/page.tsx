@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { ArrowRight, Filter, Settings, Upload } from "lucide-react";
+import { ArrowRight, FileText, Filter, LayoutList, Rows3, Settings, Upload } from "lucide-react";
 import { SavedViewSwitcher } from "@/components/saved-views/saved-view-switcher";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { MiniSparkline } from "@/components/ui/mini-chart";
+import { RowActionLink } from "@/components/ui/row-actions";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
+import { ViewPreferenceSync } from "@/components/interaction/view-preference-sync";
 import {
   MetricCard,
   PageFrame,
@@ -29,6 +31,12 @@ import {
   parseSystemViewId,
 } from "@/server/views/system-views";
 import { ExportRegisterButton } from "./_components/export-register-button";
+import {
+  InvoiceChangesPanel,
+  type InvoiceChangeItem,
+} from "./_components/invoice-changes-panel";
+import { listInvoiceChanges } from "@/server/invoice-changes/service";
+import { listLobs } from "@/server/lobs/service";
 
 export const dynamic = "force-dynamic";
 
@@ -37,15 +45,20 @@ type PageProps = {
 };
 
 type InvoicePageParams = {
+  change_status?: string;
   entity?: string;
   has_active_exceptions?: string;
   invoice?: string;
+  lob?: string;
   overdue_bucket?: string;
   page_size: number;
   party_canonical_id?: string;
   status?: string;
   system_view?: string;
+  view?: InvoiceViewMode;
 };
+
+type InvoiceViewMode = "table" | "compact";
 
 const fieldClass =
   "h-10 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]";
@@ -86,10 +99,15 @@ function toNumber(value: string | number | null | undefined) {
 
 function bucketAccent(bucket: string) {
   if (bucket === "NOT_DUE") return "var(--color-accent)";
+  if (bucket === "DUE_TODAY") return "var(--color-warning)";
   if (bucket === "0_30") return "var(--color-success)";
   if (bucket === "31_60") return "var(--color-warning)";
-  if (bucket === "61_90") return "#f97316";
+  if (bucket === "61_90") return "var(--color-warning)";
   return "var(--color-danger)";
+}
+
+function invoiceViewHref(view: InvoiceViewMode, params: InvoicePageParams) {
+  return pageHref(1, { ...params, view });
 }
 
 function suggestedAction(invoice: InvoiceListRow) {
@@ -119,12 +137,38 @@ function invoiceColumns(): DataTableColumn<InvoiceListRow>[] {
       sticky: "left",
       width: "min-w-[160px]",
       cell: (invoice) => (
-        <Link
-          className="font-mono text-[13px] font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
-          href={`/invoice/${invoice.invoice_id}`}
-        >
-          {invoice.invoice_ref}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            className="font-mono text-[13px] font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
+            href={`/invoice/${invoice.invoice_id}`}
+          >
+            {invoice.invoice_ref}
+          </Link>
+          {invoice.is_new_in_latest_snapshot ? (
+            <span
+              className="rounded-full bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-accent)]"
+              title="First seen in the most recent published snapshot"
+            >
+              New
+            </span>
+          ) : null}
+          {invoice.is_closed_in_latest_snapshot ? (
+            <span
+              className="rounded-full bg-[var(--color-status-danger-bg)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-status-danger-text)]"
+              title="Settled by the most recent published snapshot — attached actions auto-resolved"
+            >
+              Closed
+            </span>
+          ) : null}
+          {invoice.unack_change_count_in_latest_snapshot > 0 ? (
+            <span
+              className="rounded-full bg-[var(--color-status-warning-bg)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-status-warning-text)]"
+              title={`${invoice.unack_change_count_in_latest_snapshot} field change(s) detected in the latest snapshot — review`}
+            >
+              Changed ({invoice.unack_change_count_in_latest_snapshot})
+            </span>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -194,6 +238,21 @@ function invoiceColumns(): DataTableColumn<InvoiceListRow>[] {
       },
     },
     {
+      key: "lob",
+      header: "LOB",
+      cell: (invoice) =>
+        invoice.lob_code ? (
+          <span
+            className="inline-flex items-center rounded-full bg-[var(--color-bg-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text)]"
+            title={invoice.lob_name ?? undefined}
+          >
+            {invoice.lob_code}
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--color-text-subtle)]">—</span>
+        ),
+    },
+    {
       key: "next_action",
       header: "Next Action",
       cell: (invoice) => (
@@ -207,6 +266,18 @@ function invoiceColumns(): DataTableColumn<InvoiceListRow>[] {
       header: "Status",
       cell: (invoice) => <StatusTag status={invoice.status} />,
     },
+    {
+      key: "action",
+      header: "Action",
+      align: "right",
+      width: "w-16",
+      cell: (invoice) => (
+        <RowActionLink
+          href={`/invoice/${invoice.invoice_id}`}
+          label={`Open invoice ${invoice.invoice_ref}`}
+        />
+      ),
+    },
   ];
 }
 
@@ -218,6 +289,8 @@ function filterCount(params: InvoicePageParams) {
     params.has_active_exceptions,
     params.party_canonical_id,
     params.system_view,
+    params.change_status,
+    params.lob,
   ].filter(Boolean).length;
 }
 
@@ -226,6 +299,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     "/invoices",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   const raw = await searchParams;
@@ -233,6 +307,22 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   const pageSize = Number(first(raw.page_size) ?? "25");
   const systemViewId = parseSystemViewId(first(raw.system_view));
   const systemViewParams = getInvoiceSystemViewParams(systemViewId);
+  const rawChangeStatus = first(raw.change_status);
+  const changeStatus:
+    | "new"
+    | "closed"
+    | "changed"
+    | "all"
+    | undefined =
+    rawChangeStatus === "new"
+      ? "new"
+      : rawChangeStatus === "closed"
+        ? "closed"
+        : rawChangeStatus === "changed"
+          ? "changed"
+          : rawChangeStatus === "all"
+            ? "all"
+            : undefined;
   const params: InvoicePageParams = {
     entity: first(raw.entity),
     status: systemViewParams?.status ?? first(raw.status),
@@ -240,9 +330,12 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
       systemViewParams?.overdue_bucket ?? first(raw.overdue_bucket),
     has_active_exceptions: first(raw.has_active_exceptions),
     party_canonical_id: first(raw.party_canonical_id),
+    change_status: changeStatus,
+    lob: first(raw.lob),
     page_size: pageSize,
     system_view: systemViewId ?? undefined,
     invoice: first(raw.invoice),
+    view: first(raw.view) === "compact" ? "compact" : "table",
   };
   const response = await listInvoices(
     {
@@ -251,9 +344,19 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
       overdue_bucket: params.overdue_bucket,
       has_active_exceptions: parseBool(params.has_active_exceptions),
       party_canonical_id: params.party_canonical_id,
+      change_status: changeStatus,
+      lob: params.lob,
       page,
       page_size: pageSize,
     },
+    currentUser,
+  );
+
+  // PR 9 — populate the LOB filter dropdown with active LOBs scoped to
+  // the current user (analysts see their entity only; ADMIN/CFO/REVIEWER
+  // see all).
+  const availableLobs = await listLobs(
+    { active: true, entity_code: params.entity as "IND" | "UAE" | undefined },
     currentUser,
   );
   const totalPages = Math.max(
@@ -271,6 +374,12 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     response.items.find((invoice) => invoice.invoice_id === params.invoice) ??
     response.items[0] ??
     null;
+  // PR 3 / Gap 3 — fetch the changes history for the selected invoice so the
+  // side-panel can render the diff list + Acknowledge action. Cheap query
+  // (indexed on invoice_id) — no need to gate on unack_count.
+  const selectedInvoiceChanges: InvoiceChangeItem[] = selectedInvoice
+    ? await listInvoiceChanges(selectedInvoice.invoice_id, currentUser)
+    : [];
   const totalOutstanding = response.items.reduce(
     (sum, invoice) => sum + toNumber(invoice.amount),
     0,
@@ -315,6 +424,12 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         Review invoices by ageing bucket, exception state, and next review path.
       </PageHeader>
 
+      <ViewPreferenceSync
+        currentView={params.view ?? "table"}
+        storageKey="receivables.invoices.view-mode.v1"
+        validViews={["table", "compact"]}
+      />
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {bucketSummaries.map((bucket) => (
           <MetricCard
@@ -340,8 +455,29 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
             surface="invoices"
           />
           <SavedViewTabs>
-            <SavedViewLink active={!systemViewId} href="/invoices">
+            <SavedViewLink
+              active={!systemViewId && changeStatus !== "new"}
+              href="/invoices"
+            >
               All Invoices
+            </SavedViewLink>
+            <SavedViewLink
+              active={changeStatus === "new"}
+              href="/invoices?change_status=new"
+            >
+              New Since Last Upload
+            </SavedViewLink>
+            <SavedViewLink
+              active={changeStatus === "closed"}
+              href="/invoices?change_status=closed"
+            >
+              Closed This Snapshot
+            </SavedViewLink>
+            <SavedViewLink
+              active={changeStatus === "changed"}
+              href="/invoices?change_status=changed"
+            >
+              Changed Since Last Upload
             </SavedViewLink>
             {systemViews.map((view) => (
               <SavedViewLink
@@ -412,7 +548,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   name="overdue_bucket"
                 >
                   <option value="">All buckets</option>
-                  <option value="NOT_DUE">Current</option>
+                  <option value="NOT_DUE">Not Due</option>
+                  <option value="DUE_TODAY">Due Today</option>
                   <option value="0_30">1-30 Days</option>
                   <option value="31_60">31-60 Days</option>
                   <option value="61_90">61-90 Days</option>
@@ -426,6 +563,19 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   <option value="">Exception status</option>
                   <option value="true">Has active exceptions</option>
                   <option value="false">No active exceptions</option>
+                </select>
+                <select
+                  className={fieldClass}
+                  defaultValue={params.lob ?? ""}
+                  name="lob"
+                >
+                  <option value="">All LOBs</option>
+                  <option value="__none__">Untagged</option>
+                  {availableLobs.map((lob) => (
+                    <option key={lob.id} value={lob.code}>
+                      {lob.code} — {lob.name}
+                    </option>
+                  ))}
                 </select>
                 <Button className="sm:col-span-2" type="submit">
                   <Filter className="h-4 w-4" />
@@ -450,43 +600,120 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   Open any invoice to inspect detail, account context, and follow-up paths.
                 </div>
               </div>
+              <div className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
+                <Link
+                  aria-current={params.view === "table" ? "page" : undefined}
+                  className={[
+                    "inline-flex h-8 items-center gap-2 rounded-[var(--radius-sm)] px-2 text-xs font-medium transition-colors",
+                    params.view === "table"
+                      ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                      : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+                  ].join(" ")}
+                  href={invoiceViewHref("table", params)}
+                >
+                  <Rows3 className="h-3.5 w-3.5" />
+                  Table
+                </Link>
+                <Link
+                  aria-current={params.view === "compact" ? "page" : undefined}
+                  className={[
+                    "inline-flex h-8 items-center gap-2 rounded-[var(--radius-sm)] px-2 text-xs font-medium transition-colors",
+                    params.view === "compact"
+                      ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                      : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+                  ].join(" ")}
+                  href={invoiceViewHref("compact", params)}
+                >
+                  <LayoutList className="h-3.5 w-3.5" />
+                  Compact
+                </Link>
+              </div>
             </div>
 
-            <DataTable<InvoiceListRow>
-              columns={invoiceColumns()}
-              emptyState={{
-                title: "No invoices yet",
-                description:
-                  "Invoices appear here after a workbook is staged, parsed, reviewed, and published.",
-                action: (
-                  <Link
-                    className="text-sm font-medium text-[var(--color-accent)]"
-                    href="/snapshots"
-                  >
-                    Upload snapshot
-                  </Link>
-                ),
-              }}
-              filteredEmptyState={{
-                title: "No invoices match these filters",
-                description:
-                  "Try clearing filters or switching to another saved view.",
-                action: (
-                  <Link
-                    className="text-sm font-medium text-[var(--color-accent)]"
-                    href="/invoices"
-                  >
-                    Clear filters
-                  </Link>
-                ),
-              }}
-              isFiltered={activeFilterCount > 0}
-              minWidthClass="min-w-[1120px]"
+            {params.view === "compact" ? (
+              <div className="divide-y divide-[var(--color-border)]">
+                {response.items.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-[var(--color-text-muted)]">
+                    {activeFilterCount > 0
+                      ? "No invoices match these filters."
+                      : "No invoices yet."}
+                  </div>
+                ) : (
+                  response.items.map((invoice) => (
+                    <Link
+                      className={[
+                        "group grid gap-3 px-4 py-3 transition-colors hover:bg-[var(--color-bg-subtle)] md:grid-cols-[minmax(0,1fr)_140px_140px_120px_40px]",
+                        selectedInvoice?.invoice_id === invoice.invoice_id
+                          ? "bg-[var(--color-accent-soft)]"
+                          : "",
+                      ].join(" ")}
+                      href={previewHref(invoice.invoice_id, params)}
+                      key={invoice.invoice_id}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-sm font-semibold text-[var(--color-accent)]">
+                          {invoice.invoice_ref}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-[var(--color-text-muted)]">
+                          {invoice.canonical_name || "Unmatched account"} · {invoice.entity_code}
+                        </div>
+                      </div>
+                      <StatusTag status={invoice.bucket} />
+                      <span className="font-medium tabular-nums">
+                        {formatCurrency(invoice.amount, invoice.currency)}
+                      </span>
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {suggestedAction(invoice)}
+                      </span>
+                      <ArrowRight className="h-4 w-4 justify-self-end text-[var(--color-text-muted)] transition-colors group-hover:text-[var(--color-accent)]" />
+                    </Link>
+                  ))
+                )}
+              </div>
+            ) : (
+              <DataTable<InvoiceListRow>
+                columns={invoiceColumns()}
+                emptyState={{
+                  icon: <FileText className="h-6 w-6" />,
+                  title: "No invoices yet",
+                  description:
+                    "Upload a Tally or Xero workbook, walk it through staging, and publish — invoices land here after publish.",
+                  action: (
+                    <Link
+                      className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-strong)]"
+                      href="/upload"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload your first workbook
+                    </Link>
+                  ),
+                }}
+                filteredEmptyState={{
+                  icon: <Filter className="h-6 w-6" />,
+                  title: "Nothing matches these filters",
+                  description:
+                    "Try clearing filters or switching to another saved view to see invoices across the rest of the ledger.",
+                  action: (
+                    <Link
+                      className="text-sm font-medium text-[var(--color-accent)]"
+                      href="/invoices"
+                    >
+                      Clear filters
+                    </Link>
+                  ),
+                }}
+                isFiltered={activeFilterCount > 0}
+                minWidthClass="min-w-[1120px]"
               rowHref={(invoice) => previewHref(invoice.invoice_id, params)}
+              rowCreateHref={(invoice) =>
+                `/follow-ups?invoice_id=${invoice.invoice_id}`
+              }
+              rowEditHref={(invoice) => `/invoice/${invoice.invoice_id}`}
               rowKey={(invoice) => invoice.invoice_id}
-              rows={response.items}
-              selectedRowKey={selectedInvoice?.invoice_id ?? null}
-            />
+                rows={response.items}
+                selectedRowKey={selectedInvoice?.invoice_id ?? null}
+              />
+            )}
 
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
               <span>
@@ -574,6 +801,13 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               </p>
             </SidePanel>
           )}
+
+          {selectedInvoice && selectedInvoiceChanges.length > 0 ? (
+            <InvoiceChangesPanel
+              initialChanges={selectedInvoiceChanges}
+              invoiceId={selectedInvoice.invoice_id}
+            />
+          ) : null}
 
           <Panel>
             <PanelHeader title="Linked Workflows">

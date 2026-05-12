@@ -91,14 +91,61 @@ model entities {
   country             String              @db.VarChar(2)
   base_currency       String              @db.VarChar(3)
   default_credit_days Int?
+  require_review_before_publish Boolean   @default(false)
   created_at          DateTime            @default(now()) @db.Timestamptz(6)
   updated_at          DateTime            @default(now()) @db.Timestamptz(6)
   collection_tasks    collection_tasks[]
+  column_mappings     column_mappings[]
   dispute_cases       dispute_cases[]
   invoices            invoices[]
+  lobs                lobs[]
   parties_canonical   parties_canonical[]
   snapshots           snapshots[]
   users               users[]
+}
+
+/// PR 9 — Lines of Business per entity. Tag invoices to slice receivables
+/// by project, vertical, or business unit. Auto-applied from Xero project_id
+/// at publish; manual override via UI.
+model lobs {
+  id          String    @id(map: "pk_lobs") @db.Uuid
+  entity_id   String    @db.Uuid
+  code        String    @db.VarChar(64)
+  name        String    @db.VarChar(255)
+  description String?
+  active      Boolean   @default(true)
+  created_by  String    @db.Uuid
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_by  String?   @db.Uuid
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  entities                          entities   @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_lobs_entity_id_entities")
+  users_lobs_created_byTousers      users      @relation("lobs_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_lobs_created_by_users")
+  users_lobs_updated_byTousers      users?     @relation("lobs_updated_byTousers", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_lobs_updated_by_users")
+  invoices                          invoices[]
+
+  @@unique([entity_id, code], map: "uq_lobs_entity_code")
+  @@index([entity_id, active], map: "ix_lobs_entity_active")
+}
+
+/// PR 8a — saved column mapping per (entity, source). Pre-applied on the
+/// next upload from the same source so analysts don't re-confirm the same
+/// header layout every week.
+model column_mappings {
+  id           String   @id(map: "pk_column_mappings") @db.Uuid
+  entity_id    String   @db.Uuid
+  source_hint  String   @db.VarChar(32)
+  mapping_json Json
+  created_by   String   @db.Uuid
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_by   String?  @db.Uuid
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  entities                                       entities @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_column_mappings_entity_id_entities")
+  users_column_mappings_created_byTousers        users    @relation("column_mappings_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_column_mappings_created_by_users")
+  users_column_mappings_updated_byTousers        users?   @relation("column_mappings_updated_byTousers", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_column_mappings_updated_by_users")
+
+  @@unique([entity_id, source_hint], map: "uq_column_mappings_entity_source")
 }
 
 model exception_bucket_types {
@@ -207,6 +254,7 @@ model invoices {
   status                                               String              @default("OPEN") @db.VarChar(16)
   first_seen_snapshot_id                               String              @db.Uuid
   settled_snapshot_id                                  String?             @db.Uuid
+  lob_id                                               String?             @db.Uuid
   raw_row_json                                         Json
   xero_metadata                                        Json?
   created_at                                           DateTime            @default(now()) @db.Timestamptz(6)
@@ -215,7 +263,9 @@ model invoices {
   dispute_cases                                        dispute_cases[]
   exception_tags                                       exception_tags[]
   follow_ups                                           follow_ups[]
+  invoice_changes                                      invoice_changes[]
   invoice_snapshots                                    invoice_snapshots[]
+  lobs                                                 lobs?               @relation(fields: [lob_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_invoices_lob_id_lobs")
   promises_to_pay                                      promises_to_pay[]
   parties_canonical                                    parties_canonical   @relation(fields: [canonical_id], references: [id], onUpdate: NoAction, map: "fk_invoices_canonical_id_parties_canonical")
   entities                                             entities            @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_invoices_entity_id_entities")
@@ -225,6 +275,30 @@ model invoices {
   @@unique([entity_id, canonical_id, invoice_ref], map: "uq_invoices_entity_canonical_ref")
   @@index([entity_id], map: "ix_invoices_entity_id")
   @@index([status], map: "ix_invoices_status_open", where: raw("((status)::text = 'OPEN'::text)"))
+}
+
+/// PR 3 / Gap 3 — field-level deltas detected during snapshot publish.
+/// Captured when an invoice's amount, due_date, credit_days, invoice_date,
+/// or currency drifts versus the prior published value.
+model invoice_changes {
+  id                String    @id(map: "pk_invoice_changes") @db.Uuid
+  invoice_id        String    @db.Uuid
+  snapshot_id       String    @db.Uuid
+  prior_snapshot_id String?   @db.Uuid
+  field             String    @db.VarChar(32)
+  before_value      Json
+  after_value       Json
+  detected_at       DateTime  @default(now()) @db.Timestamptz(6)
+  acknowledged_at   DateTime? @db.Timestamptz(6)
+  acknowledged_by   String?   @db.Uuid
+
+  invoices  invoices  @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_invoice_changes_invoice_id_invoices")
+  snapshots snapshots @relation(fields: [snapshot_id], references: [id], onUpdate: NoAction, map: "fk_invoice_changes_snapshot_id_snapshots")
+  users     users?    @relation(fields: [acknowledged_by], references: [id], onUpdate: NoAction, map: "fk_invoice_changes_acknowledged_by_users")
+
+  @@index([snapshot_id], map: "ix_invoice_changes_snapshot_id")
+  @@index([invoice_id, detected_at(sort: Desc)], map: "ix_invoice_changes_invoice_id_detected_at")
+  @@index([snapshot_id], map: "ix_invoice_changes_unack", where: raw("(acknowledged_at IS NULL)"))
 }
 
 model parties_canonical {
@@ -313,8 +387,14 @@ model snapshots {
   updated_at                                          DateTime                @default(now()) @db.Timestamptz(6)
   staging_overrides_json                              Json                    @default("[]")
   material_change_flags_json                          Json                    @default("[]")
+  reviewed_at                                         DateTime?               @db.Timestamptz(6)
+  reviewed_by                                         String?                 @db.Uuid
+  review_decision                                     String?                 @db.VarChar(16)
+  review_note                                         String?
+  column_mapping_json                                 Json?
   collection_tasks                                    collection_tasks[]
   email_outbox                                        email_outbox[]
+  invoice_changes                                     invoice_changes[]
   invoice_snapshots                                   invoice_snapshots[]
   invoices_invoices_first_seen_snapshot_idTosnapshots invoices[]              @relation("invoices_first_seen_snapshot_idTosnapshots")
   invoices_invoices_settled_snapshot_idTosnapshots    invoices[]              @relation("invoices_settled_snapshot_idTosnapshots")
@@ -323,6 +403,7 @@ model snapshots {
   entities                                            entities                @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_snapshots_entity_id_entities")
   users_snapshots_published_byTousers                 users?                  @relation("snapshots_published_byTousers", fields: [published_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_published_by_users")
   users_snapshots_uploaded_byTousers                  users                   @relation("snapshots_uploaded_byTousers", fields: [uploaded_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_uploaded_by_users")
+  users_snapshots_reviewed_byTousers                  users?                  @relation("snapshots_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_reviewed_by_users")
 
   @@index([entity_id, status], map: "ix_snapshots_entity_status")
 }
@@ -345,14 +426,20 @@ model users {
   exception_tags_exception_tags_excluded_byTousers exception_tags[]         @relation("exception_tags_excluded_byTousers")
   exception_tags_exception_tags_resolved_byTousers exception_tags[]         @relation("exception_tags_resolved_byTousers")
   exception_tags_exception_tags_tagged_byTousers   exception_tags[]         @relation("exception_tags_tagged_byTousers")
+  column_mappings_column_mappings_created_byTousers column_mappings[]        @relation("column_mappings_created_byTousers")
+  column_mappings_column_mappings_updated_byTousers column_mappings[]        @relation("column_mappings_updated_byTousers")
   follow_ups                                       follow_ups[]
   fx_rates                                         fx_rates[]
+  invoice_changes                                  invoice_changes[]
+  lobs_lobs_created_byTousers                      lobs[]                   @relation("lobs_created_byTousers")
+  lobs_lobs_updated_byTousers                      lobs[]                   @relation("lobs_updated_byTousers")
   parties_canonical                                parties_canonical[]
   party_aliases_party_aliases_confirmed_byTousers  party_aliases[]          @relation("party_aliases_confirmed_byTousers")
   party_aliases_party_aliases_created_byTousers    party_aliases[]          @relation("party_aliases_created_byTousers")
   reconciliation_entries                                               reconciliation_entries[]
   snapshots_snapshots_discarded_byTousers                              snapshots[]              @relation("snapshots_discarded_byTousers")
   snapshots_snapshots_published_byTousers                              snapshots[]              @relation("snapshots_published_byTousers")
+  snapshots_snapshots_reviewed_byTousers                               snapshots[]              @relation("snapshots_reviewed_byTousers")
   snapshots_snapshots_uploaded_byTousers                               snapshots[]              @relation("snapshots_uploaded_byTousers")
   entities                                                             entities?                @relation(fields: [entity_id_scope], references: [id], onUpdate: NoAction, map: "fk_users_entity_id_scope_entities")
   // Phase 2: operational object relations
@@ -426,6 +513,7 @@ enum role_enum {
   CFO
   ADMIN
   PENDING
+  REVIEWER
 }
 
 // ─── Phase 2: Operational object enums ──────────────────────────────────────

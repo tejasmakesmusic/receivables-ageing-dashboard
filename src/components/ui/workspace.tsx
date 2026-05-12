@@ -13,9 +13,12 @@ export function PageFrame({
   className?: string;
 }) {
   return (
+    // PR C+ — tighter padding on mobile (p-4 → ~16px each side) so 375px
+    // phones don't waste a quarter of the viewport on chrome. p-6 (24px)
+    // returns from sm: breakpoint upward.
     <div
       className={cn(
-        "mx-auto flex w-full max-w-[1680px] flex-col gap-5 p-6",
+        "mx-auto flex w-full max-w-[1680px] flex-col gap-5 p-4 sm:p-6",
         className,
       )}
     >

@@ -47,7 +47,7 @@ export function TriggerDigestButton() {
   return (
     <div className="grid gap-1">
       <button
-        className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:pointer-events-none disabled:opacity-60"
+        className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-strong)] disabled:pointer-events-none disabled:opacity-60"
         disabled={state === "submitting"}
         onClick={handleClick}
         type="button"
@@ -55,7 +55,10 @@ export function TriggerDigestButton() {
         {state === "submitting" ? "Triggering..." : "Trigger today's digest"}
       </button>
       {message ? (
-        <span aria-live="polite" className="text-xs text-red-700">
+        <span
+          aria-live="polite"
+          className="text-xs text-[var(--color-danger)]"
+        >
           {message}
         </span>
       ) : null}
@@ -93,7 +96,7 @@ export function DigestActions({
   }
 
   if (!canApprove && !canSkip) {
-    return <span className="text-slate-400">-</span>;
+    return <span className="text-[var(--color-text-subtle)]">-</span>;
   }
 
   return (
@@ -101,7 +104,7 @@ export function DigestActions({
       <div className="flex gap-2">
         {canApprove ? (
           <button
-            className="rounded bg-green-100 px-2 py-1 text-xs text-green-800 hover:bg-green-200 disabled:pointer-events-none disabled:opacity-60"
+            className="rounded bg-[var(--color-status-current-bg)] px-2 py-1 text-xs text-[var(--color-status-current-text)] transition-colors hover:bg-[var(--color-status-current-border)] disabled:pointer-events-none disabled:opacity-60"
             disabled={pendingAction !== null}
             onClick={() => runAction("approve")}
             type="button"
@@ -111,7 +114,7 @@ export function DigestActions({
         ) : null}
         {canSkip ? (
           <button
-            className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 disabled:pointer-events-none disabled:opacity-60"
+            className="rounded bg-[var(--color-bg-muted)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] disabled:pointer-events-none disabled:opacity-60"
             disabled={pendingAction !== null}
             onClick={() => runAction("skip")}
             type="button"
@@ -121,7 +124,10 @@ export function DigestActions({
         ) : null}
       </div>
       {message ? (
-        <span aria-live="polite" className="text-xs text-red-700">
+        <span
+          aria-live="polite"
+          className="text-xs text-[var(--color-danger)]"
+        >
           {message}
         </span>
       ) : null}

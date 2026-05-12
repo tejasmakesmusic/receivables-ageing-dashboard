@@ -4,6 +4,7 @@ import { assertAnalystCanAccessEntity } from "@/server/core/scope";
 import { createAuditLog } from "@/server/core/audit";
 import { HttpError } from "@/server/core/errors";
 import { getPrisma } from "@/lib/prisma";
+import { dbTransaction } from "@/lib/db-transaction";
 import { createId } from "@/lib/ids";
 import type { AuthenticatedUser } from "@/server/core/auth";
 import { z } from "zod";
@@ -284,6 +285,7 @@ export async function createCreditPeriod(
 ): Promise<CreditPeriodRow> {
   if (
     currentUser.role === role_enum.CFO ||
+    currentUser.role === role_enum.REVIEWER ||
     currentUser.role === role_enum.PENDING
   ) {
     throw new HttpError("forbidden", 403, "Insufficient permissions.");
@@ -307,74 +309,95 @@ export async function createCreditPeriod(
   priorValidTo.setUTCDate(priorValidTo.getUTCDate() - 1);
   const normalizedReason = normalizeReason(input.reason_note);
 
-  const created = await prisma.$transaction(async (tx) => {
-    const prior = await tx.credit_period_config.findFirst({
-      where: {
-        canonical_id: canonical.id,
-        valid_to: null,
-      },
-      orderBy: { valid_from: "desc" },
-    });
+  // Pre-fetch the prior open config before the transaction so we can build
+  // the audit log `before` snapshot outside the callback. The race-condition
+  // guard (close old row) still happens inside the transaction; we only use
+  // this read for audit metadata.
+  const priorForAudit = await prisma.credit_period_config.findFirst({
+    where: { canonical_id: canonical.id, valid_to: null },
+    orderBy: { valid_from: "desc" },
+    select: {
+      id: true,
+      canonical_id: true,
+      days: true,
+      valid_from: true,
+      valid_to: true,
+    },
+  });
 
-    const before: Record<string, unknown> = {};
-    if (prior) {
-      await tx.credit_period_config.update({
-        where: { id: prior.id },
-        data: { valid_to: priorValidTo },
+  const before: Record<string, unknown> = {};
+  if (priorForAudit) {
+    before.valid_to = priorForAudit.valid_to
+      ? toDateOnly(priorForAudit.valid_to)
+      : null;
+    before.valid_from = toDateOnly(priorForAudit.valid_from);
+    before.credit_days = priorForAudit.days;
+    before.canonical_id = priorForAudit.canonical_id;
+  }
+
+  // Transaction: close prior open row (if any) and insert the new one.
+  // maxWait/timeout: simple (≤2 writes) → standard short-lived timeout.
+  const created = await dbTransaction(
+    "credit_period_config.create",
+    async (tx) => {
+      const prior = await tx.credit_period_config.findFirst({
+        where: { canonical_id: canonical.id, valid_to: null },
+        orderBy: { valid_from: "desc" },
+        select: { id: true },
       });
 
-      before.valid_to = prior.valid_to ? toDateOnly(prior.valid_to) : null;
-      before.valid_from = prior.valid_from.toISOString().slice(0, 10);
-      before.credit_days = prior.days;
-      before.canonical_id = prior.canonical_id;
-    }
+      if (prior) {
+        await tx.credit_period_config.update({
+          where: { id: prior.id },
+          data: { valid_to: priorValidTo },
+        });
+      }
 
-    const row = await tx.credit_period_config.create({
-      data: {
-        id: createId(),
-        canonical_id: canonical.id,
-        days: input.credit_days,
-        reason_note: normalizedReason,
-        valid_from: validFrom,
-        valid_to: null,
-        updated_by: currentUser.id,
-      },
-      select: {
-        id: true,
-        canonical_id: true,
-        days: true,
-        reason_note: true,
-        valid_from: true,
-        valid_to: true,
-        updated_by: true,
-        updated_at: true,
-        parties_canonical: {
-          select: {
-            id: true,
-            name: true,
-            entities: { select: { code: true } },
+      return tx.credit_period_config.create({
+        data: {
+          id: createId(),
+          canonical_id: canonical.id,
+          days: input.credit_days,
+          reason_note: normalizedReason,
+          valid_from: validFrom,
+          valid_to: null,
+          updated_by: currentUser.id,
+        },
+        select: {
+          id: true,
+          canonical_id: true,
+          days: true,
+          reason_note: true,
+          valid_from: true,
+          valid_to: true,
+          updated_by: true,
+          updated_at: true,
+          parties_canonical: {
+            select: {
+              id: true,
+              name: true,
+              entities: { select: { code: true } },
+            },
           },
         },
-      },
-    });
+      });
+    },
+    { maxWait: 2_000, timeout: 10_000 },
+  );
 
-    const after = {
-      canonical_id: row.canonical_id,
-      credit_days: row.days,
-      valid_from: toDateOnly(row.valid_from),
-    };
-
-    createAuditLog(
-      currentUser.id,
-      "credit_period_config.create",
-      "credit_period_config",
-      row.id,
-      before,
-      after,
-    );
-
-    return row;
-  });
+  // Audit log written outside the transaction — no tx handle needed.
+  await createAuditLog(
+    currentUser.id,
+    "credit_period_config.create",
+    "credit_period_config",
+    created.id,
+    before,
+    {
+      canonical_id: created.canonical_id,
+      credit_days: created.days,
+      valid_from: toDateOnly(created.valid_from),
+    },
+  );
 
   return toCreditPeriodRow(created);
 }

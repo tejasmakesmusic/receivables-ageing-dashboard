@@ -22,12 +22,28 @@ const ROW_ACTIONS = join(
   "staging-row-actions.tsx",
 );
 
+const DATA_TABLE = join(
+  process.cwd(),
+  "src",
+  "app",
+  "snapshots",
+  "[snapshotId]",
+  "staging",
+  "_components",
+  "staging-data-table.tsx",
+);
+
 describe("staging row actions UI", () => {
   it("renders row-level resolution actions on the staging grid", () => {
+    // The page renders <StagingDataTable> which internally embeds
+    // <StagingRowActions row={row} snapshotId={snapshotId} />.
     const pageSource = readFileSync(STAGING_PAGE, "utf8");
+    const tableSource = readFileSync(DATA_TABLE, "utf8");
 
-    expect(pageSource).toContain("StagingRowActions");
+    expect(pageSource).toContain("StagingDataTable");
     expect(pageSource).toContain("snapshotId={snapshotId}");
+    expect(tableSource).toContain("StagingRowActions");
+    expect(tableSource).toContain("snapshotId={snapshotId}");
   });
 
   it("supports alias resolution, canonical creation, and parse-error review", () => {

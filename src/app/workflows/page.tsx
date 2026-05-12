@@ -230,6 +230,7 @@ export default async function WorkflowsPage() {
     "/workflows",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   assertNotPending(user);

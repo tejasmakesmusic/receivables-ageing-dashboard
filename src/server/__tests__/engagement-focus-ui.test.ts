@@ -77,6 +77,16 @@ describe("engagement Focus UI", () => {
     expect(page).toContain("<StreakBadge");
   });
 
+  it("shows Focus Queue progress chips for operating state", () => {
+    const page = source(FOCUS_PAGE);
+
+    expect(page).toContain("data-focus-progress-chip");
+    expect(page).toContain("Due now");
+    expect(page).toContain("High priority");
+    expect(page).toContain("Blockers");
+    expect(page).toContain("Completed today");
+  });
+
   it("keeps engagement copy free of celebratory or cash-collected language", () => {
     const combined = [
       source(FOCUS_PAGE),

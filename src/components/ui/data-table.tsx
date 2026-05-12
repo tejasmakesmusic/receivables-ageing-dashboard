@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
+import {
+  TABLE_ROW_INTERACTIVE_CLASS,
+  TABLE_ROW_SELECTED_CLASS,
+} from "./table-row-styles";
 import { DataTableRow } from "./data-table-row";
 import { twMerge } from "tailwind-merge";
 
@@ -28,6 +32,12 @@ type StateActionConfig = {
   title: string;
   description: string;
   action?: ReactNode;
+  /**
+   * PR C+ — optional decorative icon shown in a soft accent circle above
+   * the empty-state title. Plain text empty states feel terse on a wide
+   * table; a small visual marker makes the surface feel intentional.
+   */
+  icon?: ReactNode;
 };
 
 export type DataTableProps<Row> = {
@@ -35,6 +45,8 @@ export type DataTableProps<Row> = {
   rows: Row[];
   rowKey: (row: Row) => string;
   rowHref?: (row: Row) => string | null | undefined;
+  rowCreateHref?: (row: Row) => string | null | undefined;
+  rowEditHref?: (row: Row) => string | null | undefined;
   selectedRowKey?: string | null;
   sort?: DataTableSort;
   sortHref?: (sort: DataTableSort) => string;
@@ -62,7 +74,17 @@ export function TableShell({
         className,
       )}
     >
-      <div className="overflow-x-auto">{children}</div>
+      {/* PR C+ — mobile/tablet scroll affordance. The right-edge fade hints
+          that there's more content sideways when the inner table is wider
+          than the viewport (which happens on every list table below ~1100px).
+          Sticky-left columns keep context while horizontally scrolling. */}
+      <div className="relative">
+        <div className="overflow-x-auto">{children}</div>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--color-surface)] to-transparent xl:hidden"
+        />
+      </div>
     </div>
   );
 }
@@ -108,15 +130,23 @@ function StateBlock({
 }) {
   return (
     <tr>
-      <td className="px-4 py-12" colSpan={colSpan}>
-        <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-center">
-          <h3 className="text-sm font-semibold text-[var(--color-text)]">
+      <td className="px-4 py-16" colSpan={colSpan}>
+        <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
+          {config.icon ? (
+            <div
+              aria-hidden="true"
+              className="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+            >
+              {config.icon}
+            </div>
+          ) : null}
+          <h3 className="text-base font-semibold text-[var(--color-text)]">
             {config.title}
           </h3>
-          <p className="text-sm text-[var(--color-text-muted)]">
+          <p className="max-w-sm text-sm text-[var(--color-text-muted)]">
             {config.description}
           </p>
-          {config.action ? <div className="mt-2">{config.action}</div> : null}
+          {config.action ? <div className="mt-1">{config.action}</div> : null}
         </div>
       </td>
     </tr>
@@ -157,6 +187,8 @@ export function DataTable<Row>({
   rows,
   rowKey,
   rowHref,
+  rowCreateHref,
+  rowEditHref,
   selectedRowKey,
   sort,
   sortHref,
@@ -279,18 +311,20 @@ export function DataTable<Row>({
             rows.map((row) => {
               const key = rowKey(row);
               const href = rowHref?.(row) ?? undefined;
+              const createHref = rowCreateHref?.(row) ?? undefined;
+              const editHref = rowEditHref?.(row) ?? undefined;
               const selected = selectedRowKey === key;
 
               return (
                 <DataTableRow
                   className={cn(
-                    "transition-colors",
-                    href
-                      ? "cursor-pointer hover:bg-[var(--color-bg-subtle)]"
-                      : "hover:bg-[var(--color-bg-subtle)]",
-                    selected && "bg-[var(--color-accent-soft)]",
+                    TABLE_ROW_INTERACTIVE_CLASS,
+                    href ? "cursor-pointer" : "",
+                    selected && TABLE_ROW_SELECTED_CLASS,
                   )}
+                  createHref={createHref}
                   dataRowKey={key}
+                  editHref={editHref}
                   href={href}
                   key={key}
                 >

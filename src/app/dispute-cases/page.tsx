@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import { RowActionLink } from "@/components/ui/row-actions";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
@@ -126,6 +127,16 @@ function nextActionLabel(dispute: DisputeRow) {
   return "Open party record";
 }
 
+function disputeFollowUpHref(dispute: DisputeRow) {
+  const search = new URLSearchParams({ canonical_id: dispute.canonical_id });
+
+  if (dispute.invoice_id) {
+    search.set("invoice_id", dispute.invoice_id);
+  }
+
+  return `/follow-ups?${search.toString()}`;
+}
+
 function disputeColumns(
   params: DisputePageParams,
 ): DataTableColumn<DisputeRow>[] {
@@ -226,6 +237,18 @@ function disputeColumns(
         </Link>
       ),
     },
+    {
+      key: "action",
+      header: "Action",
+      align: "right",
+      width: "w-16",
+      cell: (dispute) => (
+        <RowActionLink
+          href={fullRecordHref(dispute)}
+          label={`Open dispute ${shortId(dispute.id)}`}
+        />
+      ),
+    },
   ];
 }
 
@@ -235,6 +258,7 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
     "/dispute-cases",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   assertNotPending(user);
@@ -328,33 +352,21 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
             ))}
           </SavedViewTabs>
 
-          <div className="inline-flex w-fit items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 text-sm">
-            {VIEW_TABS.map((tab) => {
-              const active = activeTab === tab.value;
-
-              return (
-                <Link
-                  aria-current={active ? "page" : undefined}
-                  className={[
-                    "rounded-[var(--radius-sm)] px-3 py-1.5 font-medium text-[var(--color-text-muted)] transition",
-                    active
-                      ? "bg-[var(--color-bg-subtle)] text-[var(--color-text)] shadow-sm"
-                      : "hover:text-[var(--color-text)]",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  href={disputeHref({
-                    ...params,
-                    page: 1,
-                    tab: tab.value === "kanban" ? "kanban" : undefined,
-                  })}
-                  key={tab.value}
-                >
-                  {tab.label}
-                </Link>
-              );
-            })}
-          </div>
+          <SavedViewTabs>
+            {VIEW_TABS.map((tab) => (
+              <SavedViewLink
+                active={activeTab === tab.value}
+                href={disputeHref({
+                  ...params,
+                  page: 1,
+                  tab: tab.value === "kanban" ? "kanban" : undefined,
+                })}
+                key={tab.value}
+              >
+                {tab.label}
+              </SavedViewLink>
+            ))}
+          </SavedViewTabs>
 
           <Panel>
             <form
@@ -422,6 +434,8 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
                   isFiltered={isFiltered}
                   minWidthClass="min-w-[1180px]"
                   rowHref={(dispute) => previewHref(dispute.id, params)}
+                  rowCreateHref={(dispute) => disputeFollowUpHref(dispute)}
+                  rowEditHref={(dispute) => fullRecordHref(dispute)}
                   rowKey={(dispute) => dispute.id}
                   rows={disputes}
                   selectedRowKey={selected?.id ?? null}

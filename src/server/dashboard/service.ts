@@ -10,6 +10,7 @@ import {
 
 const DASHBOARD_BUCKETS: readonly DashboardBucket[] = [
   "NOT_DUE",
+  "DUE_TODAY",
   "0_30",
   "31_60",
   "61_90",
@@ -18,10 +19,11 @@ const DASHBOARD_BUCKETS: readonly DashboardBucket[] = [
 
 const BUCKET_SEVERITY: Record<DashboardBucket, number> = {
   NOT_DUE: 1,
-  "0_30": 2,
-  "31_60": 3,
-  "61_90": 4,
-  "90_PLUS": 5,
+  DUE_TODAY: 2,
+  "0_30": 3,
+  "31_60": 4,
+  "61_90": 5,
+  "90_PLUS": 6,
 };
 
 type RawSnapshotRow = {
@@ -570,7 +572,7 @@ async function getDashboardForEntity(
   const rows = await getInvoiceSnapshotRows(snapshot.id, asOfDate);
 
   const ageBuckets: Record<DashboardBucket, number> = {
-    NOT_DUE: 0,
+    NOT_DUE: 0, DUE_TODAY: 0,
     "0_30": 0,
     "31_60": 0,
     "61_90": 0,
@@ -641,7 +643,7 @@ async function getDashboardForEntity(
     },
     ageing_buckets: DASHBOARD_BUCKETS.reduce(
       (acc, bucket) => ({ ...acc, [bucket]: ageBuckets[bucket] }),
-      { NOT_DUE: 0, "0_30": 0, "31_60": 0, "61_90": 0, "90_PLUS": 0 },
+      { NOT_DUE: 0, DUE_TODAY: 0, "0_30": 0, "31_60": 0, "61_90": 0, "90_PLUS": 0 },
     ),
     top_parties: topParties,
     recent_exceptions: recentExceptions,
@@ -664,7 +666,7 @@ async function getConsolidatedDashboard(
   }
 
   const ageBuckets: Record<DashboardBucket, number> = {
-    NOT_DUE: 0,
+    NOT_DUE: 0, DUE_TODAY: 0,
     "0_30": 0,
     "31_60": 0,
     "61_90": 0,
@@ -760,7 +762,7 @@ async function getConsolidatedDashboard(
     },
     ageing_buckets: DASHBOARD_BUCKETS.reduce(
       (acc, bucket) => ({ ...acc, [bucket]: ageBuckets[bucket] }),
-      { NOT_DUE: 0, "0_30": 0, "31_60": 0, "61_90": 0, "90_PLUS": 0 },
+      { NOT_DUE: 0, DUE_TODAY: 0, "0_30": 0, "31_60": 0, "61_90": 0, "90_PLUS": 0 },
     ),
     top_parties: topParties,
     recent_exceptions: recentExceptions,

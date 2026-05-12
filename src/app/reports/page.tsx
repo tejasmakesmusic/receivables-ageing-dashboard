@@ -32,7 +32,8 @@ type ReportsPageProps = {
 };
 
 const buckets = [
-  { key: "NOT_DUE", label: "Current" },
+  { key: "NOT_DUE", label: "Not Due" },
+  { key: "DUE_TODAY", label: "Due Today" },
   { key: "0_30", label: "1-30 Days" },
   { key: "31_60", label: "31-60 Days" },
   { key: "61_90", label: "61-90 Days" },
@@ -88,6 +89,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     "/reports",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   assertNotPending(user);
@@ -126,22 +128,46 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
 
   const totalOutstanding = dashboard?.kpis.total_outstanding ?? 0;
   const currency = dashboard?.currency_display ?? "INR";
-  const exportHref =
-    entity === "ALL"
-      ? "/api/reports/ageing"
-      : `/api/reports/ageing?entity=${entity}`;
+  const entitySuffix = entity === "ALL" ? "" : `?entity=${entity}`;
+  const exportHref = `/api/reports/ageing${entitySuffix}`;
+  const partyExportHref = `/api/reports/parties${entitySuffix}`;
+  const uploadsExportHref = `/api/reports/uploads${entitySuffix}`;
+  const exceptionsExportHref = `/api/reports/exceptions${entitySuffix}`;
 
   return (
     <PageFrame>
       <PageHeader
         actions={
-          <Link
-            className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-accent)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
-            href={exportHref}
-          >
-            <Download className="h-4 w-4" />
-            Export Ageing
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-accent)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
+              href={exportHref}
+            >
+              <Download className="h-4 w-4" />
+              Ageing
+            </Link>
+            <Link
+              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-bg-muted)]"
+              href={partyExportHref}
+            >
+              <Download className="h-4 w-4" />
+              Party Outstanding
+            </Link>
+            <Link
+              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-bg-muted)]"
+              href={uploadsExportHref}
+            >
+              <Download className="h-4 w-4" />
+              Upload History
+            </Link>
+            <Link
+              className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-bg-muted)]"
+              href={exceptionsExportHref}
+            >
+              <Download className="h-4 w-4" />
+              Exceptions
+            </Link>
+          </div>
         }
         title="Reports"
       >
@@ -284,7 +310,10 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                         </EmptyTableRow>
                       ) : (
                         dashboard.top_parties.map((party) => (
-                          <tr className="hover:bg-[var(--color-bg-subtle)]" key={party.canonical_id}>
+                          <tr
+                            className="transition-colors hover:bg-[var(--color-bg-subtle)]"
+                            key={party.canonical_id}
+                          >
                             <td className="px-4 py-3">
                               <Link
                                 className="font-medium text-[var(--color-accent)]"

@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 
 import {
+  ColumnMappingResult,
   ParseErrorRow,
   ParseResult,
   ParsedInvoiceRow,
@@ -485,6 +486,35 @@ export function parseTallyGrpbills(
     );
   }
 
+  // PR 8a — capture which Tally column layout was used so the staging UI
+  // can show "we read column X as Y" and warn if it drifts on next upload.
+  const column_mapping: ColumnMappingResult = {
+    source_hint: resultSourceHint,
+    layout_variant: rm.gstin >= 0 ? "TALLY_8COL" : "TALLY_7COL",
+    fields: {
+      invoice_date: { source: `col[${rm.date}]`, confidence: "HEURISTIC" },
+      invoice_ref: { source: `col[${rm.ref_no}]`, confidence: "HEURISTIC" },
+      party_name: { source: `col[${rm.party_name}]`, confidence: "HEURISTIC" },
+      gstin:
+        rm.gstin >= 0
+          ? { source: `col[${rm.gstin}]`, confidence: "HEURISTIC" }
+          : { source: null, confidence: "MISSING" },
+      opening_amount: {
+        source: `col[${rm.opening_amount}]`,
+        confidence: "HEURISTIC",
+      },
+      pending_amount: {
+        source: `col[${rm.pending_amount}]`,
+        confidence: "HEURISTIC",
+      },
+      due_on: { source: `col[${rm.due_on}]`, confidence: "HEURISTIC" },
+      overdue_days: {
+        source: `col[${rm.overdue_days}]`,
+        confidence: "HEURISTIC",
+      },
+    },
+  };
+
   return {
     invoices,
     credit_periods: [],
@@ -494,6 +524,7 @@ export function parseTallyGrpbills(
     file_sha256: fileSha,
     source_hint: resultSourceHint,
     is_valid: errors.length === 0,
+    column_mapping,
   };
 }
 

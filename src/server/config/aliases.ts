@@ -229,6 +229,7 @@ export async function createAlias(
 ): Promise<AliasRow> {
   if (
     currentUser.role === role_enum.CFO ||
+    currentUser.role === role_enum.REVIEWER ||
     currentUser.role === role_enum.PENDING
   ) {
     throw new HttpError("forbidden", 403, "Insufficient permissions.");

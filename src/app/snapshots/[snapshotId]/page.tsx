@@ -16,6 +16,7 @@ import {
   type ReconciliationResponse,
   type SnapshotDetailResponse,
 } from "@/server/snapshots/service";
+import { SnapshotReviewActions } from "./_components/snapshot-review-actions";
 
 type PageProps = {
   params: Promise<{ snapshotId: string }>;
@@ -177,6 +178,7 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
     `/snapshots/${snapshotId}`,
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   let snapshot: SnapshotDetailResponse;
@@ -210,19 +212,19 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
   });
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
+    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <div className="space-y-2">
           <Link
+            className="text-sm text-[var(--color-accent)] hover:underline"
             href="/snapshots"
-            className="text-sm text-blue-700 hover:underline"
           >
             {"<- Snapshots"}
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">
             Snapshot {snapshot.as_of_date ?? snapshot.id.slice(0, 8)}
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-[var(--color-text-muted)]">
             {snapshot.entity_code} - {snapshot.source_hint} - {snapshot.status}
           </p>
         </div>
@@ -261,30 +263,64 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
           <CardContent>
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-slate-500">Uploaded</dt>
+                <dt className="text-[var(--color-text-muted)]">Uploaded</dt>
                 <dd>{formatDateTime(snapshot.uploaded_at)}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">Uploaded By</dt>
+                <dt className="text-[var(--color-text-muted)]">Uploaded By</dt>
                 <dd>{snapshot.uploaded_by_email}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">Published</dt>
+                <dt className="text-[var(--color-text-muted)]">Published</dt>
                 <dd>{formatDateTime(snapshot.published_at)}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">Published By</dt>
+                <dt className="text-[var(--color-text-muted)]">Published By</dt>
                 <dd>{snapshot.published_by_email ?? "-"}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">Discarded</dt>
+                <dt className="text-[var(--color-text-muted)]">Discarded</dt>
                 <dd>{formatDateTime(snapshot.discarded_at)}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">Discarded By</dt>
+                <dt className="text-[var(--color-text-muted)]">Discarded By</dt>
                 <dd>{snapshot.discarded_by_email ?? "-"}</dd>
               </div>
+              <div>
+                <dt className="text-[var(--color-text-muted)]">Reviewed</dt>
+                <dd>
+                  {snapshot.reviewed_at
+                    ? `${formatDateTime(snapshot.reviewed_at)} · ${snapshot.review_decision}`
+                    : "-"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[var(--color-text-muted)]">Reviewed By</dt>
+                <dd>{snapshot.reviewed_by_email ?? "-"}</dd>
+              </div>
+              {snapshot.review_note ? (
+                <div className="sm:col-span-2">
+                  <dt className="text-[var(--color-text-muted)]">
+                    Review Note
+                  </dt>
+                  <dd className="whitespace-pre-wrap">
+                    {snapshot.review_note}
+                  </dd>
+                </div>
+              ) : null}
             </dl>
+
+            {snapshot.status === "STAGED" &&
+            (currentUser.role === role_enum.REVIEWER ||
+              currentUser.role === role_enum.ADMIN) &&
+            snapshot.uploaded_by_email !== currentUser.email ? (
+              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+                <p className="mb-2 text-sm font-medium text-[var(--color-text)]">
+                  Reviewer action
+                </p>
+                <SnapshotReviewActions snapshotId={snapshot.id} />
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -296,13 +332,13 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
             {reconciliation ? (
               <dl className="grid gap-3 text-sm sm:grid-cols-3">
                 <div>
-                  <dt className="text-slate-500">Dashboard AR</dt>
+                <dt className="text-[var(--color-text-muted)]">Dashboard AR</dt>
                   <dd>
                     {formatCurrency(reconciliation.dashboard_ar, currency)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Exception Buckets</dt>
+                <dt className="text-[var(--color-text-muted)]">Exception Buckets</dt>
                   <dd>
                     {formatCurrency(
                       reconciliation.exception_bucket_total,
@@ -311,11 +347,11 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Status</dt>
+                <dt className="text-[var(--color-text-muted)]">Status</dt>
                   <dd>{reconciliation.status}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Closing AR</dt>
+                <dt className="text-[var(--color-text-muted)]">Closing AR</dt>
                   <dd>
                     {reconciliation.tally_xero_closing_ar
                       ? formatCurrency(
@@ -326,7 +362,7 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Delta</dt>
+                <dt className="text-[var(--color-text-muted)]">Delta</dt>
                   <dd>
                     {reconciliation.delta
                       ? formatCurrency(reconciliation.delta, currency)
@@ -334,12 +370,14 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Entered By</dt>
+                <dt className="text-[var(--color-text-muted)]">Entered By</dt>
                   <dd>{reconciliation.entered_by?.email ?? "-"}</dd>
                 </div>
               </dl>
             ) : (
-              <p className="text-sm text-slate-500">{reconciliationMessage}</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {reconciliationMessage}
+              </p>
             )}
           </CardContent>
         </Card>

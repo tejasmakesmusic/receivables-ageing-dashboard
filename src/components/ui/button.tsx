@@ -20,7 +20,8 @@ const variantClasses: Record<ButtonVariant, string> = {
     "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-bg-muted)]",
   ghost:
     "border border-transparent bg-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
-  destructive: "border border-red-500 bg-red-500 text-white hover:bg-red-600",
+  destructive:
+    "border border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-text)] hover:bg-[var(--color-danger)] hover:text-white",
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

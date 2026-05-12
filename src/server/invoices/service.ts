@@ -57,6 +57,28 @@ export interface InvoiceListRow {
   overdue_days: number | null;
   bucket: string | null;
   active_exception_count: number;
+  /** PR 9 — Line-of-Business tag, null when untagged. */
+  lob_id: string | null;
+  lob_code: string | null;
+  lob_name: string | null;
+  /**
+   * True when the invoice was first observed in the most recent PUBLISHED
+   * snapshot for its entity. Powers the "New since last upload" surface
+   * (Gap 1 — snapshot continuity).
+   */
+  is_new_in_latest_snapshot: boolean;
+  /**
+   * True when the invoice was settled (closed) by the most recent PUBLISHED
+   * snapshot for its entity. Powers the "Closed this snapshot" surface
+   * (Gap 2 — snapshot continuity).
+   */
+  is_closed_in_latest_snapshot: boolean;
+  /**
+   * Number of unacknowledged invoice_changes rows tied to the latest
+   * published snapshot. >0 means a field drift was captured for this
+   * invoice in the most recent publish (Gap 3 — snapshot continuity).
+   */
+  unack_change_count_in_latest_snapshot: number;
 }
 
 export interface InvoiceListResponse {
@@ -72,8 +94,63 @@ export interface InvoiceListFilters {
   overdue_bucket?: string;
   has_active_exceptions?: boolean;
   party_canonical_id?: string;
+  /** PR 9 — filter by LOB code (case-insensitive). "__none__" → invoices with no LOB. */
+  lob?: string;
+  /**
+   * "new"     — invoices whose first_seen_snapshot_id is the latest
+   *             PUBLISHED snapshot for their entity.
+   * "closed"  — invoices whose settled_snapshot_id is the latest PUBLISHED
+   *             snapshot for their entity (settled-this-snapshot view).
+   * "changed" — invoices with one or more UNACKNOWLEDGED invoice_changes
+   *             rows tied to the latest PUBLISHED snapshot for their entity.
+   * "all"     — no continuity filter (default).
+   */
+  change_status?: "new" | "closed" | "changed" | "all";
   page: number;
   page_size: number;
+}
+
+/**
+ * Returns the latest PUBLISHED snapshot id per entity, scoped to the
+ * caller's visible entities. Used by the "New since last upload" filter
+ * and the per-row `is_new_in_latest_snapshot` flag.
+ *
+ * Excludes CREDIT_PERIOD snapshots — those don't upsert invoices.
+ */
+async function getLatestPublishedSnapshotIds(
+  currentUser: AuthenticatedUser,
+): Promise<string[]> {
+  const prisma = getPrisma();
+  const entityScope =
+    currentUser.role === role_enum.ANALYST && currentUser.entityIdScope
+      ? { entity_id: currentUser.entityIdScope }
+      : {};
+
+  const rows = await prisma.snapshots.groupBy({
+    by: ["entity_id"],
+    where: {
+      ...entityScope,
+      status: "PUBLISHED",
+      source_hint: { not: "CREDIT_PERIOD" },
+    },
+    _max: { published_at: true },
+  });
+
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (!row._max.published_at) continue;
+    const latest = await prisma.snapshots.findFirst({
+      where: {
+        entity_id: row.entity_id,
+        status: "PUBLISHED",
+        source_hint: { not: "CREDIT_PERIOD" },
+        published_at: row._max.published_at,
+      },
+      select: { id: true },
+    });
+    if (latest) ids.push(latest.id);
+  }
+  return ids;
 }
 
 type DecimalLike = string | number | null | { toString: () => string };
@@ -213,6 +290,13 @@ export async function listInvoices(
   currentUser: AuthenticatedUser,
 ): Promise<InvoiceListResponse> {
   const prisma = getPrisma();
+
+  // Latest PUBLISHED snapshot per visible entity. Computed up-front because
+  // it powers BOTH the "new" filter and the per-row `is_new_in_latest_snapshot`
+  // badge.
+  const latestSnapshotIds = await getLatestPublishedSnapshotIds(currentUser);
+  const latestSnapshotIdSet = new Set(latestSnapshotIds);
+
   const where = {
     ...(currentUser.role === role_enum.ANALYST && currentUser.entityIdScope
       ? { entity_id: currentUser.entityIdScope }
@@ -228,6 +312,44 @@ export async function listInvoices(
     ...(filters.has_active_exceptions === false
       ? { exception_tags: { none: { status: "ACTIVE" } } }
       : {}),
+    ...(filters.lob
+      ? filters.lob === "__none__"
+        ? { lob_id: null }
+        : {
+            lobs: {
+              is: {
+                code: { equals: filters.lob, mode: "insensitive" as const },
+              },
+            },
+          }
+      : {}),
+    ...(filters.change_status === "new"
+      ? latestSnapshotIds.length === 0
+        ? // No published snapshots yet → "new" filter must yield zero rows,
+          // not the whole table. Use an impossible predicate.
+          { id: { in: [] as string[] } }
+        : { first_seen_snapshot_id: { in: latestSnapshotIds } }
+      : {}),
+    ...(filters.change_status === "closed"
+      ? latestSnapshotIds.length === 0
+        ? { id: { in: [] as string[] } }
+        : {
+            settled_snapshot_id: { in: latestSnapshotIds },
+            status: "SETTLED",
+          }
+      : {}),
+    ...(filters.change_status === "changed"
+      ? latestSnapshotIds.length === 0
+        ? { id: { in: [] as string[] } }
+        : {
+            invoice_changes: {
+              some: {
+                snapshot_id: { in: latestSnapshotIds },
+                acknowledged_at: null,
+              },
+            },
+          }
+      : {}),
   };
 
   const [total, invoices] = await Promise.all([
@@ -240,6 +362,7 @@ export async function listInvoices(
       include: {
         parties_canonical: { select: { name: true } },
         entities: { select: { code: true } },
+        lobs: { select: { code: true, name: true } },
         invoice_snapshots: {
           orderBy: { as_of_date: "desc" },
           take: 1,
@@ -267,6 +390,25 @@ export async function listInvoices(
     exceptionCounts.map((row) => [row.invoice_id, row._count.invoice_id]),
   );
 
+  // PR 3 / Gap 3 — count unacknowledged invoice_changes per invoice that
+  // were detected in any of the latest snapshots. Powers the "Changed"
+  // chip and the side-panel summary.
+  const changeCounts =
+    invoiceIds.length && latestSnapshotIds.length
+      ? await prisma.invoice_changes.groupBy({
+          by: ["invoice_id"],
+          where: {
+            invoice_id: { in: invoiceIds },
+            snapshot_id: { in: latestSnapshotIds },
+            acknowledged_at: null,
+          },
+          _count: { invoice_id: true },
+        })
+      : [];
+  const changeCountByInvoice = new Map<string, number>(
+    changeCounts.map((row) => [row.invoice_id, row._count.invoice_id]),
+  );
+
   const items = invoices
     .map<InvoiceListRow>((invoice) => {
       const latestSnapshot = invoice.invoice_snapshots.at(0);
@@ -286,6 +428,17 @@ export async function listInvoices(
         overdue_days: latestSnapshot?.overdue_days ?? null,
         bucket: latestSnapshot?.bucket ?? null,
         active_exception_count: exceptionCountByInvoice.get(invoice.id) ?? 0,
+        is_new_in_latest_snapshot: latestSnapshotIdSet.has(
+          invoice.first_seen_snapshot_id,
+        ),
+        is_closed_in_latest_snapshot:
+          invoice.settled_snapshot_id != null &&
+          latestSnapshotIdSet.has(invoice.settled_snapshot_id),
+        unack_change_count_in_latest_snapshot:
+          changeCountByInvoice.get(invoice.id) ?? 0,
+        lob_id: invoice.lob_id,
+        lob_code: invoice.lobs?.code ?? null,
+        lob_name: invoice.lobs?.name ?? null,
       };
     })
     .filter((invoice) =>

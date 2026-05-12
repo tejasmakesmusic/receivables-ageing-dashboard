@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SidePanel } from "@/components/ui/side-panel";
 import type { Surface, SavedViewVisibility } from "@/server/views/user-views";
 
-type UserRole = "ANALYST" | "CFO" | "ADMIN" | "PENDING";
+type UserRole = "ANALYST" | "CFO" | "ADMIN" | "PENDING" | "REVIEWER";
 type SearchParamsReader = {
   forEach(callbackfn: (value: string, key: string) => void): void;
 };

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, CalendarCheck } from "lucide-react";
+import { ArrowRight, CalendarCheck, ListChecks } from "lucide-react";
 import { PtpCalendar } from "@/app/promises-to-pay/_components/ptp-calendar";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
@@ -262,6 +262,7 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
     "/promises-to-pay",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   assertNotPending(user);
@@ -387,26 +388,24 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
             ))}
           </SavedViewTabs>
 
-          <nav
-            aria-label="Promise view"
-            className="inline-flex w-fit items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
-          >
-            {VIEW_TABS.map((tab) => (
-              <Link
-                aria-current={activeTab === tab.value ? "page" : undefined}
-                className={[
-                  "inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-sm transition-colors",
-                  activeTab === tab.value
-                    ? "bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
-                    : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
-                ].join(" ")}
-                href={tabHref(tab.value, params)}
-                key={tab.value}
-              >
-                {tab.label}
-              </Link>
-            ))}
-          </nav>
+          <SavedViewTabs>
+            {VIEW_TABS.map((tab) => {
+              const Icon =
+                tab.value === "calendar" ? CalendarCheck : ListChecks;
+              return (
+                <SavedViewLink
+                  active={activeTab === tab.value}
+                  href={tabHref(tab.value, params)}
+                  key={tab.value}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                  </span>
+                </SavedViewLink>
+              );
+            })}
+          </SavedViewTabs>
 
           {activeTab === "calendar" ? (
             <PtpCalendar

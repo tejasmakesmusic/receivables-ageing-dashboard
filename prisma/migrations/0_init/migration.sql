@@ -1,0 +1,2 @@
+-- Baseline: existing schema was created via prisma db push before migrations were introduced.
+-- This migration intentionally left empty.

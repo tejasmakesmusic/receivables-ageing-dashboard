@@ -28,7 +28,7 @@
     "@prisma/adapter-neon": "^7.0.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.0.0",
-    "@sentry/nextjs": "^8",
+    "@sentry/nextjs": "^8.55.2",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
     "fuse.js": "^7.0.1",
@@ -45,12 +45,12 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.0.0",
     "@storybook/addon-a11y": "^8.0.0",
     "@storybook/addon-essentials": "^8.0.0",
     "@storybook/addon-interactions": "^8.0.0",
     "@storybook/nextjs": "^8.0.0",
     "@storybook/react": "^8.0.0",
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -62,9 +62,9 @@
     "postcss": "^8.5.3",
     "prettier": "^3.5.0",
     "prisma": "^7.0.0",
+    "storybook": "^8.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.8.3",
-    "vitest": "^4.1.5",
-    "storybook": "^8.0.0"
+    "vitest": "^4.1.5"
   }
 }

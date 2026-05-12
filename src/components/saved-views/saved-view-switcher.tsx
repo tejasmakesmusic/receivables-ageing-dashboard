@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { SavedView, Surface } from "@/server/views/user-views";
 import { SavedViewComposer } from "@/components/saved-views/saved-view-composer";
 
-type UserRole = "ANALYST" | "CFO" | "ADMIN" | "PENDING";
+type UserRole = "ANALYST" | "CFO" | "ADMIN" | "PENDING" | "REVIEWER";
 type ClientSavedView = Omit<SavedView, "created_at" | "updated_at"> & {
   created_at: string;
   updated_at: string;

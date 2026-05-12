@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Building2, Upload } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import { RowActionLink } from "@/components/ui/row-actions";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
@@ -17,7 +18,7 @@ import {
   collection_task_status,
   role_enum,
 } from "@/generated/prisma/enums";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { getPrisma } from "@/lib/prisma";
 import {
   listAccounts,
@@ -206,7 +207,7 @@ function partyColumns(): DataTableColumn<PartyRegisterRow>[] {
       align: "right",
       cell: (account) => (
         <span className="font-medium tabular-nums">
-          {formatCurrency(account.total_outstanding, account.currency_display)}
+          {formatCurrencyCompact(account.total_outstanding, account.currency_display)}
         </span>
       ),
       header: "Total Open Exposure",
@@ -216,7 +217,7 @@ function partyColumns(): DataTableColumn<PartyRegisterRow>[] {
       align: "right",
       cell: (account) => (
         <span className="tabular-nums">
-          {formatCurrency(
+          {formatCurrencyCompact(
             account.ninety_plus_exposure,
             account.currency_display,
           )}
@@ -251,6 +252,18 @@ function partyColumns(): DataTableColumn<PartyRegisterRow>[] {
       header: "Status",
       key: "status",
     },
+    {
+      align: "right",
+      cell: (account) => (
+        <RowActionLink
+          href={`/party/${account.canonical_id}`}
+          label={`Open party ${account.canonical_name}`}
+        />
+      ),
+      header: "Action",
+      key: "action",
+      width: "w-16",
+    },
   ];
 }
 
@@ -259,6 +272,7 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
     "/parties",
     role_enum.ANALYST,
     role_enum.CFO,
+    role_enum.REVIEWER,
     role_enum.ADMIN,
   );
   const params = await searchParams;
@@ -455,6 +469,10 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
               isFiltered={isFiltered}
               minWidthClass="min-w-[1060px]"
               rowHref={(account) => previewHref(account.canonical_id, activeView)}
+              rowCreateHref={(account) =>
+                `/follow-ups?canonical_id=${account.canonical_id}`
+              }
+              rowEditHref={(account) => `/party/${account.canonical_id}`}
               rowKey={(account) => account.canonical_id}
               rows={visibleAccounts}
               selectedRowKey={selectedAccount?.canonical_id ?? null}

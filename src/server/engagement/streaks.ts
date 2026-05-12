@@ -409,8 +409,13 @@ export async function listFreezes(
 ) {
   assertNotPending(currentUser);
 
-  if (currentUser.role === role_enum.CFO) {
-    throw new ForbiddenError("CFO users cannot list engagement freezes");
+  if (
+    currentUser.role === role_enum.CFO ||
+    currentUser.role === role_enum.REVIEWER
+  ) {
+    throw new ForbiddenError(
+      `${currentUser.role} users cannot list engagement freezes`,
+    );
   }
 
   if (

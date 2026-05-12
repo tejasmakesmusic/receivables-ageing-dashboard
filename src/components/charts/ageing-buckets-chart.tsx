@@ -9,11 +9,11 @@ type BucketDatum = {
 };
 
 const BUCKET_COLORS: Record<string, string> = {
-  "Not Due": "#0ea5e9",
-  "0-30": "#22c55e",
-  "31-60": "#f59e0b",
-  "61-90": "#f97316",
-  "90+": "#ef4444",
+  "Not Due": "var(--color-accent)",
+  "0-30": "var(--color-success)",
+  "31-60": "var(--color-warning)",
+  "61-90": "var(--color-warning)",
+  "90+": "var(--color-danger)",
 };
 
 type Props = {
@@ -37,7 +37,7 @@ export function AgeingBucketsChart({ buckets }: Props) {
             {buckets.map((bucket) => (
               <Cell
                 key={bucket.bucket}
-                fill={BUCKET_COLORS[bucket.label] ?? "#64748b"}
+                fill={BUCKET_COLORS[bucket.label] ?? "var(--color-text-subtle)"}
               />
             ))}
           </Pie>
