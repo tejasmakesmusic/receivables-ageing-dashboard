@@ -231,6 +231,13 @@ export interface StagingInvoiceRow {
     credit_days_source: "CONFIG" | "DEFAULT" | "MANUAL" | null;
     dismissed: boolean;
   };
+  /**
+   * PR C — canonical party name resolved by an analyst override.
+   * Populated only when analyst_overrides.resolved_canonical_id is set;
+   * lets the UI show "→ Canonical Name" on RESOLVED rows so analysts
+   * can see what they mapped the raw party name to.
+   */
+  resolved_canonical_name: string | null;
   xero_metadata: Record<string, unknown> | null;
   raw_row_json: Record<string, unknown>;
 }
@@ -1048,7 +1055,22 @@ async function buildStagingRows(
     snapshot.warnings_acknowledged_json,
   );
   const warningCodes = parseResult.warnings.map((warning) => warning.code);
-  const parties = await loadAliasCorpus(snapshot.entity_id);
+  // PR C — fetch the alias corpus + entity gate metadata in parallel. Each
+  // is a remote-Neon round trip (~100-300ms) and they're independent;
+  // running them concurrently shaves ~150ms off the SSR for every staging
+  // page hit.
+  const [parties, entityForGate] = await Promise.all([
+    loadAliasCorpus(snapshot.entity_id),
+    getPrisma().entities.findUnique({
+      where: { id: snapshot.entity_id },
+      select: { require_review_before_publish: true },
+    }),
+  ]);
+  // PR C — map canonical-id → name so we can attach the resolved party
+  // name to rows that were override-resolved. Cheap (in-memory).
+  const partyById = new Map(
+    parties.map((p) => [p.canonicalId, p.canonicalName]),
+  );
 
   const invoiceRows: StagingInvoiceRow[] = parseResult.invoices.map((row) => {
     const override = effectiveOverride(overrides, row.row_index);
@@ -1076,6 +1098,9 @@ async function buildStagingRows(
       parse_error_reason: row.parse_error_reason,
       alias_resolution: aliasResolution,
       analyst_overrides: override,
+      resolved_canonical_name: override.resolved_canonical_id
+        ? (partyById.get(override.resolved_canonical_id) ?? null)
+        : null,
       xero_metadata: row.xero_metadata
         ? (row.xero_metadata as unknown as Record<string, unknown>)
         : null,
@@ -1113,11 +1138,7 @@ async function buildStagingRows(
     parse_warnings: parseResult.warnings.length,
     parse_errors_file_level: parseResult.errors.length,
   };
-  // PR 10 — fetch the entity's require_review flag for the publish gate.
-  const entityForGate = await getPrisma().entities.findUnique({
-    where: { id: snapshot.entity_id },
-    select: { require_review_before_publish: true },
-  });
+  // PR 10 — entityForGate is loaded above in parallel with parties.
   const gate = gateFromRows({
     sourceHint: snapshot.source_hint as SourceHint,
     rows,
@@ -1261,7 +1282,6 @@ export async function patchStagingRow(
     targetEntityId = targetEntity.id;
   }
 
-  const overrides = normalizeOverrides(snapshot.staging_overrides_json);
   const now = new Date().toISOString();
   const override: StagingOverride = {
     row_index: rowIndex,
@@ -1271,6 +1291,24 @@ export async function patchStagingRow(
   };
 
   await getPrisma().$transaction(async (tx) => {
+    // PR C — fix the read-modify-write race that PR B's bulk dismiss
+    // exposed. The original implementation read staging_overrides_json
+    // BEFORE the transaction, then wrote `[...preTxOverrides, override]`
+    // back inside. Two concurrent callers both saw the same pre-tx state,
+    // each appended its own override, and the last update silently
+    // overwrote the other. Now we acquire a row-level lock on the
+    // snapshot first and re-read inside the transaction so appends
+    // serialise correctly.
+    const lockedRows = await tx.$queryRawUnsafe<
+      { staging_overrides_json: unknown }[]
+    >(
+      `SELECT staging_overrides_json FROM snapshots WHERE id = $1::uuid FOR UPDATE`,
+      snapshot.id,
+    );
+    const latestOverrides = normalizeOverrides(
+      lockedRows[0]?.staging_overrides_json,
+    );
+
     if (body.action === "resolve_alias") {
       const canonical = await tx.parties_canonical.findUnique({
         where: { id: body.canonical_id },
@@ -1350,7 +1388,7 @@ export async function patchStagingRow(
       where: { id: snapshot.id },
       data: {
         staging_overrides_json: [
-          ...overrides,
+          ...latestOverrides,
           override,
         ] as Prisma.InputJsonValue,
         updated_at: new Date(),

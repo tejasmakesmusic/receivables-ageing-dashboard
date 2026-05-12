@@ -21,7 +21,11 @@ import {
   compareColumnMappings,
   getSavedColumnMapping,
 } from "@/server/column-mappings/service";
-import type { ColumnMappingResult } from "@/server/parsers/common";
+import type {
+  ColumnMappingResult,
+  SourceHint,
+} from "@/server/parsers/common";
+import { getPrisma } from "@/lib/prisma";
 
 type PageProps = {
   params: Promise<{ snapshotId: string }>;
@@ -48,16 +52,30 @@ export default async function SnapshotStagingPage({
     limit: first(raw.limit),
     filter: first(raw.filter),
   });
-  const staging = await getStagingView(snapshotId, query, currentUser);
+  // PR C — kick the saved-mapping fetch in parallel with the heavy
+  // getStagingView call. A tiny meta query (~50ms over Neon) gives us
+  // the entity_id + source_hint we need without waiting for the full
+  // staging view. Net savings: ~200-400ms of mapping-fetch latency
+  // overlaps with the 4-6s staging build.
+  const metaPromise = getPrisma().snapshots.findUnique({
+    where: { id: snapshotId },
+    select: { entity_id: true, source_hint: true },
+  });
+  const stagingPromise = getStagingView(snapshotId, query, currentUser);
+  const savedRowPromise = metaPromise.then((meta) =>
+    meta
+      ? getSavedColumnMapping(meta.entity_id, meta.source_hint as SourceHint)
+      : null,
+  );
+  const [staging, savedRow] = await Promise.all([
+    stagingPromise,
+    savedRowPromise,
+  ]);
   const currency = staging.entity_code === "IND" ? "INR" : "AED";
 
   // PR 8a — drift vs. saved default surfaces in the Column Mapping panel.
   const detected =
     (staging.column_mapping as ColumnMappingViewModel | null) ?? null;
-  const savedRow = await getSavedColumnMapping(
-    staging.entity_id,
-    staging.source_hint,
-  );
   const savedMapping = savedRow
     ? (savedRow.mapping as ColumnMappingViewModel)
     : null;
