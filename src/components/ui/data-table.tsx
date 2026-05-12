@@ -32,6 +32,12 @@ type StateActionConfig = {
   title: string;
   description: string;
   action?: ReactNode;
+  /**
+   * PR C+ — optional decorative icon shown in a soft accent circle above
+   * the empty-state title. Plain text empty states feel terse on a wide
+   * table; a small visual marker makes the surface feel intentional.
+   */
+  icon?: ReactNode;
 };
 
 export type DataTableProps<Row> = {
@@ -114,15 +120,23 @@ function StateBlock({
 }) {
   return (
     <tr>
-      <td className="px-4 py-12" colSpan={colSpan}>
-        <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-center">
-          <h3 className="text-sm font-semibold text-[var(--color-text)]">
+      <td className="px-4 py-16" colSpan={colSpan}>
+        <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
+          {config.icon ? (
+            <div
+              aria-hidden="true"
+              className="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+            >
+              {config.icon}
+            </div>
+          ) : null}
+          <h3 className="text-base font-semibold text-[var(--color-text)]">
             {config.title}
           </h3>
-          <p className="text-sm text-[var(--color-text-muted)]">
+          <p className="max-w-sm text-sm text-[var(--color-text-muted)]">
             {config.description}
           </p>
-          {config.action ? <div className="mt-2">{config.action}</div> : null}
+          {config.action ? <div className="mt-1">{config.action}</div> : null}
         </div>
       </td>
     </tr>

@@ -213,6 +213,12 @@ export function Sidebar() {
   const pathname = usePathname();
   // Initialize with server-safe defaults — localStorage is hydrated in useEffect
   // so SSR and the first client render always agree (no hydration mismatch).
+  // PR C+ — hide the per-row reorder/pin controls behind an explicit
+  // edit mode. They were always in the DOM (just opacity:0 until hover)
+  // which polluted the accessibility tree with 3× the nav-item count in
+  // "Move X up / Move X down / Pin X" buttons. Default off → clean
+  // sidebar, clean a11y. Toggle in the sidebar header for power users.
+  const [editMode, setEditMode] = useState(false);
   const [orderedHrefs, setOrderedHrefs] = useState<string[]>(() =>
     NAV_ITEMS.map((item) => item.href),
   );
@@ -377,41 +383,48 @@ export function Sidebar() {
               className="group my-1 flex h-10 items-center gap-2 rounded-[var(--radius-md)] transition-colors duration-150"
               key={href}
             >
-              <div className="ml-1 flex h-full items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                <button
-                  aria-label={`Move ${label} up`}
-                  className="grid h-6 w-6 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
-                  disabled={!canMoveUp}
-                  onClick={() => reorderNavItem(href, -1)}
-                  type="button"
-                >
-                  <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-                <button
-                  aria-label={`Move ${label} down`}
-                  className="grid h-6 w-6 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
-                  disabled={!canMoveDown}
-                  onClick={() => reorderNavItem(href, 1)}
-                  type="button"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              </div>
-              <button
-                aria-label={isFavorite ? `Unpin ${label}` : `Pin ${label}`}
-                className="grid h-6 w-6 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
-                onClick={() => toggleFavorite(href)}
-                type="button"
-              >
-                {isFavorite ? (
-                  <Star
-                    className="h-3.5 w-3.5 fill-[var(--color-accent)] text-[var(--color-accent)]"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <StarOff className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
-              </button>
+              {editMode ? (
+                <>
+                  <div className="ml-1 flex h-full items-center gap-1">
+                    <button
+                      aria-label={`Move ${label} up`}
+                      className="grid h-6 w-6 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                      disabled={!canMoveUp}
+                      onClick={() => reorderNavItem(href, -1)}
+                      type="button"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      aria-label={`Move ${label} down`}
+                      className="grid h-6 w-6 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-35"
+                      disabled={!canMoveDown}
+                      onClick={() => reorderNavItem(href, 1)}
+                      type="button"
+                    >
+                      <ChevronDown
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </div>
+                  <button
+                    aria-label={isFavorite ? `Unpin ${label}` : `Pin ${label}`}
+                    className="grid h-6 w-6 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
+                    onClick={() => toggleFavorite(href)}
+                    type="button"
+                  >
+                    {isFavorite ? (
+                      <Star
+                        className="h-3.5 w-3.5 fill-[var(--color-accent)] text-[var(--color-accent)]"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <StarOff className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                  </button>
+                </>
+              ) : null}
               <Link
                 aria-current={active ? "page" : undefined}
                 className={[
@@ -461,9 +474,26 @@ export function Sidebar() {
             value={searchQuery}
           />
         </div>
-        <div className="px-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
-          <Globe2 className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
-          Navigation
+        <div className="flex items-center justify-between px-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
+            <Globe2 className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+            Navigation
+          </span>
+          <button
+            aria-label={
+              editMode ? "Finish reordering navigation" : "Reorder navigation"
+            }
+            className={[
+              "rounded-[var(--radius-sm)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors",
+              editMode
+                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                : "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
+            ].join(" ")}
+            onClick={() => setEditMode((v) => !v)}
+            type="button"
+          >
+            {editMode ? "Done" : "Edit"}
+          </button>
         </div>
       </div>
 

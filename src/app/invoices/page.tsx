@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Filter, LayoutList, Rows3, Settings, Upload } from "lucide-react";
+import { ArrowRight, FileText, Filter, LayoutList, Rows3, Settings, Upload } from "lucide-react";
 import { SavedViewSwitcher } from "@/components/saved-views/saved-view-switcher";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
@@ -674,22 +674,25 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               <DataTable<InvoiceListRow>
                 columns={invoiceColumns()}
                 emptyState={{
+                  icon: <FileText className="h-6 w-6" />,
                   title: "No invoices yet",
                   description:
-                    "Invoices appear here after a workbook is staged, parsed, reviewed, and published.",
+                    "Upload a Tally or Xero workbook, walk it through staging, and publish — invoices land here after publish.",
                   action: (
                     <Link
-                      className="text-sm font-medium text-[var(--color-accent)]"
-                      href="/snapshots"
+                      className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-strong)]"
+                      href="/upload"
                     >
-                      Upload snapshot
+                      <Upload className="h-4 w-4" />
+                      Upload your first workbook
                     </Link>
                   ),
                 }}
                 filteredEmptyState={{
-                  title: "No invoices match these filters",
+                  icon: <Filter className="h-6 w-6" />,
+                  title: "Nothing matches these filters",
                   description:
-                    "Try clearing filters or switching to another saved view.",
+                    "Try clearing filters or switching to another saved view to see invoices across the rest of the ledger.",
                   action: (
                     <Link
                       className="text-sm font-medium text-[var(--color-accent)]"

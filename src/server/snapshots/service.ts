@@ -29,6 +29,10 @@ import {
 import { generateSuggestedTasks } from "@/server/collection-tasks/suggest";
 import { autoResolveCascadeOnSettle } from "@/server/snapshots/auto-resolve";
 import { diffInvoice } from "@/server/snapshots/invoice-diff";
+import {
+  invalidateAliasCorpus,
+  loadCachedAliasCorpus,
+} from "@/server/matching/alias-corpus-cache";
 import { compareColumnMappings } from "@/server/column-mappings/service";
 import { storeUploadedWorkbook } from "@/server/storage/workbooks";
 import { addDaysUtc, calculateAgeing } from "@/server/ageing/buckets";
@@ -686,28 +690,12 @@ function effectiveOverride(
   return state;
 }
 
+// PR C+ — staging hits this every page load. Delegate to the cached
+// loader so warm hits skip the ~500ms Neon round-trip. Mutations in
+// patchStagingRow (create_canonical, resolve_alias with create_alias)
+// call invalidateAliasCorpus(entityId) so the cache stays correct.
 async function loadAliasCorpus(entityId: string): Promise<CanonicalParty[]> {
-  const parties = await getPrisma().parties_canonical.findMany({
-    where: { entity_id: entityId },
-    select: {
-      id: true,
-      name: true,
-      gstin: true,
-      xero_contact_id: true,
-      party_aliases: {
-        select: { alias_text: true },
-      },
-    },
-    orderBy: { name: "asc" },
-  });
-
-  return parties.map((party) => ({
-    canonicalId: party.id,
-    canonicalName: party.name,
-    aliases: party.party_aliases.map((alias) => alias.alias_text),
-    gstin: party.gstin,
-    xeroContactId: party.xero_contact_id,
-  }));
+  return loadCachedAliasCorpus(entityId);
 }
 
 function gateFromRows(params: {
@@ -1439,6 +1427,17 @@ export async function patchStagingRow(
       },
     });
   });
+
+  // PR C+ — drop the cached alias corpus for this entity if the
+  // mutation added a party or an alias. The next staging read will
+  // refetch and recache. Skipping invalidation on dismiss/override
+  // paths keeps warm hits warm.
+  if (
+    body.action === "create_canonical" ||
+    (body.action === "resolve_alias" && body.create_alias)
+  ) {
+    invalidateAliasCorpus(targetEntityId);
+  }
 
   const refreshed = await assertSnapshotAccess(snapshotId, currentUser);
   const { rows, gate } = await buildStagingRows(refreshed, currentUser);
