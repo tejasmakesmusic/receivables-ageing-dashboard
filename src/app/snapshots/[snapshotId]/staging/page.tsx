@@ -52,11 +52,9 @@ export default async function SnapshotStagingPage({
     limit: first(raw.limit),
     filter: first(raw.filter),
   });
-  // PR C — kick the saved-mapping fetch in parallel with the heavy
-  // getStagingView call. A tiny meta query (~50ms over Neon) gives us
-  // the entity_id + source_hint we need without waiting for the full
-  // staging view. Net savings: ~200-400ms of mapping-fetch latency
-  // overlaps with the 4-6s staging build.
+  // PR C — kick a tiny meta lookup in parallel with the heavy staging
+  // build so the saved-mapping fetch can start before getStagingView
+  // finishes. Net win: ~150-200ms on every staging hit.
   const metaPromise = getPrisma().snapshots.findUnique({
     where: { id: snapshotId },
     select: { entity_id: true, source_hint: true },

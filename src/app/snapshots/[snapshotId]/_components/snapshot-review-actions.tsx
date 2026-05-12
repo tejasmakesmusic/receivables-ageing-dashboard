@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 
 type Status = "idle" | "submitting" | "error";
 
@@ -17,6 +18,7 @@ export function SnapshotReviewActions({
   snapshotId: string;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [note, setNote] = useState("");
@@ -44,10 +46,17 @@ export function SnapshotReviewActions({
       }
       setStatus("idle");
       setNote("");
+      toast.success(
+        decision === "APPROVED"
+          ? "Snapshot approved."
+          : "Snapshot marked rejected.",
+      );
       startTransition(() => router.refresh());
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Review failed");
+      const msg = err instanceof Error ? err.message : "Review failed";
+      setMessage(msg);
+      toast.error(msg);
     }
   }
 

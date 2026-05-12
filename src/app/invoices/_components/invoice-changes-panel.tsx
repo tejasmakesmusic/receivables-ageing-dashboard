@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { CheckCircle2, GitCompare, History } from "lucide-react";
 import { formatDate } from "@/lib/format";
+import { useToast } from "@/components/ui/toast";
 
 const FIELD_LABEL: Record<string, string> = {
   amount: "Amount",
@@ -46,6 +47,7 @@ export function InvoiceChangesPanel({
   initialChanges: InvoiceChangeItem[];
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [changes, setChanges] = useState(initialChanges);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -82,10 +84,15 @@ export function InvoiceChangesPanel({
           ids.includes(c.id) ? { ...c, acknowledged_at: ackedAt } : c,
         ),
       );
+      toast.success(
+        `Acknowledged ${ids.length} change${ids.length === 1 ? "" : "s"}.`,
+      );
       // Refresh server data so the Changed pill / count updates everywhere.
       startTransition(() => router.refresh());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Acknowledge failed");
+      const msg = err instanceof Error ? err.message : "Acknowledge failed";
+      setError(msg);
+      toast.error(msg);
     }
   }
 

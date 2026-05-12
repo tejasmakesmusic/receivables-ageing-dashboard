@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, History, ScanLine } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 
 type Confidence = "EXACT" | "HEURISTIC" | "MISSING";
 
@@ -43,6 +44,7 @@ export function ColumnMappingPanel({
   drift: string[];
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "saving" | "error" | "saved">(
     "idle",
@@ -89,10 +91,13 @@ export function ColumnMappingPanel({
       }
       setStatus("saved");
       setMessage("Saved as default for next upload.");
+      toast.success("Column mapping saved as default for next upload.");
       startTransition(() => router.refresh());
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Save failed");
+      const msg = err instanceof Error ? err.message : "Save failed";
+      setMessage(msg);
+      toast.error(msg);
     }
   }
 

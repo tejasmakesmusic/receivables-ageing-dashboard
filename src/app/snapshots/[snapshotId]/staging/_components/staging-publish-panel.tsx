@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { StatusTag } from "@/components/ui/status-tag";
+import { useToast } from "@/components/ui/toast";
 import type { PublishGate } from "@/server/snapshots/service";
 
 // PR B — drop the previous useState(publishGate) local copy. It diverged from
@@ -51,6 +52,7 @@ export function StagingPublishPanel({
   parseErrorRowIndices?: number[];
 }) {
   const router = useRouter();
+  const toast = useToast();
   // Single source of truth: the server-rendered prop. Local copy used to
   // diverge after router.refresh() and stranded the publish button as
   // disabled even when the gate had cleared. See note at top of file.
@@ -90,12 +92,16 @@ export function StagingPublishPanel({
       // router.refresh() reseeds the prop with the fresh gate.
       (await response.json()) as WarningsAckResponse;
       setState("idle");
+      toast.success(
+        `Acknowledged ${warningCodes.length} warning${warningCodes.length === 1 ? "" : "s"}.`,
+      );
       router.refresh();
     } catch (error) {
       setState("error");
-      setMessage(
-        error instanceof Error ? error.message : "Could not acknowledge warnings",
-      );
+      const msg =
+        error instanceof Error ? error.message : "Could not acknowledge warnings";
+      setMessage(msg);
+      toast.error(msg);
     }
   }
 
@@ -125,14 +131,18 @@ export function StagingPublishPanel({
         done += 1;
       }
       setState("idle");
+      toast.success(
+        `Dismissed ${done} parse-error row${done === 1 ? "" : "s"}.`,
+      );
       router.refresh();
     } catch (error) {
       setState("error");
-      setMessage(
+      const msg =
         error instanceof Error
           ? `${error.message} (after ${done}/${parseErrorRowIndices.length} dismissed)`
-          : "Bulk dismiss failed",
-      );
+          : "Bulk dismiss failed";
+      setMessage(msg);
+      toast.error(msg);
     }
   }
 
@@ -144,11 +154,14 @@ export function StagingPublishPanel({
         method: "POST",
       });
       if (!response.ok) throw new Error(await readError(response));
+      toast.success("Snapshot published.");
       router.push(`/snapshots/${snapshotId}`);
       router.refresh();
     } catch (error) {
       setState("error");
-      setMessage(error instanceof Error ? error.message : "Publish failed");
+      const msg = error instanceof Error ? error.message : "Publish failed";
+      setMessage(msg);
+      toast.error(msg);
     }
   }
 

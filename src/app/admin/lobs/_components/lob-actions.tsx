@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { useToast } from "@/components/ui/toast";
 
 type Status = "idle" | "submitting" | "error" | "success";
 
@@ -10,6 +11,7 @@ type Status = "idle" | "submitting" | "error" | "success";
  */
 export function CreateLobForm() {
   const router = useRouter();
+  const toast = useToast();
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -41,11 +43,14 @@ export function CreateLobForm() {
       }
       setStatus("success");
       setMessage("LOB created.");
+      toast.success(`LOB ${body.code} created for ${body.entity_code}.`);
       (event.target as HTMLFormElement).reset();
       startTransition(() => router.refresh());
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Create failed");
+      const msg = err instanceof Error ? err.message : "Create failed";
+      setMessage(msg);
+      toast.error(msg);
     }
   }
 
@@ -132,6 +137,7 @@ export function ToggleLobActiveButton({
   active: boolean;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -153,9 +159,12 @@ export function ToggleLobActiveButton({
           payload?.message ?? `Update failed with ${response.status}`,
         );
       }
+      toast.success(active ? "LOB deactivated." : "LOB reactivated.");
       startTransition(() => router.refresh());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed");
+      const msg = err instanceof Error ? err.message : "Update failed";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setPending(false);
     }
