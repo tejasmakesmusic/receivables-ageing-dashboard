@@ -26,12 +26,13 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   SMTP_FROM_ADDRESS: z.string().email().optional(),
   SMTP_FROM_NAME: z.string().optional(),
-  // Object storage for retained source workbooks.
-  S3_BUCKET: z.string().optional(),
-  S3_REGION: z.string().optional(),
-  S3_ENDPOINT: z.string().url().optional(),
-  S3_ACCESS_KEY_ID: z.string().optional(),
-  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  // Vercel Blob — retained source workbooks (set automatically when Blob store is linked).
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
+  // Cloudflare R2 — pg_dump backup cron (separate from workbook uploads).
+  R2_BUCKET: z.string().optional(),
+  R2_ENDPOINT: z.string().url().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
