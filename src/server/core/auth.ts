@@ -249,7 +249,7 @@ export async function getOrCreateGoogleUser({
   if (byGoogleSub) {
     const updated = await prisma.users.update({
       where: { id: byGoogleSub.id },
-      data: { last_login_at: now },
+      data: { last_login_at: now, email_verified: true },
     });
     return { user: updated as UserRecord, isNew: false };
   }
@@ -262,7 +262,7 @@ export async function getOrCreateGoogleUser({
   if (byEmail) {
     const updated = await prisma.users.update({
       where: { id: byEmail.id },
-      data: { google_sub: googleSub, last_login_at: now },
+      data: { google_sub: googleSub, last_login_at: now, email_verified: true },
     });
     return { user: updated as UserRecord, isNew: false };
   }
@@ -277,6 +277,7 @@ export async function getOrCreateGoogleUser({
       role: role_enum.PENDING,
       is_active: true,
       last_login_at: now,
+      email_verified: true,
     },
   });
 

@@ -10,7 +10,7 @@ export async function requirePageRole(
     return await requireRole(...roles);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
-      redirect(`/auth/google/login?next=${encodeURIComponent(nextPath)}`);
+      redirect(`/auth/login?next=${encodeURIComponent(nextPath)}`);
     }
 
     if (error instanceof ForbiddenError) {

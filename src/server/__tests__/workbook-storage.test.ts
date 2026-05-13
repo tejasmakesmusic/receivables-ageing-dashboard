@@ -4,6 +4,7 @@ import {
   buildWorkbookObjectKey,
   storeUploadedWorkbook,
   WorkbookStorageConfigError,
+  WorkbookStorageUploadError,
 } from "@/server/storage/workbooks";
 
 const fileBytes = new TextEncoder().encode("receivables workbook bytes");
@@ -11,8 +12,8 @@ const fileSha256 =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 describe("workbook storage", () => {
-  it("returns a local development reference when object storage is not configured outside production", async () => {
-    const fetchImpl = vi.fn();
+  it("returns a local development reference when BLOB_READ_WRITE_TOKEN is not configured outside production", async () => {
+    const putImpl = vi.fn();
 
     const result = await storeUploadedWorkbook({
       fileBytes,
@@ -21,11 +22,10 @@ describe("workbook storage", () => {
       snapshotId: "snapshot-123",
       fileSha256,
       env: { NODE_ENV: "development" },
-      fetchImpl,
-      now: new Date("2026-05-06T00:00:00.000Z"),
+      putImpl,
     });
 
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(putImpl).not.toHaveBeenCalled();
     expect(result).toEqual({
       stored: false,
       key: null,
@@ -33,7 +33,7 @@ describe("workbook storage", () => {
     });
   });
 
-  it("throws in production when object storage is incomplete", async () => {
+  it("throws in production when BLOB_READ_WRITE_TOKEN is missing", async () => {
     await expect(
       storeUploadedWorkbook({
         fileBytes,
@@ -41,12 +41,8 @@ describe("workbook storage", () => {
         entityCode: "IND",
         snapshotId: "snapshot-123",
         fileSha256,
-        env: {
-          NODE_ENV: "production",
-          S3_BUCKET: "receivables-workbooks",
-        },
-        fetchImpl: vi.fn(),
-        now: new Date("2026-05-06T00:00:00.000Z"),
+        env: { NODE_ENV: "production" },
+        putImpl: vi.fn(),
       }),
     ).rejects.toBeInstanceOf(WorkbookStorageConfigError);
   });
@@ -64,8 +60,10 @@ describe("workbook storage", () => {
     );
   });
 
-  it("puts configured uploads to S3-compatible object storage and returns the object URI", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+  it("puts configured uploads to Vercel Blob and returns the blob URL", async () => {
+    const blobUrl =
+      "https://abc123.public.blob.vercel-storage.com/workbooks/IND/snapshot-123/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-GrpBills.xlsx";
+    const putImpl = vi.fn(async () => ({ url: blobUrl, downloadUrl: blobUrl, pathname: "", contentType: "", contentDisposition: "" }));
 
     const result = await storeUploadedWorkbook({
       fileBytes,
@@ -75,36 +73,46 @@ describe("workbook storage", () => {
       fileSha256,
       env: {
         NODE_ENV: "production",
-        S3_BUCKET: "receivables-workbooks",
-        S3_REGION: "auto",
-        S3_ENDPOINT: "https://account-id.r2.cloudflarestorage.com",
-        S3_ACCESS_KEY_ID: "access-key",
-        S3_SECRET_ACCESS_KEY: "secret-key",
+        BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_test_token",
       },
-      fetchImpl,
-      now: new Date("2026-05-06T00:00:00.000Z"),
+      putImpl,
     });
+
+    const expectedKey =
+      "workbooks/IND/snapshot-123/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-GrpBills.xlsx";
 
     expect(result).toEqual({
       stored: true,
-      key: "workbooks/IND/snapshot-123/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-GrpBills.xlsx",
-      uri: "s3://receivables-workbooks/workbooks/IND/snapshot-123/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-GrpBills.xlsx",
+      key: expectedKey,
+      uri: blobUrl,
     });
-    expect(fetchImpl).toHaveBeenCalledOnce();
 
-    const [url, init] = fetchImpl.mock.calls[0] as unknown as [
-      string,
-      RequestInit & { headers: Record<string, string> },
-    ];
-    expect(url).toBe(
-      "https://account-id.r2.cloudflarestorage.com/receivables-workbooks/workbooks/IND/snapshot-123/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-GrpBills.xlsx",
-    );
-    expect(init.method).toBe("PUT");
-    expect(init.body).toEqual(Buffer.from(fileBytes));
-    expect(init.headers.authorization).toMatch(/^AWS4-HMAC-SHA256 /);
-    expect(init.headers["x-amz-date"]).toBe("20260506T000000Z");
-    expect(init.headers["x-amz-content-sha256"]).toBe(
-      "e8baa37532df540a491503b849ced48f8bb20f2b438ee7853f817260348ee286",
-    );
+    expect(putImpl).toHaveBeenCalledOnce();
+    expect(putImpl).toHaveBeenCalledWith(expectedKey, fileBytes, {
+      access: "private",
+      token: "vercel_blob_rw_test_token",
+      addRandomSuffix: false,
+    });
+  });
+
+  it("wraps Vercel Blob errors as WorkbookStorageUploadError", async () => {
+    const putImpl = vi.fn(async () => {
+      throw new Error("Blob store unavailable");
+    });
+
+    await expect(
+      storeUploadedWorkbook({
+        fileBytes,
+        fileName: "GrpBills.xlsx",
+        entityCode: "IND",
+        snapshotId: "snapshot-123",
+        fileSha256,
+        env: {
+          NODE_ENV: "production",
+          BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_test_token",
+        },
+        putImpl,
+      }),
+    ).rejects.toBeInstanceOf(WorkbookStorageUploadError);
   });
 });
