@@ -228,3 +228,57 @@ export function asAuthenticatedUserResponse(
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
   };
 }
+
+export async function getOrCreateGoogleUser({
+  googleSub,
+  email,
+  name,
+}: {
+  googleSub: string;
+  email: string;
+  name: string;
+}): Promise<{ user: UserRecord; isNew: boolean }> {
+  const prisma = getPrisma();
+  const now = new Date();
+
+  // 1. Match by google_sub (returning user on any device)
+  const byGoogleSub = await prisma.users.findUnique({
+    where: { google_sub: googleSub },
+  });
+
+  if (byGoogleSub) {
+    await prisma.users.update({
+      where: { id: byGoogleSub.id },
+      data: { last_login_at: now },
+    });
+    return { user: byGoogleSub as UserRecord, isNew: false };
+  }
+
+  // 2. Match by email (handles stub-created accounts or prior signups)
+  const byEmail = await prisma.users.findUnique({
+    where: { email },
+  });
+
+  if (byEmail) {
+    await prisma.users.update({
+      where: { id: byEmail.id },
+      data: { google_sub: googleSub, last_login_at: now },
+    });
+    return { user: byEmail as UserRecord, isNew: false };
+  }
+
+  // 3. Brand new user — create with PENDING role
+  const newUser = await prisma.users.create({
+    data: {
+      id: createId(),
+      email,
+      name,
+      google_sub: googleSub,
+      role: role_enum.PENDING,
+      is_active: true,
+      last_login_at: now,
+    },
+  });
+
+  return { user: newUser as UserRecord, isNew: true };
+}
