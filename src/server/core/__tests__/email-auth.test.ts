@@ -33,6 +33,7 @@ import {
   createEmailPasswordUser,
   verifyEmailPassword,
   verifyEmailToken,
+  resendVerificationEmail,
 } from "@/server/core/email-auth";
 
 describe("generateVerificationToken", () => {
@@ -210,5 +211,69 @@ describe("verifyEmailToken", () => {
       email_verification_token: "expired",
     });
     expect(await verifyEmailToken("expired")).toBeNull();
+  });
+});
+
+describe("resendVerificationEmail", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns false and does nothing when user not found", async () => {
+    mockFindUnique.mockResolvedValue(null);
+    const result = await resendVerificationEmail("nobody@example.com");
+    expect(result).toBe(false);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns false and does nothing when email already verified", async () => {
+    mockFindUnique.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      name: "Alice",
+      email_verified: true,
+      password_hash: "some-hash",
+    });
+    const result = await resendVerificationEmail("a@b.com");
+    expect(result).toBe(false);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns false and does nothing for Google-only account (no password_hash)", async () => {
+    mockFindUnique.mockResolvedValue({
+      id: "u1",
+      email: "google@b.com",
+      name: "Google User",
+      email_verified: false,
+      password_hash: null,
+    });
+    const result = await resendVerificationEmail("google@b.com");
+    expect(result).toBe(false);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("generates new token, updates user, sends email, returns true for unverified user", async () => {
+    mockFindUnique.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      name: "Alice",
+      email_verified: false,
+      password_hash: "some-hash",
+    });
+    mockUpdate.mockResolvedValue({ id: "u1" });
+    mockSendEmail.mockResolvedValue({ id: "e1", skipped: false });
+
+    const result = await resendVerificationEmail("a@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "u1" },
+      data: expect.objectContaining({
+        email_verification_token: expect.any(String),
+        email_verification_expires_at: expect.any(Date),
+      }),
+    }));
+    expect(mockSendEmail).toHaveBeenCalledOnce();
+    const emailArgs = mockSendEmail.mock.calls[0][0];
+    expect(emailArgs.to).toContain("a@b.com");
+    expect(emailArgs.subject).toContain("Verify");
   });
 });
