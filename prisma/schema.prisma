@@ -419,7 +419,7 @@ model users {
   created_at                                       DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at                                       DateTime                 @default(now()) @db.Timestamptz(6)
   last_login_at                                    DateTime?                @db.Timestamptz(6)
-  password_hash                                    String?
+  password_hash                                    String?                  @db.Text
   email_verified                                   Boolean                  @default(false)
   email_verification_token                         String?                  @unique(map: "uq_users_email_verification_token") @db.VarChar(64)
   email_verification_expires_at                    DateTime?                @db.Timestamptz(6)
