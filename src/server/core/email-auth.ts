@@ -61,7 +61,14 @@ export async function createEmailPasswordUser({
     },
   });
 
-  await sendVerificationEmail({ to: email, name, token: email_verification_token });
+  try {
+    await sendVerificationEmail({ to: email, name, token: email_verification_token });
+  } catch (err) {
+    console.error("[email-auth] createEmailPasswordUser: email send failed", {
+      userId: user.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   return { user: user as unknown as EmailUserRecord };
 }
@@ -140,8 +147,24 @@ export async function resendVerificationEmail(email: string): Promise<boolean> {
     data: { email_verification_token, email_verification_expires_at },
   });
 
-  await sendVerificationEmail({ to: email, name: user.name, token: email_verification_token });
+  try {
+    await sendVerificationEmail({ to: email, name: user.name, token: email_verification_token });
+  } catch (err) {
+    console.error("[email-auth] resendVerificationEmail: email send failed, token was updated", {
+      userId: user.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   return true;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 async function sendVerificationEmail({
@@ -161,7 +184,7 @@ async function sendVerificationEmail({
     to: [to],
     subject: "Verify your email — EMB Receivables",
     html: `
-      <p>Hi ${name},</p>
+      <p>Hi ${escapeHtml(name)},</p>
       <p>Click the link below to verify your email address and activate your account:</p>
       <p><a href="${link}">Verify my email</a></p>
       <p>This link expires in 24 hours.</p>
