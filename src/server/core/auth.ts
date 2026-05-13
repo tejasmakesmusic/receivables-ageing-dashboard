@@ -247,11 +247,11 @@ export async function getOrCreateGoogleUser({
   });
 
   if (byGoogleSub) {
-    await prisma.users.update({
+    const updated = await prisma.users.update({
       where: { id: byGoogleSub.id },
       data: { last_login_at: now },
     });
-    return { user: byGoogleSub as UserRecord, isNew: false };
+    return { user: updated as UserRecord, isNew: false };
   }
 
   // 2. Match by email (handles stub-created accounts or prior signups)
@@ -260,11 +260,11 @@ export async function getOrCreateGoogleUser({
   });
 
   if (byEmail) {
-    await prisma.users.update({
+    const updated = await prisma.users.update({
       where: { id: byEmail.id },
       data: { google_sub: googleSub, last_login_at: now },
     });
-    return { user: byEmail as UserRecord, isNew: false };
+    return { user: updated as UserRecord, isNew: false };
   }
 
   // 3. Brand new user — create with PENDING role
