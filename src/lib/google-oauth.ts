@@ -40,7 +40,11 @@ export function parseStateToken(state: string): StateToken | null {
     ) {
       return null;
     }
-    return parsed as StateToken;
+    const token = parsed as StateToken;
+    if (!token.next.startsWith("/") || token.next.startsWith("//")) {
+      token.next = "/dashboard";
+    }
+    return token;
   } catch {
     return null;
   }

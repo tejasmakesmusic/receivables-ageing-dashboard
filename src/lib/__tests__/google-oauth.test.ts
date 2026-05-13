@@ -68,6 +68,14 @@ describe("parseStateToken", () => {
     const bad = Buffer.from(JSON.stringify({ nonce: "abc" })).toString("base64url");
     expect(parseStateToken(bad)).toBeNull();
   });
+
+  it("sanitises an external next URL to /dashboard", () => {
+    const bad = Buffer.from(
+      JSON.stringify({ nonce: "abc", next: "https://evil.com" })
+    ).toString("base64url");
+    const result = parseStateToken(bad);
+    expect(result?.next).toBe("/dashboard");
+  });
 });
 
 describe("generateAuthUrl", () => {
