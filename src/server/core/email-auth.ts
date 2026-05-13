@@ -105,22 +105,24 @@ export async function verifyEmailToken(
   token: string,
 ): Promise<EmailUserRecord | null> {
   const prisma = getPrisma();
+  const now = new Date();
 
-  const user = await prisma.users.findUnique({
-    where: { email_verification_token: token },
+  // Find user by token (also checks expiry)
+  const user = await prisma.users.findFirst({
+    where: {
+      email_verification_token: token,
+      email_verification_expires_at: { gt: now },
+    },
   });
 
   if (!user) return null;
 
-  if (
-    !user.email_verification_expires_at ||
-    user.email_verification_expires_at < new Date()
-  ) {
-    return null;
-  }
-
-  const updated = await prisma.users.update({
-    where: { id: user.id },
+  // Conditional update: WHERE includes token so only one concurrent request wins
+  const result = await prisma.users.updateMany({
+    where: {
+      id: user.id,
+      email_verification_token: token,
+    },
     data: {
       email_verified: true,
       email_verification_token: null,
@@ -128,6 +130,9 @@ export async function verifyEmailToken(
     },
   });
 
+  if (result.count === 0) return null;
+
+  const updated = await prisma.users.findUnique({ where: { id: user.id } });
   return updated as unknown as EmailUserRecord;
 }
 
@@ -177,7 +182,7 @@ async function sendVerificationEmail({
   token: string;
 }) {
   const baseUrl =
-    env.NEXTAUTH_URL ?? "https://receivablesageingdashboard.vercel.app";
+    env.NEXTAUTH_URL ?? env.NEXT_PUBLIC_API_URL;
   const link = `${baseUrl}/api/auth/verify-email/confirm?token=${token}`;
 
   await sendEmail({

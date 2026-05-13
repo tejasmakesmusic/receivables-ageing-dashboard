@@ -2,15 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- mock prisma ---
 const mockFindUnique = vi.hoisted(() => vi.fn());
+const mockFindFirst = vi.hoisted(() => vi.fn());
 const mockCreate = vi.hoisted(() => vi.fn());
 const mockUpdate = vi.hoisted(() => vi.fn());
+const mockUpdateMany = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
     users: {
       findUnique: mockFindUnique,
+      findFirst: mockFindFirst,
       create: mockCreate,
       update: mockUpdate,
+      updateMany: mockUpdateMany,
     },
   }),
 }));
@@ -169,7 +173,18 @@ describe("verifyEmailToken", () => {
 
   it("returns user and sets email_verified=true on valid token", async () => {
     const futureDate = new Date(Date.now() + 3600 * 1000);
-    mockFindUnique.mockResolvedValue({
+    const userRecord = {
+      id: "u1",
+      email: "a@b.com",
+      name: "Alice",
+      role: "PENDING",
+      is_active: true,
+      email_verified: true,
+      email_verification_token: null,
+      email_verification_expires_at: null,
+    };
+    // findFirst returns matching user (token + expiry check)
+    mockFindFirst.mockResolvedValue({
       id: "u1",
       email: "a@b.com",
       name: "Alice",
@@ -178,39 +193,49 @@ describe("verifyEmailToken", () => {
       email_verification_token: "valid-token",
       email_verification_expires_at: futureDate,
     });
-    mockUpdate.mockResolvedValue({
-      id: "u1",
-      email: "a@b.com",
-      name: "Alice",
-      role: "PENDING",
-      is_active: true,
-    });
+    // updateMany succeeds (count=1) — this is the race-safe write
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    // findUnique returns the updated record
+    mockFindUnique.mockResolvedValue(userRecord);
 
     const result = await verifyEmailToken("valid-token");
     expect(result).not.toBeNull();
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "u1" },
+    expect(mockFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        email_verification_token: "valid-token",
+      }),
+    }));
+    expect(mockUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "u1", email_verification_token: "valid-token" },
       data: {
         email_verified: true,
         email_verification_token: null,
         email_verification_expires_at: null,
       },
     }));
+    expect(mockFindUnique).toHaveBeenCalledWith({ where: { id: "u1" } });
   });
 
-  it("returns null when token not found", async () => {
-    mockFindUnique.mockResolvedValue(null);
+  it("returns null when token not found or expired (findFirst returns null)", async () => {
+    mockFindFirst.mockResolvedValue(null);
     expect(await verifyEmailToken("bad-token")).toBeNull();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
   });
 
-  it("returns null when token is expired", async () => {
-    const pastDate = new Date(Date.now() - 1000);
-    mockFindUnique.mockResolvedValue({
+  it("returns null when a concurrent request already consumed the token (updateMany count=0)", async () => {
+    const futureDate = new Date(Date.now() + 3600 * 1000);
+    mockFindFirst.mockResolvedValue({
       id: "u1",
-      email_verification_expires_at: pastDate,
-      email_verification_token: "expired",
+      email: "a@b.com",
+      email_verified: false,
+      email_verification_token: "raced-token",
+      email_verification_expires_at: futureDate,
     });
-    expect(await verifyEmailToken("expired")).toBeNull();
+    // Simulate the race: another request already cleared the token
+    mockUpdateMany.mockResolvedValue({ count: 0 });
+
+    expect(await verifyEmailToken("raced-token")).toBeNull();
+    expect(mockFindUnique).not.toHaveBeenCalled();
   });
 });
 
