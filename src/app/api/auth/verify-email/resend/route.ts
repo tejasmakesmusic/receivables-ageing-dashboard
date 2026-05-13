@@ -21,7 +21,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_input" }, { status: 422 });
   }
 
-  await resendVerificationEmail(parsed.data.email);
+  try {
+    await resendVerificationEmail(parsed.data.email);
+  } catch (err) {
+    console.error("[verify-email/resend] send failed", err instanceof Error ? err.message : String(err));
+  }
   // Always return success to avoid leaking which emails are registered
   return NextResponse.json({ success: true }, { status: 200 });
 }
