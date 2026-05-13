@@ -86,12 +86,17 @@ export async function storeUploadedWorkbook(
 
   const key = buildWorkbookObjectKey(input);
 
-  const putImpl =
-    input.putImpl ?? (await import("@vercel/blob").then((m) => m.put));
+  let putImpl: BlobPutFn;
+  if (input.putImpl) {
+    putImpl = input.putImpl;
+  } else {
+    const mod = await import("@vercel/blob");
+    putImpl = mod.put;
+  }
 
   let blobUrl: string;
   try {
-    const result = await putImpl(key, input.fileBytes, {
+    const result = await putImpl(key, Buffer.from(input.fileBytes), {
       access: "private",
       token,
       addRandomSuffix: false,

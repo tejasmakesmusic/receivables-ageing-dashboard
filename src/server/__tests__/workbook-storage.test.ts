@@ -63,7 +63,7 @@ describe("workbook storage", () => {
   it("puts configured uploads to Vercel Blob and returns the blob URL", async () => {
     const blobUrl =
       "https://abc123.public.blob.vercel-storage.com/workbooks/IND/snapshot-123/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-GrpBills.xlsx";
-    const putImpl = vi.fn(async () => ({ url: blobUrl, downloadUrl: blobUrl, pathname: "", contentType: "", contentDisposition: "" }));
+    const putImpl = vi.fn(async () => ({ url: blobUrl, downloadUrl: blobUrl, pathname: "", contentType: "", contentDisposition: "", etag: "" }));
 
     const result = await storeUploadedWorkbook({
       fileBytes,
@@ -88,7 +88,7 @@ describe("workbook storage", () => {
     });
 
     expect(putImpl).toHaveBeenCalledOnce();
-    expect(putImpl).toHaveBeenCalledWith(expectedKey, fileBytes, {
+    expect(putImpl).toHaveBeenCalledWith(expectedKey, Buffer.from(fileBytes), {
       access: "private",
       token: "vercel_blob_rw_test_token",
       addRandomSuffix: false,
