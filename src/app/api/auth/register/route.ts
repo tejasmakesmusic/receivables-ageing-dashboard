@@ -21,13 +21,10 @@ export async function POST(request: NextRequest) {
 
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    if (issue?.path[0] === "email") {
-      return NextResponse.json({ error: "invalid_email" }, { status: 422 });
-    }
-    if (issue?.path[0] === "password") {
-      return NextResponse.json({ error: "password_too_short" }, { status: 422 });
-    }
+    const fields = parsed.error.flatten().fieldErrors;
+    if (fields.email)    return NextResponse.json({ error: "invalid_email" }, { status: 422 });
+    if (fields.password) return NextResponse.json({ error: "password_too_short" }, { status: 422 });
+    if (fields.name)     return NextResponse.json({ error: "missing_name" }, { status: 422 });
     return NextResponse.json({ error: "invalid_input" }, { status: 422 });
   }
 

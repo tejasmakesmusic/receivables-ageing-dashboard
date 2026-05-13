@@ -84,4 +84,29 @@ describe("POST /api/auth/register", () => {
     const body = await res.json();
     expect(body.error).toBe("email_taken");
   });
+
+  it("returns 400 for malformed JSON body", async () => {
+    const req = new NextRequest("https://example.com/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not json {{{",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid_json");
+  });
+
+  it("returns 500 for unexpected server errors", async () => {
+    mockCreateEmailPasswordUser.mockRejectedValue(new Error("db_connection_timeout"));
+    const res = await POST(makeRequest({
+      name: "Alice",
+      email: "alice@example.com",
+      password: "password123",
+      confirmPassword: "password123",
+    }));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("server_error");
+  });
 });
