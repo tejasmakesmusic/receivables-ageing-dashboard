@@ -19,6 +19,8 @@ const envSchema = z.object({
   DATABASE_ADAPTER: z.enum(["neon", "pg"]).optional(),
   AUTH_PROVIDER: z.enum(["google", "stub", "development"]).default("google"),
   NEXTAUTH_URL: z.string().url().optional(),
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   NEXT_PUBLIC_APP_NAME: z.string().default("Receivables Ageing Dashboard"),
   // Email delivery
   RESEND_API_KEY: z.string().optional(),
