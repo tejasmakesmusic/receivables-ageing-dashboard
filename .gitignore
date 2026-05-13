@@ -44,3 +44,5 @@ Thumbs.db
 .claude/
 .devserver-logs/
 .remember/
+.vercel
+.env*.local
