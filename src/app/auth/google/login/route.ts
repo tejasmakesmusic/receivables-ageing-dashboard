@@ -8,6 +8,10 @@ import {
 import { createAuditLog } from "@/server/core/audit";
 import { role_enum } from "@/generated/prisma/enums";
 import { toErrorResponse } from "@/server/core/errors";
+import { generateAuthUrl, generateStateToken } from "@/lib/google-oauth";
+import { env } from "@/lib/env";
+
+const STATE_COOKIE = "google_oauth_state";
 
 const loginResponseSchema = z.object({
   success: z.boolean(),
@@ -27,19 +31,31 @@ function safeRedirectPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return "/dashboard";
   }
-
   return value;
 }
 
 export async function GET(request: NextRequest) {
   try {
+    const redirectPath = safeRedirectPath(
+      request.nextUrl.searchParams.get("next"),
+    );
+
     if (!isStubProviderEnabled()) {
-      return NextResponse.json(
-        { error: "google_oauth_not_implemented" },
-        { status: 501 },
-      );
+      const { state, nonce } = generateStateToken(redirectPath);
+      const authUrl = generateAuthUrl(state);
+
+      const response = NextResponse.redirect(authUrl);
+      response.cookies.set(STATE_COOKIE, nonce, {
+        httpOnly: true,
+        maxAge: 300,
+        path: "/",
+        secure: env.NODE_ENV === "production",
+        sameSite: "lax",
+      });
+      return response;
     }
 
+    // Stub flow (development / local)
     const user = await ensureStubAdminUser();
     const responsePayload: LoginResponse = {
       success: true,
@@ -52,9 +68,6 @@ export async function GET(request: NextRequest) {
     };
 
     const wantsJson = request.nextUrl.searchParams.get("json") === "1";
-    const redirectPath = safeRedirectPath(
-      request.nextUrl.searchParams.get("next"),
-    );
     const response = wantsJson
       ? NextResponse.json(loginResponseSchema.parse(responsePayload))
       : NextResponse.redirect(new URL(redirectPath, request.url));
