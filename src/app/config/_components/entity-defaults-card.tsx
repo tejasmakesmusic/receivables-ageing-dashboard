@@ -13,7 +13,7 @@ type RowState =
   | { mode: "view" }
   | { mode: "editing"; draft: string }
   | { mode: "saving" }
-  | { mode: "error"; message: string };
+  | { mode: "error"; draft: string; message: string };
 
 export function EntityDefaultsCard({ entities, canEdit }: Props) {
   const [rowStates, setRowStates] = useState<Record<string, RowState>>(
@@ -38,21 +38,25 @@ export function EntityDefaultsCard({ entities, canEdit }: Props) {
   }
 
   async function save(id: string) {
-    const state = rowStates[id];
-    if (state.mode !== "editing") return;
+    const captured = { draft: null as string | null };
+    setRowStates((s) => {
+      const state = s[id];
+      if (state.mode !== "editing") return s;
+      captured.draft = state.draft;
+      return { ...s, [id]: { mode: "saving" } };
+    });
+    if (captured.draft === null) return;
 
-    const draft = state.draft.trim();
-    const newValue = draft === "" ? null : Number(draft);
+    const trimmed = captured.draft.trim();
+    const newValue = trimmed === "" ? null : Number(trimmed);
 
     if (newValue !== null && (!Number.isInteger(newValue) || newValue < 0)) {
       setRowStates((s) => ({
         ...s,
-        [id]: { mode: "error", message: "Must be a non-negative whole number" },
+        [id]: { mode: "error", draft: trimmed, message: "Must be a non-negative whole number" },
       }));
       return;
     }
-
-    setRowStates((s) => ({ ...s, [id]: { mode: "saving" } }));
 
     try {
       const res = await fetch(`/api/config/entity-defaults/${id}`, {
@@ -73,6 +77,7 @@ export function EntityDefaultsCard({ entities, canEdit }: Props) {
         ...s,
         [id]: {
           mode: "error",
+          draft: trimmed,
           message: err instanceof Error ? err.message : "Save failed",
         },
       }));
@@ -120,7 +125,7 @@ export function EntityDefaultsCard({ entities, canEdit }: Props) {
                           placeholder="e.g. 30"
                           type="number"
                           value={
-                            state.mode === "editing" ? state.draft : ""
+                            state.mode === "editing" || state.mode === "error" ? state.draft : ""
                           }
                         />
                         {state.mode === "error" ? (

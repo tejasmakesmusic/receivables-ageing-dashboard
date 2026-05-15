@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRole } from "@/server/core/auth";
 import { HttpError, toErrorResponse } from "@/server/core/errors";
 import { role_enum } from "@/generated/prisma/enums";
@@ -7,7 +7,7 @@ import { updateEntityDefault } from "@/server/config/entityDefaults";
 export const dynamic = "force-dynamic";
 
 export async function PATCH(
-  request: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ entityId: string }> },
 ) {
   try {
@@ -16,6 +16,9 @@ export async function PATCH(
       role_enum.ADMIN,
     );
     const { entityId } = await params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entityId)) {
+      throw new HttpError("validation_error", 400, "Invalid entity ID");
+    }
 
     let body: unknown;
     try {
