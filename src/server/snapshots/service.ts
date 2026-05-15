@@ -23,6 +23,7 @@ import { parseTallyGrpbills } from "@/server/parsers/tally";
 import { parseXeroAgedReceivables } from "@/server/parsers/xero";
 import {
   resolveAlias,
+  normalizePartyText,
   type AliasResolution,
   type CanonicalParty,
 } from "@/server/matching/fuse-alias";
@@ -284,6 +285,58 @@ export interface StagingViewResponse {
     limit: number;
     total: number;
   };
+}
+
+export type PartyConflictType =
+  | "duplicate_candidate"
+  | "conflicting_gstin"
+  | "similar_names_review";
+
+export interface PartyGroupConflict {
+  type: PartyConflictType;
+  message: string;
+  related_canonical_id?: string;
+  related_canonical_name?: string;
+}
+
+export interface PartyGroupSummary {
+  normalized_key: string;
+  display_name: string;
+  raw_names: string[];
+  row_indices: number[];
+  row_count: number;
+  match_status: "EXACT" | "FUZZY_HIGH" | "FUZZY_LOW" | "UNMAPPED" | "RESOLVED";
+  existing_canonical_id: string | null;
+  existing_canonical_name: string | null;
+  match_confidence: number | null;
+  gstin: string | null;
+  conflicts: PartyGroupConflict[];
+  /** True when the bulk action can handle this group without manual input. */
+  bulk_actionable: boolean;
+}
+
+export interface PartyMappingSummary {
+  total_invoice_rows: number;
+  unique_parties: number;
+  already_resolved: number;
+  already_existing: number;
+  suggested_matches: number;
+  new_to_create: number;
+  unmappable_rows: number;
+  fuzzy_low_count: number;
+  conflict_count: number;
+  /** Total staging rows that the bulk action will process. */
+  bulk_actionable_count: number;
+  groups: PartyGroupSummary[];
+}
+
+export interface BulkMapPartiesResult {
+  snapshot_id: string;
+  rows_mapped: number;
+  parties_created: number;
+  parties_resolved: number;
+  groups_skipped: number;
+  publish_gate: PublishGate;
 }
 
 type ColumnMappingResultJson = {
