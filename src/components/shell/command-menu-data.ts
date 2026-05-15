@@ -206,7 +206,12 @@ export function filterCommandItems(
   query: string,
   groups: readonly CommandGroup[] = COMMAND_GROUPS,
 ): CommandItem[] {
-  return filterCommandItemsGrouped(query, groups).flatMap((group) => [...group.items]);
+  const items = filterCommandItemsGrouped(query, groups).flatMap((group) => [...group.items]);
+  if (!normalize(query)) {
+    const order = new Map<string, number>(DEFAULT_COMMAND_IDS.map((id, i) => [id, i]));
+    return items.sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+  }
+  return items;
 }
 
 export function filterCommandItemsGrouped(
