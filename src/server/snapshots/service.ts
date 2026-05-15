@@ -285,6 +285,8 @@ export interface StagingViewResponse {
     limit: number;
     total: number;
   };
+  /** Party mapping summary computed from all (unpaginated) staging rows. */
+  party_mapping_summary: PartyMappingSummary;
 }
 
 export type PartyConflictType =
@@ -1469,6 +1471,7 @@ export async function getStagingView(
       limit: query.limit,
       total: filtered.length,
     },
+    party_mapping_summary: computePartyMappingSummary(rows),
   };
 }
 
