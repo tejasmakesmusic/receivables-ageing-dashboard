@@ -41,6 +41,22 @@ export async function GET(request: NextRequest) {
     );
 
     if (!isStubProviderEnabled()) {
+      // If the request arrives on a deployment-specific URL but NEXTAUTH_URL is
+      // the stable alias, redirect to the canonical host first. The state cookie
+      // must be set on the same domain that Google will redirect back to, or the
+      // nonce check in the callback will always fail.
+      if (env.NEXTAUTH_URL) {
+        const canonicalHost = new URL(env.NEXTAUTH_URL).host;
+        const currentHost = request.headers.get("host") ?? request.nextUrl.host;
+        if (currentHost !== canonicalHost) {
+          const canonical = new URL(
+            request.nextUrl.pathname + request.nextUrl.search,
+            env.NEXTAUTH_URL,
+          );
+          return NextResponse.redirect(canonical.toString());
+        }
+      }
+
       const { state, nonce } = generateStateToken(redirectPath);
       const authUrl = generateAuthUrl(state);
 

@@ -19,9 +19,9 @@ export function ModeToggle() {
       type="button"
     >
       {resolvedTheme === "dark" ? (
-        <span aria-hidden>☀</span>
+        <span aria-hidden="true">☀</span>
       ) : (
-        <span aria-hidden>☾</span>
+        <span aria-hidden="true">☾</span>
       )}
     </button>
   );

@@ -24,11 +24,14 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const stateParam = searchParams.get("state");
 
-  if (searchParams.get("error")) {
+  const googleError = searchParams.get("error");
+  if (googleError) {
+    console.error("[google/callback] Google returned error:", googleError);
     return NextResponse.redirect(new URL("/auth/google/login", request.url));
   }
 
   if (!code || !stateParam) {
+    console.error("[google/callback] Missing code or state param");
     return NextResponse.redirect(new URL("/auth/google/login", request.url));
   }
 
@@ -36,6 +39,7 @@ export async function GET(request: NextRequest) {
   const stateData = parseStateToken(stateParam);
 
   if (!stateCookie || !stateData || stateData.nonce !== stateCookie) {
+    console.error("[google/callback] State mismatch — stateCookie present:", !!stateCookie, "stateData valid:", !!stateData);
     return NextResponse.redirect(new URL("/auth/google/login", request.url));
   }
 
@@ -68,7 +72,8 @@ export async function GET(request: NextRequest) {
     );
 
     return response;
-  } catch {
+  } catch (error) {
+    console.error("[google/callback] Token exchange or user lookup failed:", error);
     return NextResponse.redirect(
       new URL("/auth/google/login?error=oauth_failed", request.url),
     );

@@ -23,7 +23,7 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg-subtle)] p-8">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-subtle)] p-8">
         <div className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-sm text-center">
           <p className="mb-4 text-sm text-[var(--color-text-muted)]">
             This reset link is invalid.
@@ -35,7 +35,7 @@ function ResetPasswordForm() {
             Request a new one
           </a>
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -72,7 +72,7 @@ function ResetPasswordForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg-subtle)] p-8">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-subtle)] p-8">
       <div className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-sm">
         <h1 className="mb-6 text-center text-xl font-semibold text-[var(--color-text)]">
           Set new password
@@ -135,7 +135,7 @@ function ResetPasswordForm() {
           </Button>
         </form>
       </div>
-    </main>
+    </div>
   );
 }
 

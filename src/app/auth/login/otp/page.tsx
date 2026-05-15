@@ -42,7 +42,7 @@ function OtpRequestForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg-subtle)] p-8">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-subtle)] p-8">
       <div className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-sm">
         <h1 className="mb-2 text-center text-xl font-semibold text-[var(--color-text)]">
           EMB Receivables
@@ -87,7 +87,7 @@ function OtpRequestForm() {
           </a>
         </form>
       </div>
-    </main>
+    </div>
   );
 }
 
