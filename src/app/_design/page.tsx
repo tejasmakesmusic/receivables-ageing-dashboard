@@ -4,16 +4,33 @@ import {
   DsBadge,
   DsButton,
   DsCard,
+  DsCombobox,
+  DsContextPanel,
   DsDataTable,
+  DsDatePicker,
+  DsDrawer,
   DsEmptyState,
+  DsFilterBar,
   DsFileDropzone,
   DsInput,
   DsKpiCard,
   DsLinkButton,
   DsSelect,
+  DsSkeleton,
+  DsStatusPill,
+  DsStepper,
+  DsTextarea,
+  DsToastViewport,
+  DsTooltip,
 } from "../../../design-system/components";
+import { useState } from "react";
 
 export default function DesignSystemPage() {
+  const [entity, setEntity] = useState("IND");
+  const [party, setParty] = useState("ACME");
+  const [asOfDate, setAsOfDate] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
     <main className="min-h-screen bg-[var(--color-bg)] p-6 text-[var(--color-text)]">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -54,15 +71,33 @@ export default function DesignSystemPage() {
                 <DsBadge tone="info">In review</DsBadge>
               </div>
               <DsInput placeholder="Search invoices, parties, tasks..." />
+              <DsTextarea placeholder="Add a collection note..." />
               <DsSelect
                 label="Entity"
                 name="entity_demo"
-                onChange={() => undefined}
+                onChange={setEntity}
                 options={[
                   { label: "India · Tally", value: "IND" },
                   { label: "UAE · Xero", value: "UAE" },
                 ]}
-                value="IND"
+                value={entity}
+              />
+              <DsCombobox
+                label="Customer"
+                name="party_demo"
+                onChange={setParty}
+                options={[
+                  { label: "Acme Corp", value: "ACME" },
+                  { label: "Northstar", value: "NORTHSTAR" },
+                  { label: "Kite Labs", value: "KITE" },
+                ]}
+                value={party}
+              />
+              <DsDatePicker
+                label="As-of date"
+                name="as_of_demo"
+                onChange={setAsOfDate}
+                value={asOfDate}
               />
               <DsFileDropzone file={null} onFile={() => undefined} />
             </div>
@@ -73,6 +108,50 @@ export default function DesignSystemPage() {
             />
           </div>
         </DsCard>
+
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <DsCard title="Workflow primitives" subtitle="Stepper, filters, status pills, skeletons, drawer, tooltip, and toast region.">
+            <div className="space-y-5">
+              <DsStepper
+                steps={[
+                  { label: "Upload", state: "done" },
+                  { label: "Stage validation", state: "current" },
+                  { label: "Publish", state: "not-started" },
+                ]}
+              />
+              <DsFilterBar
+                chips={["Entity: IND", "Status: Open"]}
+                tabs={[
+                  { active: true, label: "All" },
+                  { label: "Blocked" },
+                  { label: "Due now" },
+                ]}
+              />
+              <div className="flex flex-wrap gap-2">
+                {["Active", "Staged", "Published", "Matched", "Mismatched", "Resolved", "Open", "Investigating", "Escalated", "Cancelled", "Blocked", "Read-only", "Pending"].map((state) => (
+                  <DsStatusPill key={state} state={state} />
+                ))}
+              </div>
+              <div className="grid gap-2">
+                <DsSkeleton className="h-8" />
+                <DsSkeleton className="h-8 w-2/3" />
+              </div>
+              <div className="flex gap-2">
+                <DsTooltip label="Open detail drawer">
+                  <DsButton onClick={() => setDrawerOpen(true)} type="button" variant="secondary">
+                    Open drawer
+                  </DsButton>
+                </DsTooltip>
+                <DsButton loading type="button">Loading</DsButton>
+              </div>
+            </div>
+          </DsCard>
+          <DsContextPanel title="Context">
+            <p className="text-[13px] leading-5 text-[var(--color-text-muted)]">
+              Selected record summary, linked workflows, quick actions, and activity live here.
+            </p>
+          </DsContextPanel>
+        </section>
 
         <DsCard title="Dense table pattern" subtitle="Sticky header-ready, compact row rhythm, semantic badges, mono amounts.">
           <DsDataTable>
@@ -108,6 +187,25 @@ export default function DesignSystemPage() {
             </table>
           </DsDataTable>
         </DsCard>
+        <section className="dark rounded-[var(--radius-md)] bg-[var(--color-bg)] p-5 text-[var(--color-text)]">
+          <DsCard title="Dark theme parity" subtitle="Same primitives under `.dark` variables.">
+            <div className="grid gap-4 md:grid-cols-3">
+              <DsKpiCard label="Outstanding" value="₹4.2 Cr" footnote="Dark mode card" />
+              <DsEmptyState title="No disputes" description="Open disputes will appear here for review." />
+              <div className="flex flex-wrap content-start gap-2">
+                <DsStatusPill state="Open" />
+                <DsStatusPill state="Blocked" />
+                <DsStatusPill state="Resolved" />
+              </div>
+            </div>
+          </DsCard>
+        </section>
+        <DsDrawer open={drawerOpen} title="Invoice INV-2401">
+          <p className="text-[13px] leading-5 text-[var(--color-text-muted)]">
+            Drawer primitive for row-detail inspection. Close behavior is wired by consuming pages.
+          </p>
+        </DsDrawer>
+        <DsToastViewport />
       </div>
     </main>
   );

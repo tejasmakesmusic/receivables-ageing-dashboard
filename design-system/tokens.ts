@@ -10,6 +10,36 @@ export const uiV2Tokens = {
     warning: "var(--color-warning)",
     danger: "var(--color-danger)",
     info: "var(--color-info)",
+    roles: {
+      success: {
+        bg: "var(--color-status-current-bg)",
+        fg: "var(--color-status-current-text)",
+        border: "var(--color-status-current-border)",
+        subtle: "var(--color-success-soft)",
+        muted: "var(--color-text-muted)",
+      },
+      warning: {
+        bg: "var(--color-status-warning-bg)",
+        fg: "var(--color-status-warning-text)",
+        border: "var(--color-status-warning-border)",
+        subtle: "var(--color-warning-soft)",
+        muted: "var(--color-text-muted)",
+      },
+      danger: {
+        bg: "var(--color-status-danger-bg)",
+        fg: "var(--color-status-danger-text)",
+        border: "var(--color-status-danger-border)",
+        subtle: "var(--color-danger-soft)",
+        muted: "var(--color-text-muted)",
+      },
+      info: {
+        bg: "var(--color-status-info-bg)",
+        fg: "var(--color-status-info-text)",
+        border: "var(--color-status-info-border)",
+        subtle: "var(--color-info-soft)",
+        muted: "var(--color-text-muted)",
+      },
+    },
   },
   type: {
     pageTitle: "24px/32px",
@@ -27,5 +57,10 @@ export const uiV2Tokens = {
   motion: {
     fast: "150ms ease-out",
     panel: "200ms ease-out",
+  },
+  elevation: {
+    e0: "border only",
+    e1: "var(--shadow-card)",
+    e2: "var(--shadow-popover)",
   },
 } as const;

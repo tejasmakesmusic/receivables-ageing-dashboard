@@ -1,7 +1,25 @@
+"use client";
+
 import Link from "next/link";
-import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type {
+  ButtonHTMLAttributes,
+  CSSProperties,
+  HTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  TextareaHTMLAttributes,
+} from "react";
+import { useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { Check, ChevronDown, Circle, UploadCloud } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Circle,
+  Loader2,
+  Search,
+  UploadCloud,
+  X,
+} from "lucide-react";
 import { twMerge } from "tailwind-merge";
 
 const cn = (...inputs: Array<string | false | null | undefined>) =>
@@ -30,10 +48,13 @@ const buttonSizes: Record<ButtonSize, string> = {
 
 export function DsButton({
   className,
+  loading,
   size = "md",
   variant = "primary",
+  children,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
+  loading?: boolean;
   size?: ButtonSize;
   variant?: ButtonVariant;
 }) {
@@ -46,8 +67,12 @@ export function DsButton({
         buttonSizes[size],
         className,
       )}
+      disabled={loading || props.disabled}
       {...props}
-    />
+    >
+      {loading ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : null}
+      {children}
+    </button>
   );
 }
 
@@ -167,6 +192,23 @@ export function DsInput({
   );
 }
 
+export function DsTextarea({
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={cn(
+        "min-h-24 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[13px] leading-5 text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2",
+        "disabled:cursor-not-allowed disabled:bg-[var(--color-bg-muted)] disabled:text-[var(--color-text-disabled)]",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 export function DsSelect({
   disabled,
   label,
@@ -216,6 +258,150 @@ export function DsSelect({
   );
 }
 
+export function DsCombobox({
+  label,
+  name,
+  onChange,
+  options,
+  placeholder = "Search",
+  value,
+}: {
+  label: string;
+  name: string;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  placeholder?: string;
+  value: string;
+}) {
+  const [query, setQuery] = useState("");
+  const filteredOptions = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return options;
+    return options.filter((option) =>
+      `${option.label} ${option.value}`.toLowerCase().includes(normalized),
+    );
+  }, [options, query]);
+
+  return (
+    <div className="grid gap-2">
+      <div className="text-[13px] font-medium text-[var(--color-text)]">{label}</div>
+      <input name={name} type="hidden" value={value} />
+      <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+        <label className="relative block">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-subtle)]" />
+          <DsInput
+            className="pl-8"
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder={placeholder}
+            value={query}
+          />
+        </label>
+        <div className="mt-2 max-h-40 overflow-y-auto">
+          {filteredOptions.map((option) => (
+            <button
+              className={cn(
+                "flex h-8 w-full items-center justify-between rounded-[var(--radius-xs)] px-2 text-left text-[13px]",
+                option.value === value
+                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                  : "text-[var(--color-text)] hover:bg-[var(--color-bg-muted)]",
+              )}
+              key={option.value}
+              onClick={() => onChange(option.value)}
+              type="button"
+            >
+              {option.label}
+              {option.value === value ? <Check aria-hidden="true" className="h-4 w-4" /> : null}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function DsDatePicker({
+  disabled,
+  label,
+  name,
+  onChange,
+  value,
+}: {
+  disabled?: boolean;
+  label: string;
+  name: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const today = new Date();
+  const days = Array.from({ length: 14 }).map((_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - index);
+    const iso = date.toISOString().slice(0, 10);
+    return {
+      label: index === 0 ? "Today" : iso.slice(5),
+      value: iso,
+    };
+  });
+
+  return (
+    <div className="grid gap-2">
+      <div className="text-[13px] font-medium text-[var(--color-text)]">{label}</div>
+      <input name={name} type="hidden" value={value} />
+      <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+        <DsInput
+          disabled={disabled}
+          inputMode="numeric"
+          onChange={(event) => onChange(event.currentTarget.value)}
+          pattern="\d{4}-\d{2}-\d{2}"
+          placeholder="YYYY-MM-DD"
+          value={value}
+        />
+        <div className="mt-2 grid grid-cols-4 gap-1">
+          {days.slice(0, 8).map((day) => (
+            <button
+              aria-pressed={day.value === value}
+              className={cn(
+                "h-8 rounded-[var(--radius-xs)] text-[12px] font-medium",
+                day.value === value
+                  ? "bg-[var(--color-accent)] text-white"
+                  : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+              )}
+              disabled={disabled}
+              key={day.value}
+              onClick={() => onChange(day.value)}
+              type="button"
+            >
+              {day.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
+
+const statusToneByLabel: Record<string, StatusTone> = {
+  Active: "success",
+  Staged: "info",
+  Published: "success",
+  Matched: "success",
+  Mismatched: "danger",
+  Resolved: "success",
+  Open: "info",
+  Investigating: "warning",
+  Escalated: "danger",
+  Cancelled: "neutral",
+  Blocked: "danger",
+  "Read-only": "neutral",
+  Pending: "warning",
+};
+
+export function DsStatusPill({ state }: { state: keyof typeof statusToneByLabel | string }) {
+  return <DsBadge tone={statusToneByLabel[state] ?? "neutral"}>{state}</DsBadge>;
+}
+
 export function DsEmptyState({
   action,
   description,
@@ -262,16 +448,207 @@ export function DsKpiCard({
   );
 }
 
+export function DsSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "animate-pulse rounded-[var(--radius-sm)] bg-[var(--color-bg-muted)]",
+        className ?? "h-4 w-full",
+      )}
+    />
+  );
+}
+
+export function DsFilterBar({
+  chips,
+  onClear,
+  tabs,
+}: {
+  chips?: string[];
+  onClear?: () => void;
+  tabs: Array<{ active?: boolean; label: string; onClick?: () => void }>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+      <div className="flex flex-wrap items-center gap-1">
+        {tabs.map((tab) => (
+          <button
+            aria-pressed={tab.active}
+            className={cn(
+              "h-8 rounded-[var(--radius-sm)] px-3 text-[13px] font-medium",
+              tab.active
+                ? "bg-[var(--color-accent)] text-white"
+                : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+            )}
+            key={tab.label}
+            onClick={tab.onClick}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {chips?.length ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {chips.map((chip) => (
+            <DsBadge key={chip} tone="info">{chip}</DsBadge>
+          ))}
+          {onClear ? (
+            <button
+              className="inline-flex h-7 items-center gap-1 rounded-[var(--radius-sm)] px-2 text-[12px] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)]"
+              onClick={onClear}
+              type="button"
+            >
+              <X aria-hidden="true" className="h-3.5 w-3.5" />
+              Clear all
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type StepState = "done" | "current" | "blocked" | "not-started";
+
+export function DsStepper({
+  orientation = "horizontal",
+  steps,
+}: {
+  orientation?: "horizontal" | "vertical";
+  steps: Array<{ label: string; state: StepState }>;
+}) {
+  return (
+    <ol
+      className={cn(
+        "gap-2",
+        orientation === "horizontal" ? "grid md:grid-cols-[repeat(var(--step-count),minmax(0,1fr))]" : "grid",
+      )}
+      style={{ "--step-count": steps.length } as CSSProperties}
+    >
+      {steps.map((step, index) => {
+        const tone: StatusTone =
+          step.state === "done"
+            ? "success"
+            : step.state === "current"
+              ? "info"
+              : step.state === "blocked"
+                ? "danger"
+                : "neutral";
+        return (
+          <li
+            className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+            key={`${step.label}-${index}`}
+          >
+            <DsBadge tone={tone}>{index + 1}</DsBadge>
+            <span className="text-[13px] font-medium text-[var(--color-text)]">{step.label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export function DsContextPanel({
+  children,
+  title = "Context",
+}: {
+  children: ReactNode;
+  title?: string;
+}) {
+  return (
+    <aside className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] xl:w-[360px]">
+      <div className="border-b border-[var(--color-border)] px-5 py-4">
+        <h2 className="text-[18px] font-semibold leading-7 text-[var(--color-text)]">{title}</h2>
+      </div>
+      <div className="p-5">{children}</div>
+    </aside>
+  );
+}
+
+export function DsDrawer({
+  children,
+  open,
+  title,
+}: {
+  children: ReactNode;
+  open: boolean;
+  title: string;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/20">
+      <div className="ml-auto h-full w-full max-w-[420px] border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-popover)]">
+        <div className="border-b border-[var(--color-border)] px-5 py-4">
+          <h2 className="text-[18px] font-semibold leading-7 text-[var(--color-text)]">{title}</h2>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function DsTooltip({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <span className="group relative inline-flex">
+      {children}
+      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)] bg-[var(--color-text)] px-2 py-1 text-[12px] text-[var(--color-bg)] shadow-[var(--shadow-popover)] group-hover:block group-focus-within:block">
+        {label}
+      </span>
+    </span>
+  );
+}
+
+export function DsToastViewport() {
+  return (
+    <div
+      aria-live="polite"
+      className="fixed bottom-4 right-4 z-50 grid max-w-sm gap-2"
+      role="status"
+    />
+  );
+}
+
 export function DsDataTable({
   children,
   className,
+  empty,
+  error,
+  loading,
+  pagination,
 }: {
   children: ReactNode;
   className?: string;
+  empty?: ReactNode;
+  error?: ReactNode;
+  loading?: boolean;
+  pagination?: ReactNode;
 }) {
+  if (loading) {
+    return (
+      <div className={cn("rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3", className)}>
+        <div className="grid gap-2">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <DsSkeleton className="h-9" key={index} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) return <>{error}</>;
+  if (empty) return <>{empty}</>;
+
   return (
     <div className={cn("overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)]", className)}>
       <div className="overflow-x-auto">{children}</div>
+      {pagination ? <div className="border-t border-[var(--color-border)] p-3">{pagination}</div> : null}
     </div>
   );
 }

@@ -18,11 +18,22 @@ This first UI V2 slice adds a design-system foundation and refactors Home and Up
 - `DsCard`: title, subtitle, actions, and content slot.
 - `DsBadge`: semantic pill with required dot icon.
 - `DsInput`: accessible text input with shared focus ring.
+- `DsTextarea`: multi-line note input with shared focus treatment.
 - `DsSelect`: custom segmented select with hidden form value.
+- `DsCombobox`: searchable listbox-style selection backed by a hidden form value.
+- `DsDatePicker`: text date entry plus recent-date quick picks, backed by a hidden form value.
 - `DsDataTable`: overflow shell for dense tables.
 - `DsEmptyState`: illustration, headline, support copy, CTA slot.
 - `DsKpiCard`: label, value, and footnote.
 - `DsFileDropzone`: drag-and-drop workbook selection with preview.
+- `DsStatusPill`: canonical semantic state pill for shared workflow states.
+- `DsSkeleton`: loading placeholder for rows, KPI cards, and panels.
+- `DsFilterBar`: segmented tabs plus active-filter chip surface.
+- `DsStepper`: horizontal or vertical workflow progress indicator.
+- `DsContextPanel`: right-side context module container.
+- `DsDrawer`: slide-over container for row detail.
+- `DsTooltip`: tooltip wrapper for icon-only and compact controls.
+- `DsToastViewport`: bottom-right toast live region placeholder.
 
 ## Migration map
 
@@ -31,10 +42,12 @@ This first UI V2 slice adds a design-system foundation and refactors Home and Up
 | Native `button` utility classes | `DsButton` |
 | `Card`, `CardHeader`, `CardContent` combinations | `DsCard` |
 | Native `select` | `DsSelect` |
-| Native `input type=date` | `DsInput` with ISO date placeholder |
+| Native `input type=date` | `DsDatePicker` |
 | Native `input type=file` | `DsFileDropzone` |
 | Ad hoc empty blocks | `DsEmptyState` |
 | `MetricCard` on Home | `DsKpiCard` |
+| Ad hoc status badges | `DsStatusPill` |
+| Page right rail cards | `DsContextPanel` |
 
 ## Accessibility checklist
 

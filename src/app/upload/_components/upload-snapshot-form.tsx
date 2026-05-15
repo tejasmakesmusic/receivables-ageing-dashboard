@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   DsButton,
+  DsDatePicker,
   DsFileDropzone,
-  DsInput,
   DsSelect,
 } from "../../../../design-system/components";
 
@@ -99,23 +99,18 @@ export function UploadSnapshotForm() {
           />
         </div>
 
-        <label className="grid gap-2">
-          <span className="text-[13px] font-medium text-[var(--color-text)]">
-            As-of date
-          </span>
-          <DsInput
+        <div className="grid gap-2">
+          <DsDatePicker
             disabled={status === "submitting"}
-            inputMode="numeric"
+            label="As-of date"
             name="as_of_date"
-            onChange={(event) => setAsOfDate(event.currentTarget.value)}
-            pattern="\d{4}-\d{2}-\d{2}"
-            placeholder="YYYY-MM-DD"
+            onChange={setAsOfDate}
             value={asOfDate}
           />
           <span className="text-[12px] leading-4 text-[var(--color-text-muted)]">
             Required for Tally snapshots. Xero can usually detect this from the workbook.
           </span>
-        </label>
+        </div>
 
         <DsFileDropzone
           disabled={status === "submitting"}
@@ -124,7 +119,7 @@ export function UploadSnapshotForm() {
         />
 
         <div className="flex flex-wrap items-center gap-3">
-          <DsButton disabled={status === "submitting"} type="submit">
+          <DsButton disabled={status === "submitting"} loading={status === "submitting"} type="submit">
             {status === "submitting" ? "Uploading snapshot..." : "Upload snapshot"}
           </DsButton>
           <span className="text-[12px] text-[var(--color-text-muted)]">

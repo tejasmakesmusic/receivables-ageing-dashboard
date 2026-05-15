@@ -2,10 +2,11 @@ import Link from "next/link";
 import { ArrowRight, CalendarCheck, Mail, Phone, Plus, RefreshCw } from "lucide-react";
 import {
   DsBadge,
-  DsButton,
   DsCard,
+  DsContextPanel,
   DsDataTable,
   DsEmptyState,
+  DsFilterBar,
   DsKpiCard,
   DsLinkButton,
 } from "../../design-system/components";
@@ -145,7 +146,7 @@ export default async function HomePage() {
             </div>
           </DsCard>
 
-          <DsCard title="Context">
+          <DsContextPanel>
             <div className="space-y-4">
               <div>
                 <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
@@ -169,7 +170,7 @@ export default async function HomePage() {
                 ))}
               </div>
             </div>
-          </DsCard>
+          </DsContextPanel>
         </section>
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -203,14 +204,53 @@ export default async function HomePage() {
           />
         </section>
 
+        <section className="grid gap-4 md:grid-cols-3">
+          {[
+            {
+              label: "Critical work",
+              value: home.focus_items.length,
+              note: "Open queue items surfaced today",
+            },
+            {
+              label: "Reminder nudges",
+              value: home.nudges.length,
+              note: "Safe follow-up prompts",
+            },
+            {
+              label: "Recent exceptions",
+              value: dashboard?.recent_exceptions.length ?? "—",
+              note: "Active control exceptions",
+            },
+          ].map((signal) => (
+            <DsCard className="p-4" key={signal.label}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                    {signal.label}
+                  </div>
+                  <div className="mt-2 text-[20px] font-semibold leading-7 text-[var(--color-text)]">
+                    {signal.value}
+                  </div>
+                </div>
+                <MiniSparkline />
+              </div>
+              <p className="mt-2 text-[12px] leading-4 text-[var(--color-text-muted)]">
+                {signal.note}
+              </p>
+            </DsCard>
+          ))}
+        </section>
+
         <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <DsCard
             actions={
-              <div className="flex flex-wrap gap-2">
-                <DsButton size="sm" type="button" variant="secondary">Critical work</DsButton>
-                <DsButton size="sm" type="button" variant="ghost">Reminders</DsButton>
-                <DsButton size="sm" type="button" variant="ghost">Exceptions</DsButton>
-              </div>
+              <DsFilterBar
+                tabs={[
+                  { active: true, label: "Critical work" },
+                  { label: "Reminders" },
+                  { label: "Exceptions" },
+                ]}
+              />
             }
             subtitle="One queue for what needs attention now. Data is secondary to the next action."
             title="Action Inbox"

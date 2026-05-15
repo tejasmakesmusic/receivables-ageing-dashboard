@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
-import { DsBadge, DsCard, DsLinkButton } from "../../../design-system/components";
+import {
+  DsBadge,
+  DsCard,
+  DsLinkButton,
+  DsStatusPill,
+  DsStepper,
+} from "../../../design-system/components";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { role_enum } from "@/generated/prisma/enums";
 import { requirePageRole } from "@/server/core/page-auth";
@@ -35,6 +41,15 @@ export default async function UploadPage() {
               subtitle="Select the entity, confirm the source, and drop the workbook. No publish action happens from this page."
               title="Workbook intake"
             >
+              <div className="mb-5">
+                <DsStepper
+                  steps={[
+                    { label: "Upload", state: "current" },
+                    { label: "Stage validation", state: "not-started" },
+                    { label: "Publish", state: "not-started" },
+                  ]}
+                />
+              </div>
               <UploadSnapshotForm />
             </DsCard>
           </div>
@@ -49,6 +64,11 @@ export default async function UploadPage() {
               </div>
             </DsCard>
             <DsCard title="Controls">
+              <div className="mb-4 flex flex-wrap gap-2">
+                <DsStatusPill state="Staged" />
+                <DsStatusPill state="Blocked" />
+                <DsStatusPill state="Published" />
+              </div>
               <ul className="space-y-3 text-[13px] leading-5 text-[var(--color-text-muted)]">
                 <li className="flex gap-2">
                   <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-success)]" />
