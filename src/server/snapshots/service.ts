@@ -339,6 +339,175 @@ export interface BulkMapPartiesResult {
   publish_gate: PublishGate;
 }
 
+export function computePartyMappingSummary(
+  allRows: Array<StagingInvoiceRow | StagingCreditPeriodRow>,
+): PartyMappingSummary {
+  const invoiceRows = allRows.filter(
+    (row): row is StagingInvoiceRow => "party_name_raw" in row,
+  );
+
+  const alreadyResolvedRows = invoiceRows.filter(
+    (row) => row.analyst_overrides.resolved_canonical_id !== null,
+  );
+  const pendingRows = invoiceRows.filter(
+    (row) => row.analyst_overrides.resolved_canonical_id === null,
+  );
+
+  type GroupAccumulator = {
+    rawNames: Set<string>;
+    rowIndices: number[];
+    rows: StagingInvoiceRow[];
+  };
+  const groupMap = new Map<string, GroupAccumulator>();
+  let unmappableRows = 0;
+
+  for (const row of pendingRows) {
+    if (row.status === "PARSE_ERROR") continue;
+    const trimmed = row.party_name_raw.trim();
+    if (!trimmed) {
+      unmappableRows += 1;
+      continue;
+    }
+    const key = normalizePartyText(trimmed);
+    if (!key) {
+      unmappableRows += 1;
+      continue;
+    }
+    const group = groupMap.get(key) ?? {
+      rawNames: new Set<string>(),
+      rowIndices: [],
+      rows: [],
+    };
+    group.rawNames.add(row.party_name_raw);
+    group.rowIndices.push(row.row_index);
+    group.rows.push(row);
+    groupMap.set(key, group);
+  }
+
+  const STATE_PRIORITY: Record<string, number> = {
+    EXACT: 0,
+    FUZZY_HIGH: 1,
+    FUZZY_LOW: 2,
+    UNMAPPED: 3,
+  };
+
+  const groups: PartyGroupSummary[] = [];
+  let alreadyExisting = 0;
+  let suggestedMatches = 0;
+  let newToCreate = 0;
+  let fuzzyLowCount = 0;
+  let conflictCount = 0;
+
+  for (const [key, { rawNames, rowIndices, rows }] of groupMap) {
+    // Pick the row with the best (highest-priority) alias_resolution state
+    const bestRow = rows.reduce((best, row) => {
+      const bestP = STATE_PRIORITY[best.alias_resolution.resolutionState] ?? 4;
+      const rowP = STATE_PRIORITY[row.alias_resolution.resolutionState] ?? 4;
+      return rowP < bestP ? row : best;
+    });
+    const resolution = bestRow.alias_resolution;
+    const matchStatus = resolution.resolutionState as
+      | "EXACT"
+      | "FUZZY_HIGH"
+      | "FUZZY_LOW"
+      | "UNMAPPED";
+    const topMatch = resolution.topMatches[0] ?? null;
+
+    const conflicts: PartyGroupConflict[] = [];
+
+    // Multiple GSTINs for the same normalized name
+    const gstinsInGroup = [
+      ...new Set(
+        rows
+          .map((r) => r.gstin)
+          .filter((g): g is string => g !== null),
+      ),
+    ];
+    if (gstinsInGroup.length > 1) {
+      conflicts.push({
+        type: "duplicate_candidate",
+        message: `Multiple GSTINs for this party name: ${gstinsInGroup.join(", ")}`,
+      });
+    }
+
+    // Different rows in the group resolve to different canonicals via EXACT match
+    const exactCanonicalIds = new Set(
+      rows
+        .filter((r) => r.alias_resolution.resolutionState === "EXACT")
+        .map((r) => r.alias_resolution.topMatches[0]?.canonicalId)
+        .filter((id): id is string => id !== undefined),
+    );
+    if (exactCanonicalIds.size > 1) {
+      conflicts.push({
+        type: "conflicting_gstin",
+        message: `Rows in this group match ${exactCanonicalIds.size} different existing parties — manual mapping required`,
+      });
+    }
+
+    // FUZZY_LOW requires analyst review
+    if (matchStatus === "FUZZY_LOW") {
+      fuzzyLowCount += 1;
+      conflicts.push({
+        type: "similar_names_review",
+        message: topMatch
+          ? `Low-confidence match: "${topMatch.canonicalName}" (${topMatch.ratio.toFixed(0)}%) — review required`
+          : "Low-confidence match — manual review needed",
+        related_canonical_id: topMatch?.canonicalId,
+        related_canonical_name: topMatch?.canonicalName,
+      });
+    }
+
+    if (matchStatus === "EXACT") alreadyExisting += 1;
+    else if (matchStatus === "FUZZY_HIGH") suggestedMatches += 1;
+    else if (matchStatus === "UNMAPPED") newToCreate += 1;
+
+    const hasHardConflict = conflicts.some(
+      (c) => c.type !== "similar_names_review",
+    );
+    const bulk_actionable =
+      matchStatus !== "FUZZY_LOW" &&
+      !hasHardConflict &&
+      (matchStatus === "EXACT" ||
+        matchStatus === "FUZZY_HIGH" ||
+        matchStatus === "UNMAPPED");
+
+    if (conflicts.length > 0) conflictCount += 1;
+
+    groups.push({
+      normalized_key: key,
+      display_name: [...rawNames][0] ?? rows[0].party_name_raw,
+      raw_names: [...rawNames],
+      row_indices: rowIndices,
+      row_count: rowIndices.length,
+      match_status: matchStatus,
+      existing_canonical_id: topMatch?.canonicalId ?? null,
+      existing_canonical_name: topMatch?.canonicalName ?? null,
+      match_confidence: topMatch?.ratio ?? null,
+      gstin: gstinsInGroup[0] ?? null,
+      conflicts,
+      bulk_actionable,
+    });
+  }
+
+  const bulkActionableCount = groups
+    .filter((g) => g.bulk_actionable)
+    .reduce((sum, g) => sum + g.row_count, 0);
+
+  return {
+    total_invoice_rows: invoiceRows.length,
+    unique_parties: groupMap.size,
+    already_resolved: alreadyResolvedRows.length,
+    already_existing: alreadyExisting,
+    suggested_matches: suggestedMatches,
+    new_to_create: newToCreate,
+    unmappable_rows: unmappableRows,
+    fuzzy_low_count: fuzzyLowCount,
+    conflict_count: conflictCount,
+    bulk_actionable_count: bulkActionableCount,
+    groups,
+  };
+}
+
 type ColumnMappingResultJson = {
   source_hint: string;
   layout_variant: string;
