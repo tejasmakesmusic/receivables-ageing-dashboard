@@ -97,7 +97,21 @@ export function Error() {
 }
 
 export function WithSelection() {
-  return <DataTable {...baseProps} rows={rows} selectedRowKey="inv-002" />;
+  return (
+    <DataTable
+      {...baseProps}
+      bulkActions={
+        <>
+          <Button size="sm">Assign owner</Button>
+          <Button size="sm" variant="secondary">Snooze</Button>
+        </>
+      }
+      rows={rows}
+      selectable
+      selectedRowKey="inv-002"
+      selectedRowKeys={["inv-002"]}
+    />
+  );
 }
 
 export function Sortable() {
@@ -118,6 +132,30 @@ export function WithFrozenColumns() {
       minWidthClass="min-w-[1180px]"
       rows={rows}
       sortHref={sortHref}
+    />
+  );
+}
+
+export function CompactDensity() {
+  return <DataTable {...baseProps} density="compact" rows={rows} />;
+}
+
+export function WithFilterBar() {
+  return (
+    <DataTable
+      {...baseProps}
+      filterBar={
+        <>
+          <span className="rounded-[var(--radius-sm)] bg-[var(--color-bg-muted)] px-2 py-1 text-[12px] text-[var(--color-text)]">
+            Status: Overdue
+          </span>
+          <span className="rounded-[var(--radius-sm)] bg-[var(--color-bg-muted)] px-2 py-1 text-[12px] text-[var(--color-text)]">
+            Owner: Priya
+          </span>
+        </>
+      }
+      rows={rows}
+      toolbar={<Button size="sm" variant="secondary">Density</Button>}
     />
   );
 }
