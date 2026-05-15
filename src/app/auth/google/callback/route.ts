@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   const stateData = parseStateToken(stateParam);
 
   if (!stateCookie || !stateData || stateData.nonce !== stateCookie) {
-    console.error("[google/callback] State mismatch — stateCookie present:", !!stateCookie, "stateData valid:", !!stateData);
+    console.error(`[google/callback] State mismatch: cookie=${!!stateCookie} stateOk=${!!stateData}`);
     return NextResponse.redirect(new URL("/auth/login?error=oauth_failed", request.url));
   }
 

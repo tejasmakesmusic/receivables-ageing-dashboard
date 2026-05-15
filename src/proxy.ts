@@ -71,7 +71,7 @@ export function proxy(request: NextRequest) {
 
   // Require session cookie for protected pages
   if (!request.cookies.has(SESSION_COOKIE_NAME)) {
-    const loginUrl = new URL("/auth/google/login", request.url);
+    const loginUrl = new URL("/auth/login", request.url);
     loginUrl.searchParams.set("next", pathname);
 
     return NextResponse.redirect(loginUrl);
