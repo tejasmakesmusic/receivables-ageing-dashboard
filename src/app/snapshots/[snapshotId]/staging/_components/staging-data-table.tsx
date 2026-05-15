@@ -37,6 +37,7 @@ const FILTER_TABS = [
   { label: "Fuzzy High", value: "fuzzy_high" },
   { label: "Fuzzy Low", value: "fuzzy_low" },
   { label: "Parse Errors", value: "parse_error" },
+  { label: "No Credit Days", value: "no_credit_days" },
   { label: "Resolved", value: "ok" },
 ] as const;
 
@@ -178,7 +179,14 @@ export function StagingDataTable({
     {
       key: "match",
       header: "Match",
-      cell: (row) => <StatusTag status={rowResolutionState(row)} />,
+      cell: (row) => (
+        <div className="flex flex-wrap gap-1">
+          <StatusTag status={rowResolutionState(row)} />
+          {isInvoiceRow(row) && row.no_credit_days ? (
+            <StatusTag status="NO_CREDIT_DAYS" />
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "actions",
@@ -199,6 +207,8 @@ export function StagingDataTable({
           else if (value === "fuzzy_low") count = gate.fuzzy_low_pending_count;
           else if (value === "parse_error")
             count = gate.parse_errors_unresolved_count;
+          else if (value === "no_credit_days")
+            count = gate.credit_days_missing_count;
 
           return (
             <SavedViewLink
