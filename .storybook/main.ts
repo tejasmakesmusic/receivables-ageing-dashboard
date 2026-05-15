@@ -24,6 +24,10 @@ const config: StorybookConfig = {
   webpackFinal: async (config) => ({
     ...config,
     cache: false,
+    performance: {
+      ...config.performance,
+      hints: false,
+    },
     resolve: {
       ...config.resolve,
       alias: {
