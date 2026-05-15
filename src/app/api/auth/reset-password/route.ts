@@ -32,11 +32,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "token_expired" }, { status: 400 });
     }
 
+    if (!user.is_active) {
+      return NextResponse.json({ error: "account_inactive" }, { status: 403 });
+    }
+
     const redirectTo = user.role === role_enum.PENDING ? "/auth/pending" : "/dashboard";
     const response = NextResponse.json({ success: true, redirectTo });
     setAuthSessionCookie(response, user.id);
     return response;
   } catch (err) {
+    if (err instanceof Error && err.message === "password_too_short") {
+      return NextResponse.json({ error: "password_too_short" }, { status: 422 });
+    }
     console.error("[reset-password] unexpected error", err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }

@@ -72,6 +72,23 @@ describe("POST /api/auth/reset-password", () => {
     expect(body.redirectTo).toBe("/auth/pending");
   });
 
+  it("returns 403 account_inactive when user is_active=false", async () => {
+    mockResetPassword.mockResolvedValue({ ...BASE_USER, is_active: false });
+    const res = await POST(makeRequest({ token: "valid-token", password: "newpass123" }));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("account_inactive");
+    expect(mockSetAuthSessionCookie).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 password_too_short when core throws (defence-in-depth)", async () => {
+    mockResetPassword.mockRejectedValue(new Error("password_too_short"));
+    const res = await POST(makeRequest({ token: "valid-token", password: "newpass123" }));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error).toBe("password_too_short");
+  });
+
   it("returns 500 on unexpected error", async () => {
     mockResetPassword.mockRejectedValue(new Error("db_error"));
     const res = await POST(makeRequest({ token: "valid-token", password: "newpass123" }));
