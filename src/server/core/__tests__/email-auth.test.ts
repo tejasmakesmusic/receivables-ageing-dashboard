@@ -482,8 +482,16 @@ describe("requestPasswordReset", () => {
     expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
+  it("returns true without doing anything when user is inactive", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", is_active: false });
+    const result = await requestPasswordReset("a@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
   it("generates reset token, updates user, sends email, returns true", async () => {
-    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", password_hash: "some-hash" });
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", is_active: true, password_hash: "some-hash" });
     mockUpdate.mockResolvedValue({ id: "u1" });
     mockSendEmail.mockResolvedValue({ id: "e1", skipped: false });
 
@@ -498,10 +506,11 @@ describe("requestPasswordReset", () => {
     }));
     const emailArgs = mockSendEmail.mock.calls[0][0];
     expect(emailArgs.subject).toContain("Reset your password");
+    expect(emailArgs.html).toContain("/auth/reset-password?token=");
   });
 
-  it("works for Google-only accounts (null password_hash)", async () => {
-    mockFindUnique.mockResolvedValue({ id: "u1", email: "google@b.com", name: "G User", password_hash: null });
+  it("works for Google-only accounts (null password_hash) — spec allows adding a password via reset", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "google@b.com", name: "G User", is_active: true, password_hash: null });
     mockUpdate.mockResolvedValue({ id: "u1" });
     mockSendEmail.mockResolvedValue({ id: "e1", skipped: false });
 
@@ -511,7 +520,7 @@ describe("requestPasswordReset", () => {
   });
 
   it("returns true even when email send fails (token still saved)", async () => {
-    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", password_hash: null });
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", is_active: true, password_hash: null });
     mockUpdate.mockResolvedValue({ id: "u1" });
     mockSendEmail.mockRejectedValue(new Error("SMTP error"));
 

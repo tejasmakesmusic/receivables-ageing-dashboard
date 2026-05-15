@@ -252,7 +252,7 @@ const RESET_EXPIRY_HOURS = 1;
 export async function requestPasswordReset(email: string): Promise<true> {
   const prisma = getPrisma();
   const user = await prisma.users.findUnique({ where: { email } });
-  if (!user) return true;
+  if (!user || !user.is_active) return true;
 
   const password_reset_token = generateVerificationToken();
   const password_reset_expires_at = new Date(
