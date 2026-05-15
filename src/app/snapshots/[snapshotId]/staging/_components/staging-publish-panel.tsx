@@ -249,6 +249,13 @@ export function StagingPublishPanel({
               {gate.parse_errors_unresolved_count === 1 ? "error" : "errors"}
             </GateBlockerItem>
           ) : null}
+          {gate.credit_days_missing_count > 0 ? (
+            <GateBlockerItem>
+              {gate.credit_days_missing_count}{" "}
+              {gate.credit_days_missing_count === 1 ? "row" : "rows"} missing
+              credit days — set a credit period config or entity default
+            </GateBlockerItem>
+          ) : null}
           {hasWarnings ? (
             <GateBlockerItem>
               {warningCodes.length}{" "}
