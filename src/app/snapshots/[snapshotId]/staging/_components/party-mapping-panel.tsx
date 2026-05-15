@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { AlertTriangle, CheckCircle2, Users } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import type {
@@ -76,6 +76,7 @@ export function PartyMappingPanel({
   const toast = useToast();
   const [state, setState] = useState<ActionState>("idle");
   const [message, setMessage] = useState("");
+  const [, startTransition] = useTransition();
 
   const hasActionable = summary.bulk_actionable_count > 0;
   const reviewGroups = summary.groups.filter(
@@ -119,7 +120,9 @@ export function PartyMappingPanel({
           .filter(Boolean)
           .join(" "),
       );
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (error) {
       setState("error");
       const msg =

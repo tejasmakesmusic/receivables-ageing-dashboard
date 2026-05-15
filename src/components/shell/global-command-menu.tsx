@@ -201,10 +201,10 @@ export function GlobalCommandMenu() {
       >
         <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="truncate">Search workspaces, actions, records...</span>
-        <kbd className="ml-auto hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-subtle)] sm:inline-flex">
+        <kbd className="ml-auto hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] sm:inline-flex">
           Ctrl K
         </kbd>
-        <kbd className="ml-2 hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-subtle)] sm:inline-flex">
+        <kbd className="ml-2 hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] sm:inline-flex">
           /
         </kbd>
       </button>
