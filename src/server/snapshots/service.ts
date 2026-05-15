@@ -37,6 +37,7 @@ import {
 import { compareColumnMappings } from "@/server/column-mappings/service";
 import { storeUploadedWorkbook } from "@/server/storage/workbooks";
 import { addDaysUtc, calculateAgeing } from "@/server/ageing/buckets";
+import { canResolveCreditDays } from "@/server/ageing/credit-days-check";
 import { dbTransaction } from "@/lib/db-transaction";
 
 const MATCH_TOLERANCE_CENTS = 10000n;
@@ -71,7 +72,7 @@ export const stagingQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   filter: z
-    .enum(["all", "ok", "parse_error", "unmapped", "fuzzy_low", "fuzzy_high"])
+    .enum(["all", "ok", "parse_error", "unmapped", "fuzzy_low", "fuzzy_high", "no_credit_days"])
     .default("all"),
 });
 
@@ -217,6 +218,7 @@ export interface PublishGate {
    * blocks indefinitely until re-uploaded; APPROVED unblocks.
    */
   review_status: "NOT_REQUIRED" | "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+  credit_days_missing_count: number;
 }
 
 export interface StagingInvoiceRow {
@@ -246,6 +248,7 @@ export interface StagingInvoiceRow {
   resolved_canonical_name: string | null;
   xero_metadata: Record<string, unknown> | null;
   raw_row_json: Record<string, unknown>;
+  no_credit_days: boolean;
 }
 
 export interface StagingCreditPeriodRow {
@@ -980,6 +983,8 @@ function gateFromRows(params: {
   const reviewBlocks =
     params.reviewRequired && reviewStatus !== "APPROVED";
 
+  const creditDaysMissing = invoiceRows.filter((r) => r.no_credit_days).length;
+
   return {
     ok:
       rolePermits &&
@@ -988,11 +993,13 @@ function gateFromRows(params: {
       unmapped === 0 &&
       fuzzyHigh === 0 &&
       fuzzyLow === 0 &&
+      creditDaysMissing === 0 &&
       !reviewBlocks,
     unmapped_parties_count: unmapped,
     fuzzy_high_pending_count: fuzzyHigh,
     fuzzy_low_pending_count: fuzzyLow,
     parse_errors_unresolved_count: parseErrorsUnresolved,
+    credit_days_missing_count: creditDaysMissing,
     warnings_unacknowledged: unacknowledged,
     role_permits_publish: rolePermits,
     review_status: reviewStatus,
@@ -1306,7 +1313,7 @@ async function buildStagingRows(
     loadAliasCorpus(snapshot.entity_id),
     getPrisma().entities.findUnique({
       where: { id: snapshot.entity_id },
-      select: { require_review_before_publish: true },
+      select: { require_review_before_publish: true, default_credit_days: true },
     }),
   ]);
   // PR C — map canonical-id → name so we can attach the resolved party
@@ -1348,8 +1355,53 @@ async function buildStagingRows(
         ? (row.xero_metadata as unknown as Record<string, unknown>)
         : null,
       raw_row_json: row.raw_row_json,
+      no_credit_days: false,
     };
   });
+
+  const resolvedCanonicalIds = [
+    ...new Set(
+      invoiceRows
+        .filter((r) => r.status === "OK")
+        .map(
+          (r) =>
+            r.analyst_overrides.resolved_canonical_id ??
+            (r.alias_resolution.resolutionState === "EXACT"
+              ? r.alias_resolution.topMatches[0]?.canonicalId
+              : null),
+        )
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+
+  const creditPeriodConfigs =
+    resolvedCanonicalIds.length > 0
+      ? await getPrisma().credit_period_config.findMany({
+          where: { canonical_id: { in: resolvedCanonicalIds } },
+          select: { canonical_id: true, valid_from: true, valid_to: true },
+        })
+      : [];
+
+  const entityDefaultDays = entityForGate?.default_credit_days ?? null;
+
+  for (const row of invoiceRows) {
+    if (row.status !== "OK") continue;
+    const canonicalId =
+      row.analyst_overrides.resolved_canonical_id ??
+      (row.alias_resolution.resolutionState === "EXACT"
+        ? row.alias_resolution.topMatches[0]?.canonicalId
+        : null);
+    if (!canonicalId) continue;
+    const invoiceDate = parseDateInput(row.invoice_date);
+    if (!invoiceDate) continue;
+    row.no_credit_days = !canResolveCreditDays({
+      canonicalId,
+      invoiceDate,
+      creditDaysOverride: row.analyst_overrides.credit_days_override,
+      entityDefaultDays,
+      configs: creditPeriodConfigs,
+    });
+  }
 
   const creditRows: StagingCreditPeriodRow[] = parseResult.credit_periods.map(
     (row) => ({
@@ -1405,6 +1457,13 @@ function filterStagingRows(
   if (filter === "parse_error") {
     return rows.filter(
       (row) => "status" in row && row.status === "PARSE_ERROR",
+    );
+  }
+
+  if (filter === "no_credit_days") {
+    return rows.filter(
+      (row): row is StagingInvoiceRow =>
+        "no_credit_days" in row && (row as StagingInvoiceRow).no_credit_days,
     );
   }
 
