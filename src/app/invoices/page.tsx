@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { ArrowRight, FileText, Filter, LayoutList, Rows3, Settings, Upload } from "lucide-react";
+import {
+  ArrowRight,
+  FileText,
+  Filter,
+  LayoutList,
+  Rows3,
+  Settings,
+  Upload,
+} from "lucide-react";
 import { SavedViewSwitcher } from "@/components/saved-views/saved-view-switcher";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
@@ -111,19 +119,40 @@ function invoiceViewHref(view: InvoiceViewMode, params: InvoicePageParams) {
 }
 
 function suggestedAction(invoice: InvoiceListRow) {
-  if (invoice.active_exception_count > 0) return "Review exception";
-  if (invoice.bucket === "90_PLUS") return "Escalation review";
+  if (invoice.active_exception_count > 0) return "Review blocked invoice";
+  if (invoice.bucket === "90_PLUS") return "Escalate account";
   if (invoice.bucket === "61_90") return "Manager follow-up";
-  if (invoice.bucket === "31_60") return "Promise follow-up";
-  if (invoice.bucket === "0_30") return "Customer follow-up";
-  return "Monitor";
+  if (invoice.bucket === "31_60") return "Confirm promise";
+  if (invoice.bucket === "0_30") return "Send follow-up";
+  return "Monitor terms";
+}
+
+function nextActionClass(invoice: InvoiceListRow) {
+  if (invoice.active_exception_count > 0 || invoice.bucket === "90_PLUS") {
+    return "border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-text)]";
+  }
+  if (invoice.bucket === "61_90" || invoice.bucket === "31_60") {
+    return "border-[var(--color-status-warning-border)] bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning-text)]";
+  }
+  return "border-[var(--color-status-neutral-border)] bg-[var(--color-status-neutral-bg)] text-[var(--color-status-neutral-text)]";
+}
+
+function NextActionPill({ invoice }: { invoice: InvoiceListRow }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${nextActionClass(invoice)}`}
+    >
+      {suggestedAction(invoice)}
+    </span>
+  );
 }
 
 function riskTag(invoice: InvoiceListRow) {
   if (invoice.active_exception_count > 0) {
     return { label: "Exception", status: "90_PLUS" };
   }
-  if (invoice.bucket === "90_PLUS") return { label: "Critical", status: "90_PLUS" };
+  if (invoice.bucket === "90_PLUS")
+    return { label: "Critical", status: "90_PLUS" };
   if (invoice.bucket === "61_90") return { label: "High", status: "61_90" };
   if (invoice.bucket === "31_60") return { label: "Medium", status: "31_60" };
   return { label: "Low", status: "NOT_DUE" };
@@ -255,11 +284,7 @@ function invoiceColumns(): DataTableColumn<InvoiceListRow>[] {
     {
       key: "next_action",
       header: "Next Action",
-      cell: (invoice) => (
-        <span className="text-[var(--color-text-muted)]">
-          {suggestedAction(invoice)}
-        </span>
-      ),
+      cell: (invoice) => <NextActionPill invoice={invoice} />,
     },
     {
       key: "status",
@@ -294,6 +319,32 @@ function filterCount(params: InvoicePageParams) {
   ].filter(Boolean).length;
 }
 
+function filterLabel(key: string, value: string) {
+  const labels: Record<string, Record<string, string>> = {
+    change_status: {
+      all: "All changes",
+      changed: "Changed since last upload",
+      closed: "Closed this snapshot",
+      new: "New since last upload",
+    },
+    has_active_exceptions: {
+      false: "No active exceptions",
+      true: "Has active exceptions",
+    },
+    overdue_bucket: {
+      "0_30": "1-30 days overdue",
+      "31_60": "31-60 days overdue",
+      "61_90": "61-90 days overdue",
+      "90_PLUS": "91+ days overdue",
+      DUE_TODAY: "Due today",
+      NOT_DUE: "Not due",
+    },
+    status: { OPEN: "Open", SETTLED: "Settled" },
+  };
+
+  return labels[key]?.[value] ?? value;
+}
+
 export default async function InvoicesPage({ searchParams }: PageProps) {
   const currentUser = await requirePageRole(
     "/invoices",
@@ -308,12 +359,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   const systemViewId = parseSystemViewId(first(raw.system_view));
   const systemViewParams = getInvoiceSystemViewParams(systemViewId);
   const rawChangeStatus = first(raw.change_status);
-  const changeStatus:
-    | "new"
-    | "closed"
-    | "changed"
-    | "all"
-    | undefined =
+  const changeStatus: "new" | "closed" | "changed" | "all" | undefined =
     rawChangeStatus === "new"
       ? "new"
       : rawChangeStatus === "closed"
@@ -393,6 +439,25 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     0,
   );
   const activeFilterCount = filterCount(params);
+  const activeFilters = [
+    params.entity ? ["entity", `Entity ${params.entity}`] : null,
+    params.status ? ["status", filterLabel("status", params.status)] : null,
+    params.overdue_bucket
+      ? ["overdue_bucket", filterLabel("overdue_bucket", params.overdue_bucket)]
+      : null,
+    params.has_active_exceptions
+      ? [
+          "has_active_exceptions",
+          filterLabel("has_active_exceptions", params.has_active_exceptions),
+        ]
+      : null,
+    params.change_status
+      ? ["change_status", filterLabel("change_status", params.change_status)]
+      : null,
+    params.lob
+      ? ["lob", params.lob === "__none__" ? "Untagged" : `LOB ${params.lob}`]
+      : null,
+  ].filter(Boolean) as Array<[string, string]>;
 
   return (
     <PageFrame>
@@ -530,65 +595,124 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                 </div>
               </div>
 
-              <form action="/invoices" className="grid gap-3 sm:grid-cols-2">
+              <form
+                action="/invoices"
+                className="grid gap-3 sm:grid-cols-2"
+                aria-label="Invoice filters"
+              >
                 <input name="page_size" type="hidden" value={pageSize} />
-                <select className={fieldClass} defaultValue={params.entity ?? ""} name="entity">
-                  <option value="">All entities</option>
-                  <option value="IND">IND</option>
-                  <option value="UAE">UAE</option>
-                </select>
-                <select className={fieldClass} defaultValue={params.status ?? ""} name="status">
-                  <option value="">All statuses</option>
-                  <option value="OPEN">Open</option>
-                  <option value="SETTLED">Settled</option>
-                </select>
-                <select
-                  className={fieldClass}
-                  defaultValue={params.overdue_bucket ?? ""}
-                  name="overdue_bucket"
-                >
-                  <option value="">All buckets</option>
-                  <option value="NOT_DUE">Not Due</option>
-                  <option value="DUE_TODAY">Due Today</option>
-                  <option value="0_30">1-30 Days</option>
-                  <option value="31_60">31-60 Days</option>
-                  <option value="61_90">61-90 Days</option>
-                  <option value="90_PLUS">91+ Days</option>
-                </select>
-                <select
-                  className={fieldClass}
-                  defaultValue={params.has_active_exceptions ?? ""}
-                  name="has_active_exceptions"
-                >
-                  <option value="">Exception status</option>
-                  <option value="true">Has active exceptions</option>
-                  <option value="false">No active exceptions</option>
-                </select>
-                <select
-                  className={fieldClass}
-                  defaultValue={params.lob ?? ""}
-                  name="lob"
-                >
-                  <option value="">All LOBs</option>
-                  <option value="__none__">Untagged</option>
-                  {availableLobs.map((lob) => (
-                    <option key={lob.id} value={lob.code}>
-                      {lob.code} — {lob.name}
-                    </option>
-                  ))}
-                </select>
-                <Button className="sm:col-span-2" type="submit">
-                  <Filter className="h-4 w-4" />
-                  Apply Filters
-                  {activeFilterCount ? (
-                    <span className="rounded-full bg-white/20 px-2 text-xs">
-                      {activeFilterCount}
-                    </span>
-                  ) : null}
-                </Button>
+                <label className="grid gap-1 text-xs font-medium text-[var(--color-text-muted)]">
+                  Entity
+                  <select
+                    className={fieldClass}
+                    defaultValue={params.entity ?? ""}
+                    name="entity"
+                  >
+                    <option value="">All entities</option>
+                    <option value="IND">IND</option>
+                    <option value="UAE">UAE</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs font-medium text-[var(--color-text-muted)]">
+                  Invoice status
+                  <select
+                    className={fieldClass}
+                    defaultValue={params.status ?? ""}
+                    name="status"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="OPEN">Open</option>
+                    <option value="SETTLED">Settled</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs font-medium text-[var(--color-text-muted)]">
+                  Ageing bucket
+                  <select
+                    className={fieldClass}
+                    defaultValue={params.overdue_bucket ?? ""}
+                    name="overdue_bucket"
+                  >
+                    <option value="">All buckets</option>
+                    <option value="NOT_DUE">Not Due</option>
+                    <option value="DUE_TODAY">Due Today</option>
+                    <option value="0_30">1-30 Days</option>
+                    <option value="31_60">31-60 Days</option>
+                    <option value="61_90">61-90 Days</option>
+                    <option value="90_PLUS">91+ Days</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs font-medium text-[var(--color-text-muted)]">
+                  Exception state
+                  <select
+                    className={fieldClass}
+                    defaultValue={params.has_active_exceptions ?? ""}
+                    name="has_active_exceptions"
+                  >
+                    <option value="">Any exception state</option>
+                    <option value="true">Has active exceptions</option>
+                    <option value="false">No active exceptions</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs font-medium text-[var(--color-text-muted)]">
+                  Line of business
+                  <select
+                    className={fieldClass}
+                    defaultValue={params.lob ?? ""}
+                    name="lob"
+                  >
+                    <option value="">All LOBs</option>
+                    <option value="__none__">Untagged</option>
+                    {availableLobs.map((lob) => (
+                      <option key={lob.id} value={lob.code}>
+                        {lob.code} — {lob.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-end">
+                  <Button className="w-full" type="submit">
+                    <Filter className="h-4 w-4" />
+                    Apply filters
+                    {activeFilterCount ? (
+                      <span className="rounded-full bg-white/20 px-2 text-xs">
+                        {activeFilterCount}
+                      </span>
+                    ) : null}
+                  </Button>
+                </div>
               </form>
             </div>
           </Panel>
+
+          {activeFilters.length > 0 ? (
+            <div
+              className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-muted)]"
+              aria-label="Applied filters"
+            >
+              <span className="font-medium text-[var(--color-text)]">
+                Applied filters:
+              </span>
+              {activeFilters.map(([key, label]) => (
+                <span
+                  className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2.5 py-1 font-medium text-[var(--color-text-muted)]"
+                  key={`${key}-${label}`}
+                >
+                  {label}
+                </span>
+              ))}
+              <Link
+                className="font-medium text-[var(--color-accent)] hover:underline"
+                href="/invoices"
+              >
+                Clear all
+              </Link>
+            </div>
+          ) : (
+            <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              Showing the full invoice queue. Use filters or saved views to
+              narrow to overdue, blocked, or changed work.
+            </div>
+          )}
 
           <Panel>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-3">
@@ -597,7 +721,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   Invoice Review Queue
                 </div>
                 <div className="text-xs text-[var(--color-text-muted)]">
-                  Open any invoice to inspect detail, account context, and follow-up paths.
+                  Start with rows marked blocked, 90+, or changed; each row
+                  shows the safest next action.
                 </div>
               </div>
               <div className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
@@ -635,8 +760,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                 {response.items.length === 0 ? (
                   <div className="p-8 text-center text-sm text-[var(--color-text-muted)]">
                     {activeFilterCount > 0
-                      ? "No invoices match these filters."
-                      : "No invoices yet."}
+                      ? "No invoices match these filters. Clear filters or switch saved views to return to the full ledger."
+                      : "No invoices yet. Publish a staged workbook to populate the review queue."}
                   </div>
                 ) : (
                   response.items.map((invoice) => (
@@ -655,16 +780,15 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                           {invoice.invoice_ref}
                         </div>
                         <div className="mt-1 truncate text-xs text-[var(--color-text-muted)]">
-                          {invoice.canonical_name || "Unmatched account"} · {invoice.entity_code}
+                          {invoice.canonical_name || "Unmatched account"} ·{" "}
+                          {invoice.entity_code}
                         </div>
                       </div>
                       <StatusTag status={invoice.bucket} />
                       <span className="font-medium tabular-nums">
                         {formatCurrency(invoice.amount, invoice.currency)}
                       </span>
-                      <span className="text-xs text-[var(--color-text-muted)]">
-                        {suggestedAction(invoice)}
-                      </span>
+                      <NextActionPill invoice={invoice} />
                       <ArrowRight className="h-4 w-4 justify-self-end text-[var(--color-text-muted)] transition-colors group-hover:text-[var(--color-accent)]" />
                     </Link>
                   ))
@@ -704,12 +828,12 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                 }}
                 isFiltered={activeFilterCount > 0}
                 minWidthClass="min-w-[1120px]"
-              rowHref={(invoice) => previewHref(invoice.invoice_id, params)}
-              rowCreateHref={(invoice) =>
-                `/follow-ups?invoice_id=${invoice.invoice_id}`
-              }
-              rowEditHref={(invoice) => `/invoice/${invoice.invoice_id}`}
-              rowKey={(invoice) => invoice.invoice_id}
+                rowHref={(invoice) => previewHref(invoice.invoice_id, params)}
+                rowCreateHref={(invoice) =>
+                  `/follow-ups?invoice_id=${invoice.invoice_id}`
+                }
+                rowEditHref={(invoice) => `/invoice/${invoice.invoice_id}`}
+                rowKey={(invoice) => invoice.invoice_id}
                 rows={response.items}
                 selectedRowKey={selectedInvoice?.invoice_id ?? null}
               />
@@ -730,7 +854,10 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                 <Link
                   aria-disabled={response.page >= totalPages}
                   className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                  href={pageHref(Math.min(totalPages, response.page + 1), params)}
+                  href={pageHref(
+                    Math.min(totalPages, response.page + 1),
+                    params,
+                  )}
                 >
                   Next
                 </Link>
@@ -748,7 +875,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
                   href={`/follow-ups?invoice_id=${selectedInvoice.invoice_id}`}
                 >
-                  Log follow-up
+                  Log invoice follow-up
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               }
@@ -759,7 +886,10 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
             >
               <div className="grid grid-cols-2 gap-3">
                 <SidePanelField label="Amount">
-                  {formatCurrency(selectedInvoice.amount, selectedInvoice.currency)}
+                  {formatCurrency(
+                    selectedInvoice.amount,
+                    selectedInvoice.currency,
+                  )}
                 </SidePanelField>
                 <SidePanelField label="Age">
                   {selectedInvoice.overdue_days ?? 0} days
@@ -774,7 +904,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
 
               <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
                 <div className="text-sm font-semibold text-[var(--color-text)]">
-                  Next Review Path
+                  Recommended next action
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
                   <span>{suggestedAction(selectedInvoice)}</span>
@@ -816,10 +946,22 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
             {selectedInvoice ? (
               <div className="space-y-2 p-4">
                 {[
-                  ["Log follow-up", `/follow-ups?invoice_id=${selectedInvoice.invoice_id}`],
-                  ["Task queue", `/tasks?canonical_id=${selectedInvoice.canonical_id}`],
-                  ["Promises", `/promises-to-pay?canonical_id=${selectedInvoice.canonical_id}`],
-                  ["Exceptions", `/exceptions?invoice_id=${selectedInvoice.invoice_id}`],
+                  [
+                    "Log follow-up",
+                    `/follow-ups?invoice_id=${selectedInvoice.invoice_id}`,
+                  ],
+                  [
+                    "Task queue",
+                    `/tasks?canonical_id=${selectedInvoice.canonical_id}`,
+                  ],
+                  [
+                    "Promises",
+                    `/promises-to-pay?canonical_id=${selectedInvoice.canonical_id}`,
+                  ],
+                  [
+                    "Exceptions",
+                    `/exceptions?invoice_id=${selectedInvoice.invoice_id}`,
+                  ],
                 ].map(([label, href]) => (
                   <Link
                     className="flex h-10 items-center justify-between rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
@@ -833,27 +975,31 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               </div>
             ) : (
               <div className="p-4 text-sm text-[var(--color-text-muted)]">
-                Select an invoice to open related follow-up, task, promise,
-                and exception workflows.
+                Select an invoice to open related follow-up, task, promise, and
+                exception workflows.
               </div>
             )}
           </Panel>
 
           <Panel>
-            <PanelHeader title="Queue Health">
-              Current page only.
-            </PanelHeader>
+            <PanelHeader title="Queue Health">Current page only.</PanelHeader>
             <div className="space-y-3 p-4 text-sm">
               <div className="flex justify-between gap-3">
-                <span className="text-[var(--color-text-muted)]">Visible invoices</span>
+                <span className="text-[var(--color-text-muted)]">
+                  Visible invoices
+                </span>
                 <span className="font-semibold">{response.items.length}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-[var(--color-text-muted)]">Active exceptions</span>
+                <span className="text-[var(--color-text-muted)]">
+                  Active exceptions
+                </span>
                 <span className="font-semibold">{exceptionCount}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-[var(--color-text-muted)]">Filters applied</span>
+                <span className="text-[var(--color-text-muted)]">
+                  Filters applied
+                </span>
                 <span className="font-semibold">{activeFilterCount}</span>
               </div>
             </div>

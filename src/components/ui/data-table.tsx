@@ -70,7 +70,7 @@ export function TableShell({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)]",
+        "overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]",
         className,
       )}
     >
@@ -206,7 +206,7 @@ export function DataTable<Row>({
   return (
     <TableShell className={className}>
       <table className={cn("w-full text-sm", minWidthClass)}>
-        <thead className="bg-[var(--color-bg-subtle)] text-left text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+        <thead className="sticky top-0 z-10 border-b border-[var(--color-border-medium)] bg-[var(--color-bg-subtle)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
           <tr>
             {columns.map((column) => {
               const sortable = Boolean(column.sortKey && sortHref);
@@ -231,6 +231,15 @@ export function DataTable<Row>({
 
               return (
                 <th
+                  aria-sort={
+                    active
+                      ? sort!.direction === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : sortable
+                        ? "none"
+                        : undefined
+                  }
                   className={cn(
                     "px-4 py-3 align-middle",
                     alignClass(column.align),
@@ -244,14 +253,12 @@ export function DataTable<Row>({
                 >
                   {sortable && column.sortKey ? (
                     <Link
-                      aria-sort={
-                        active
-                          ? sort!.direction === "asc"
-                            ? "ascending"
-                            : "descending"
-                          : "none"
-                      }
-                      className="inline-flex items-center text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                      aria-label={`Sort by ${String(column.header)} ${
+                        active && sort!.direction === "asc"
+                          ? "descending"
+                          : "ascending"
+                      }`}
+                      className="inline-flex items-center rounded-[var(--radius-xs)] text-[var(--color-text-muted)] outline-none transition-colors hover:text-[var(--color-text)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)]"
                       href={sortHref!({
                         key: column.sortKey,
                         direction: nextSortDirection(sort, column.sortKey),
@@ -331,7 +338,7 @@ export function DataTable<Row>({
                   {columns.map((column) => (
                     <td
                       className={cn(
-                        "px-4 py-3 align-middle",
+                        "px-4 py-3 align-middle tabular-nums",
                         alignClass(column.align),
                         stickyClasses(column.sticky),
                         selected && column.sticky === "left"

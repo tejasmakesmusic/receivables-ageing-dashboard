@@ -12,11 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  EmptyState,
-  PageFrame,
-  PageHeader,
-} from "@/components/ui/workspace";
+import { EmptyState, PageFrame, PageHeader } from "@/components/ui/workspace";
 import { role_enum } from "@/generated/prisma/enums";
 import type {
   DashboardEntity,
@@ -168,6 +164,44 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   const ninetyPlusAmount = dashboard.ageing_buckets["90_PLUS"] ?? 0;
   const overdueShare = dashboard.kpis.pct_overdue;
+  const stagedSnapshotCount = sourceFreshness.reduce(
+    (sum, source) => sum + source.stagedCount,
+    0,
+  );
+  const criticalWorkItems = [
+    {
+      label: "Review 90+ overdue invoices",
+      count: dashboard.kpis.parties_with_90plus_count,
+      detail: `${formatCurrencyCompact(
+        ninetyPlusAmount,
+        dashboard.currency_display,
+      )} at highest ageing risk`,
+      href: `/invoices?overdue_bucket=90_PLUS${entity !== "ALL" ? `&entity=${entity}` : ""}`,
+      status: "90_PLUS",
+    },
+    {
+      label: "Resolve active exceptions",
+      count: dashboard.recent_exceptions.length,
+      detail: "Blocked invoices need an owner and next step",
+      href: "/exceptions",
+      status:
+        dashboard.recent_exceptions.length > 0 ? "STAGING_BLOCKED" : "NO_DATA",
+    },
+    {
+      label: "Review changed invoice fields",
+      count: unackedChangesCount,
+      detail: "Acknowledge snapshot drifts before they surprise operators",
+      href: "/invoices?change_status=changed",
+      status: unackedChangesCount > 0 ? "NEEDS_REVIEW" : "NO_DATA",
+    },
+    {
+      label: "Publish staged workbooks",
+      count: stagedSnapshotCount,
+      detail: "Staged snapshots do not affect AR until published",
+      href: "/snapshots?status=STAGED",
+      status: stagedSnapshotCount > 0 ? "STAGED" : "PUBLISHED",
+    },
+  ];
   const topPartiesData = dashboard.top_parties.map((party) => ({
     canonical_id: party.canonical_id,
     name: party.canonical_name,
@@ -184,7 +218,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             <StatusTag status={dashboard.snapshot_status} />
           </span>
         }
-        title="Dashboard"
+        title="Today's Receivables Priorities"
         actions={
           currentUser.role !== role_enum.ANALYST ? (
             <EntitySwitcher current={entity} />
@@ -196,7 +230,19 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           : `Receivables for ${entity}, derived from the latest published snapshot.`}
       </PageHeader>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section
+        className="grid gap-3 lg:grid-cols-4"
+        aria-label="Critical work queue"
+      >
+        {criticalWorkItems.map((item) => (
+          <WorkQueueCard key={item.label} {...item} />
+        ))}
+      </section>
+
+      <section
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        aria-label="Receivables health summary"
+      >
         <KpiCard
           icon={<Wallet className="h-4 w-4" />}
           label="Total Outstanding"
@@ -211,10 +257,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           label="Overdue Share"
           meta="of total receivables"
           tone={
-            overdueShare >= 25
-              ? "warning"
-              : overdueShare >= 50
-                ? "danger"
+            overdueShare >= 50
+              ? "danger"
+              : overdueShare >= 25
+                ? "warning"
                 : "neutral"
           }
           value={`${overdueShare.toFixed(1)}%`}
@@ -257,7 +303,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       <section className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Ageing Buckets</CardTitle>
+            <CardTitle>Cash Risk by Ageing Bucket</CardTitle>
           </CardHeader>
           <CardContent>
             <AgeingBucketsChart buckets={ageingBuckets} />
@@ -267,7 +313,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Recent Exceptions</CardTitle>
+              <CardTitle>Blocked Invoices</CardTitle>
               <Link
                 className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] hover:underline"
                 href="/exceptions"
@@ -283,7 +329,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                   <FileWarning className="h-5 w-5" />
                 </div>
                 <p className="text-sm text-[var(--color-text-muted)]">
-                  No active exceptions. The ledger is clean.
+                  No active exceptions right now. New disputes or credit-note
+                  blockers will appear here for review.
                 </p>
               </div>
             ) : (
@@ -306,7 +353,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                         {item.canonical_name}
                       </div>
                       <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                        {item.bucket_type_name}
+                        Blocked by {item.bucket_type_name}
                         {item.expected_resolution_date ? (
                           <>
                             {" · "}
@@ -328,7 +375,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Top Parties by Outstanding</CardTitle>
+              <CardTitle>Largest Account Exposure</CardTitle>
               <Link
                 className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] hover:underline"
                 href="/parties"
@@ -345,7 +392,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Source Quality</CardTitle>
+              <CardTitle>Source Readiness</CardTitle>
               <Link
                 className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] hover:underline"
                 href="/snapshots"
@@ -412,6 +459,50 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   );
 }
 
+function WorkQueueCard({
+  count,
+  detail,
+  href,
+  label,
+  status,
+}: {
+  count: number;
+  detail: string;
+  href: string;
+  label: string;
+  status: string;
+}) {
+  return (
+    <Link
+      className="group flex min-h-[112px] flex-col justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)] outline-none transition-colors hover:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)]"
+      href={href}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+            Next action
+          </div>
+          <div className="mt-1 text-sm font-semibold text-[var(--color-text)]">
+            {label}
+          </div>
+        </div>
+        <StatusTag status={status} />
+      </div>
+      <div className="mt-4 flex items-end justify-between gap-3">
+        <div>
+          <div className="text-2xl font-semibold tabular-nums text-[var(--color-text)]">
+            {count}
+          </div>
+          <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+            {detail}
+          </div>
+        </div>
+        <ArrowRight className="h-4 w-4 shrink-0 text-[var(--color-text-subtle)] transition-colors group-hover:text-[var(--color-accent)]" />
+      </div>
+    </Link>
+  );
+}
+
 /* ─── KPI card with icon, tone, and optional link ─────────────────── */
 
 function KpiCard({
@@ -455,9 +546,7 @@ function KpiCard({
           {label}
         </span>
       </div>
-      <p
-        className={`text-2xl font-semibold tabular-nums ${valueColor}`}
-      >
+      <p className={`text-2xl font-semibold tabular-nums ${valueColor}`}>
         {value}
       </p>
       {meta ? (
@@ -539,7 +628,7 @@ async function DashboardEmptyState({
     <PageFrame>
       <PageHeader
         actions={showSwitcher ? <EntitySwitcher current={entity} /> : null}
-        title="Dashboard"
+        title="Today's Receivables Priorities"
       >
         {entity === "ALL"
           ? "Consolidated receivables across every entity."
@@ -569,8 +658,8 @@ async function DashboardEmptyState({
         description={
           pendingStaged > 0
             ? `There are ${pendingStaged} staged snapshot${pendingStaged === 1 ? "" : "s"} waiting to be published. Once published, KPIs, ageing, and exceptions appear here.`
-            : error?.message ??
-              "Upload an AR workbook to populate KPIs, ageing buckets, top parties, and exception alerts on this dashboard."
+            : (error?.message ??
+              "Upload an AR workbook to populate KPIs, ageing buckets, top parties, and exception alerts on this dashboard.")
         }
         title="No published data yet"
       />

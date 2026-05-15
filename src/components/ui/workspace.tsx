@@ -18,7 +18,7 @@ export function PageFrame({
     // returns from sm: breakpoint upward.
     <div
       className={cn(
-        "mx-auto flex w-full max-w-[1680px] flex-col gap-5 p-4 sm:p-6",
+        "mx-auto flex w-full max-w-[1680px] flex-col gap-6 p-4 sm:p-6",
         className,
       )}
     >
@@ -39,14 +39,14 @@ export function PageHeader({
   title: string;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0">
+    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-border)] pb-4">
+      <div className="min-w-0 space-y-1">
         {eyebrow ? (
           <div className="mb-1 text-xs text-[var(--color-text-muted)]">
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="text-2xl font-semibold text-[var(--color-text)]">
+        <h1 className="text-2xl font-semibold tracking-[-0.01em] text-[var(--color-text)]">
           {title}
         </h1>
         {children ? (
@@ -70,7 +70,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        "rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)]",
+        "rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.03)]",
         className,
       )}
       {...props}
@@ -90,7 +90,7 @@ export function PanelHeader({
   title: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+    <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-3">
       <div>
         <h2 className="text-sm font-semibold text-[var(--color-text)]">
           {title}
@@ -118,7 +118,7 @@ export function MetricCard({
   value: ReactNode;
 }) {
   return (
-    <Panel className="min-h-[118px] p-4">
+    <Panel className="min-h-[118px] p-4 transition-colors hover:border-[var(--color-border-medium)]">
       <div className="flex items-start justify-between gap-3">
         <div className="text-xs font-semibold text-[var(--color-text)]">
           {label}
@@ -147,7 +147,7 @@ export function EmptyState({
   title: string;
 }) {
   return (
-    <div className="flex min-h-48 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] p-8 text-center">
+    <div className="flex min-h-48 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] p-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
       <h2 className="text-sm font-semibold text-[var(--color-text)]">
         {title}
       </h2>
@@ -180,7 +180,7 @@ export function SavedViewLink({
     <a
       aria-current={active ? "page" : undefined}
       className={[
-        "inline-flex h-9 items-center rounded-[var(--radius-sm)] border px-3 text-sm transition-colors",
+        "inline-flex h-9 items-center rounded-[var(--radius-sm)] border px-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)]",
         active
           ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
           : "border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
