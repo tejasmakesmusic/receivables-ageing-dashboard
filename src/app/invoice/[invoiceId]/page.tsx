@@ -90,7 +90,7 @@ export default async function InvoiceDetailPage({
   }
 
   return (
-    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
+    <div className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-6xl space-y-4">
         <div className="space-y-2">
           <Link
@@ -264,6 +264,6 @@ export default async function InvoiceDetailPage({
           </Card>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

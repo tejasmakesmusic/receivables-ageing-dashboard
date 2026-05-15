@@ -12,7 +12,7 @@ export default async function EmailRulesPage() {
   const rules = await listEmailRules(user);
 
   return (
-    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
+    <div className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-3xl space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -105,6 +105,6 @@ export default async function EmailRulesPage() {
           <strong>DAILY_DIGEST</strong> is_active = true.
         </p>
       </div>
-    </main>
+    </div>
   );
 }

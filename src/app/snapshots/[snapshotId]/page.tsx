@@ -212,7 +212,7 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
   });
 
   return (
-    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
+    <div className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <div className="space-y-2">
           <Link
@@ -382,6 +382,6 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </div>
   );
 }

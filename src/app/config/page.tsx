@@ -27,7 +27,7 @@ export default async function ConfigPage() {
   const fxRates = await listFxRates(parseFxRateListQuery({}), currentUser);
 
   return (
-    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
+    <div className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-7xl space-y-6">
         <h1 className="text-2xl font-semibold">Configuration</h1>
 
@@ -140,6 +140,6 @@ export default async function ConfigPage() {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </div>
   );
 }

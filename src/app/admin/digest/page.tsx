@@ -29,7 +29,7 @@ export default async function AdminDigestPage() {
   const { items: events, total } = await listDigestEvents({ page_size: 30 });
 
   return (
-    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
+    <div className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-4xl space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -107,6 +107,6 @@ export default async function AdminDigestPage() {
           </table>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

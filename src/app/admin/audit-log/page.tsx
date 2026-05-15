@@ -12,7 +12,7 @@ export default async function AdminAuditLogPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
+    <div className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
       <div className="mx-auto w-full max-w-6xl space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Audit Log</h1>
@@ -48,6 +48,6 @@ export default async function AdminAuditLogPage() {
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
