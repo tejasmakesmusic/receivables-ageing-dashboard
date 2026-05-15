@@ -89,6 +89,7 @@ export const STATUS_TAGS = {
   RESOLVED: tag("Resolved", "current"),
   DISMISSED: tag("Reviewed", "neutral"),
   PARSE_ERROR: tag("Parse Error", "danger"),
+  NO_CREDIT_DAYS: tag("No Credit Days", "danger"),
   GATE_OK: tag("Ready to Publish", "current"),
 } as const satisfies Record<string, StatusTagDefinition>;
 
