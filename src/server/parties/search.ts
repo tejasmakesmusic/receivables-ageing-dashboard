@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { role_enum } from "@/generated/prisma/enums";
-import { HttpError } from "@/server/core/errors";
+import { ForbiddenError } from "@/server/core/errors";
 import type { AuthenticatedUser } from "@/server/core/auth";
 
 export interface PartySearchResult {
@@ -24,12 +24,12 @@ export async function searchParties(
 
   if (currentUser.role === role_enum.ANALYST) {
     if (!currentUser.entityIdScope) {
-      throw new HttpError("forbidden", 403, "Analyst user has no entity scope");
+      throw new ForbiddenError("Analyst user has no entity scope");
     }
     where.entity_id = currentUser.entityIdScope;
   }
 
-  if (entityCode) {
+  if (entityCode && currentUser.role !== role_enum.ANALYST) {
     where.entities = { code: entityCode };
   }
 
