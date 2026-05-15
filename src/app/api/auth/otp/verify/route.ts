@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   email: z.string().email(),
-  code: z.string().length(6),
+  code: z.string().regex(/^\d{6}$/),
 });
 
 export async function POST(request: NextRequest) {
@@ -24,13 +24,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_input" }, { status: 422 });
   }
 
-  const user = await verifyOtpCode(parsed.data.email, parsed.data.code);
-  if (!user) {
-    return NextResponse.json({ error: "invalid_otp" }, { status: 400 });
-  }
+  try {
+    const user = await verifyOtpCode(parsed.data.email, parsed.data.code);
+    if (!user) {
+      return NextResponse.json({ error: "invalid_otp" }, { status: 400 });
+    }
 
-  const redirectTo = user.role === role_enum.PENDING ? "/auth/pending" : "/dashboard";
-  const response = NextResponse.json({ success: true, redirectTo });
-  setAuthSessionCookie(response, user.id);
-  return response;
+    const redirectTo = user.role === role_enum.PENDING ? "/auth/pending" : "/dashboard";
+    const response = NextResponse.json({ success: true, redirectTo });
+    setAuthSessionCookie(response, user.id);
+    return response;
+  } catch (err) {
+    console.error("[otp/verify] unexpected error", err instanceof Error ? err.message : String(err));
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
+  }
 }

@@ -19,6 +19,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_input" }, { status: 422 });
   }
 
-  await requestOtp(parsed.data.email);
-  return NextResponse.json({ success: true });
+  try {
+    await requestOtp(parsed.data.email);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("[otp/request] unexpected error", err instanceof Error ? err.message : String(err));
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
+  }
 }

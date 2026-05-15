@@ -58,6 +58,20 @@ describe("POST /api/auth/otp/verify", () => {
     expect(res.status).toBe(422);
   });
 
+  it("returns 422 for non-numeric code", async () => {
+    const res = await POST(makeRequest({ email: "alice@example.com", code: "abcdef" }));
+    expect(res.status).toBe(422);
+    expect(mockVerifyOtpCode).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 on unexpected error from verifyOtpCode", async () => {
+    mockVerifyOtpCode.mockRejectedValue(new Error("db_error"));
+    const res = await POST(makeRequest({ email: "alice@example.com", code: "123456" }));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("server_error");
+  });
+
   it("redirects PENDING role to /auth/pending", async () => {
     mockVerifyOtpCode.mockResolvedValue({ ...BASE_USER, role: role_enum.PENDING });
     const res = await POST(makeRequest({ email: "alice@example.com", code: "123456" }));

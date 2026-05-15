@@ -43,4 +43,12 @@ describe("POST /api/auth/otp/request", () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
+
+  it("returns 500 on unexpected error from requestOtp", async () => {
+    mockRequestOtp.mockRejectedValue(new Error("db_error"));
+    const res = await POST(makeRequest({ email: "alice@example.com" }));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("server_error");
+  });
 });

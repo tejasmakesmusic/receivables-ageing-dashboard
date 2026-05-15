@@ -59,4 +59,11 @@ describe("GET /api/auth/otp/confirm", () => {
     const res = await GET(makeRequest("valid-token"));
     expect(res.headers.get("location")).toContain("/auth/pending");
   });
+
+  it("redirects to /auth/login?error=server_error on unexpected error", async () => {
+    mockVerifyOtpToken.mockRejectedValue(new Error("db_error"));
+    const res = await GET(makeRequest("some-token"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("error=server_error");
+  });
 });
