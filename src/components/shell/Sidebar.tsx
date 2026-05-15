@@ -225,10 +225,17 @@ export function Sidebar() {
       data-collapsed={collapsed ? "true" : "false"}
       style={{ width: collapsed ? "var(--shell-sidebar-collapsed)" : "var(--shell-sidebar-expanded)" }}
     >
-      <div className="flex h-[var(--shell-topbar-height)] items-center gap-2 border-b border-[var(--color-border)] px-2">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] text-white">
-          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-        </div>
+      <div
+        className={[
+          "flex h-[var(--shell-topbar-height)] items-center border-b border-[var(--color-border)] px-2",
+          collapsed ? "justify-center" : "gap-2",
+        ].join(" ")}
+      >
+        {!collapsed ? (
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] text-white">
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+          </div>
+        ) : null}
         {!collapsed ? (
           <button
             className="min-w-0 flex-1 rounded-[var(--radius-sm)] px-1 py-0.5 text-left hover:bg-[var(--color-bg-muted)]"
@@ -240,7 +247,13 @@ export function Sidebar() {
         ) : null}
         <button
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
+          aria-pressed={collapsed}
+          className={[
+            "grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-sm)] transition-colors",
+            collapsed
+              ? "border border-[var(--color-border)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white"
+              : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+          ].join(" ")}
           onClick={() => setCollapsed((value) => !value)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           type="button"
