@@ -17,6 +17,7 @@ import {
   ColumnMappingPanel,
   type ColumnMappingViewModel,
 } from "./_components/column-mapping-panel";
+import { PartyMappingPanel } from "./_components/party-mapping-panel";
 import {
   compareColumnMappings,
   getSavedColumnMapping,
@@ -146,6 +147,13 @@ export default async function SnapshotStagingPage({
           sourceHint={staging.source_hint}
         />
       </div>
+
+      {staging.source_hint !== "CREDIT_PERIOD" ? (
+        <PartyMappingPanel
+          snapshotId={snapshotId}
+          summary={staging.party_mapping_summary}
+        />
+      ) : null}
 
       <ColumnMappingPanel
         detected={detected}
