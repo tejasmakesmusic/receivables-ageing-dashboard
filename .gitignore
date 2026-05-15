@@ -40,9 +40,14 @@ Thumbs.db
 # Local caches
 .turbo/
 .vercel/
+.storybook-home/
+storybook-static/
 .superpowers/
 .claude/
 .devserver-logs/
 .remember/
 .vercel
 .env*.local
+
+# Storybook local machine settings
+.storybook/settings.json
