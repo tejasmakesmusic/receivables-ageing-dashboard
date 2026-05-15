@@ -118,12 +118,30 @@ function LoginForm() {
           </Button>
 
           <div className="mt-1 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-            <span className="cursor-not-allowed opacity-50">Forgot password?</span>
+            <a
+              href={`/auth/forgot-password?next=${encodeURIComponent(next)}`}
+              className="hover:text-[var(--color-accent)]"
+            >
+              Forgot password?
+            </a>
             <a href="/auth/register" className="hover:text-[var(--color-accent)]">
               Create account
             </a>
           </div>
         </form>
+
+        <div className="relative my-4 flex items-center">
+          <div className="flex-grow border-t border-[var(--color-border)]" />
+          <span className="mx-3 text-xs text-[var(--color-text-muted)]">or</span>
+          <div className="flex-grow border-t border-[var(--color-border)]" />
+        </div>
+
+        <a
+          href={`/auth/login/otp?next=${encodeURIComponent(next)}`}
+          className="flex w-full items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)]"
+        >
+          Email me a sign-in code
+        </a>
       </div>
     </main>
   );
