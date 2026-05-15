@@ -1,5 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, CalendarCheck, Mail, Phone, Plus, RefreshCw } from "lucide-react";
+import {
+  DsBadge,
+  DsButton,
+  DsCard,
+  DsDataTable,
+  DsEmptyState,
+  DsKpiCard,
+  DsLinkButton,
+} from "../../design-system/components";
 import { StatusTag } from "@/components/ui/status-tag";
 import { EmptyTableRow, TableShell } from "@/components/ui/data-table";
 import { MiniSparkline, ProgressBar } from "@/components/ui/mini-chart";
@@ -61,6 +70,275 @@ export default async function HomePage() {
   const home = await getHomeCommandCenter(user);
   const dashboard = home.dashboard;
   const dashboardCurrency = dashboard?.currency_display ?? "INR";
+  const uiV2 = process.env.NEXT_PUBLIC_UI_V2 === "true";
+
+  if (uiV2) {
+    const heroItem = home.focus_items[0];
+    const heroCopy = heroItem
+      ? {
+          title: nextActionLabel(heroItem),
+          description: `${heroItem.title} · ${heroItem.subtitle}`,
+          href: heroItem.href,
+          badge:
+            heroItem.type === "DISPUTE"
+              ? "Dispute blocker"
+              : heroItem.type === "STAGING_BLOCKER"
+                ? "Staging blocker"
+                : heroItem.type === "RECONCILIATION"
+                  ? "Tie-out review"
+                  : "Collections work",
+        }
+      : {
+          title: "Review receivables health",
+          description:
+            "No urgent focus items are currently in your scope. Review invoices or upload the next snapshot.",
+          href: "/invoices",
+          badge: "No blockers",
+        };
+
+    return (
+      <main className="mx-auto flex w-full max-w-[1680px] flex-col gap-6 p-4 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-border)] pb-4">
+          <div className="min-w-0">
+            <DsBadge tone={heroItem ? "warning" : "success"}>{heroCopy.badge}</DsBadge>
+            <h1 className="mt-3 text-[24px] font-semibold leading-8 tracking-[-0.01em] text-[var(--color-text)]">
+              Today&apos;s Focus
+            </h1>
+            <p className="mt-1 max-w-2xl text-[14px] leading-5 text-[var(--color-text-muted)]">
+              Decision-first AR queue for overdue, blocked, disputed, and tie-out work.
+            </p>
+          </div>
+          <DsLinkButton href="/dashboard">
+            <RefreshCw aria-hidden="true" className="h-4 w-4" />
+            View dashboard
+          </DsLinkButton>
+        </div>
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <DsCard className="overflow-hidden" title={heroCopy.title}>
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <div>
+                <p className="max-w-3xl text-[16px] leading-7 text-[var(--color-text)]">
+                  {heroCopy.description}
+                </p>
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <DsLinkButton href={heroCopy.href} variant="primary">
+                    Open next action
+                    <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                  </DsLinkButton>
+                  <span className="text-[13px] text-[var(--color-text-muted)]">
+                    Ranked from your current focus queue.
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-[var(--radius-lg)] bg-[var(--color-bg-subtle)] p-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                  Open focus items
+                </div>
+                <div className="mt-2 text-[36px] font-semibold leading-none text-[var(--color-text)]">
+                  {home.focus_total}
+                </div>
+                <div className="mt-3 text-[13px] leading-5 text-[var(--color-text-muted)]">
+                  {home.daily_goal.remaining} controllable actions remaining today.
+                </div>
+              </div>
+            </div>
+          </DsCard>
+
+          <DsCard title="Context">
+            <div className="space-y-4">
+              <div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                  Daily goal
+                </div>
+                <div className="mt-2 text-[24px] font-semibold leading-8 text-[var(--color-text)]">
+                  {home.daily_goal.completed} / {home.daily_goal.target}
+                </div>
+                <ProgressBar value={home.daily_goal.percent} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { href: "/tasks", label: "New Task" },
+                  { href: "/follow-ups", label: "Log Follow-up" },
+                  { href: "/promises-to-pay", label: "Create Promise" },
+                  { href: "/reconciliation", label: "Review Tie-Out" },
+                ].map((action) => (
+                  <DsLinkButton className="w-full" href={action.href} key={action.href}>
+                    {action.label}
+                  </DsLinkButton>
+                ))}
+              </div>
+            </div>
+          </DsCard>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <DsKpiCard
+            footnote={
+              dashboard
+                ? `Snapshot ${formatDate(dashboard.as_of_date)}`
+                : "Waiting for published snapshot"
+            }
+            label="Total outstanding"
+            value={
+              dashboard
+                ? formatCurrencyCompact(dashboard.kpis.total_outstanding, dashboardCurrency)
+                : "—"
+            }
+          />
+          <DsKpiCard
+            footnote={dashboard ? `${dashboard.kpis.pct_overdue.toFixed(1)}% of AR` : "No ageing yet"}
+            label="Overdue"
+            value={dashboard ? formatCurrencyCompact(overdueAmount(dashboard), dashboardCurrency) : "—"}
+          />
+          <DsKpiCard
+            footnote="Parties needing senior attention"
+            label="90+ parties"
+            value={dashboard?.kpis.parties_with_90plus_count ?? "—"}
+          />
+          <DsKpiCard
+            footnote="Needs policy review if unexpected"
+            label="Default credit terms"
+            value={dashboard?.parties_on_default_credit_period_count ?? "—"}
+          />
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <DsCard
+            actions={
+              <div className="flex flex-wrap gap-2">
+                <DsButton size="sm" type="button" variant="secondary">Critical work</DsButton>
+                <DsButton size="sm" type="button" variant="ghost">Reminders</DsButton>
+                <DsButton size="sm" type="button" variant="ghost">Exceptions</DsButton>
+              </div>
+            }
+            subtitle="One queue for what needs attention now. Data is secondary to the next action."
+            title="Action Inbox"
+          >
+            {home.focus_items.length === 0 ? (
+              <DsEmptyState
+                action={<DsLinkButton href="/invoices" variant="primary">View invoices</DsLinkButton>}
+                description="Open invoices, staging blockers, broken promises, and reconciliation mismatches will appear here."
+                title="No focus items in your scope"
+              />
+            ) : (
+              <DsDataTable>
+                <table className="w-full min-w-[880px] text-[13px]">
+                  <thead className="sticky top-0 bg-[var(--color-bg-subtle)] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                    <tr>
+                      <th className="px-3 py-2" scope="col">Work item</th>
+                      <th className="px-3 py-2" scope="col">Entity</th>
+                      <th className="px-3 py-2" scope="col">Status</th>
+                      <th className="px-3 py-2" scope="col">Due</th>
+                      <th className="px-3 py-2" scope="col">Next action</th>
+                      <th className="px-3 py-2 text-right" scope="col">Priority</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--color-border)]">
+                    {home.focus_items.map((item) => (
+                      <tr
+                        className="h-10 transition-[background-color,transform] hover:bg-[var(--color-bg-subtle)] hover:shadow-[0_1px_0_rgba(0,0,0,0.03)]"
+                        key={`${item.type}-${item.id}`}
+                      >
+                        <td className="px-3 py-2">
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <DsBadge tone="info">{queueTypeLabel(item.type)}</DsBadge>
+                              <Link className="truncate font-medium text-[var(--color-accent)] hover:underline" href={item.href}>
+                                {item.title}
+                              </Link>
+                            </div>
+                            <div className="truncate text-[12px] text-[var(--color-text-muted)]">
+                              {item.subtitle}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-[var(--color-text-muted)]">{item.entity_code}</td>
+                        <td className="px-3 py-2"><StatusTag status={item.status} /></td>
+                        <td className="px-3 py-2 text-[var(--color-text-muted)]">{item.due_date ? formatDate(item.due_date) : "—"}</td>
+                        <td className="px-3 py-2">
+                          <Link className="inline-flex items-center gap-2 font-medium text-[var(--color-text)] hover:text-[var(--color-accent)]" href={item.href}>
+                            {nextActionLabel(item)}
+                            <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums">{item.priority_score.toFixed(0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DsDataTable>
+            )}
+          </DsCard>
+
+          <div className="space-y-5">
+            <DsCard title="Ageing summary">
+              {dashboard ? (
+                <div className="space-y-4">
+                  <div className="flex h-3 overflow-hidden rounded-[var(--radius-pill)] bg-[var(--color-bg-muted)]">
+                    {(["NOT_DUE", "0_30", "31_60", "61_90", "90_PLUS"] as const).map((bucket) => {
+                      const value = dashboard.ageing_buckets[bucket];
+                      const total = Math.max(dashboard.kpis.total_outstanding, 1);
+                      const percent = Math.max(3, Math.round((value / total) * 100));
+                      const colors: Record<typeof bucket, string> = {
+                        NOT_DUE: "bg-[var(--color-success)]",
+                        "0_30": "bg-[var(--color-info)]",
+                        "31_60": "bg-[var(--color-warning)]",
+                        "61_90": "bg-orange-500",
+                        "90_PLUS": "bg-[var(--color-danger)]",
+                      };
+                      return <div aria-hidden="true" className={colors[bucket]} key={bucket} style={{ width: `${percent}%` }} />;
+                    })}
+                  </div>
+                  <div className="grid gap-3 text-[13px]">
+                    {Object.entries(dashboard.ageing_buckets).map(([bucket, amount]) => (
+                      <div className="flex items-center justify-between gap-3" key={bucket}>
+                        <StatusTag status={bucket} />
+                        <span className="font-mono tabular-nums text-[var(--color-text)]">
+                          {formatCurrencyCompact(amount, dashboardCurrency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <DsEmptyState
+                  action={<DsLinkButton href="/upload" variant="primary">Upload workbook</DsLinkButton>}
+                  description={home.dashboard_error ?? "No published dashboard data is available yet."}
+                  title="Publish a snapshot to calculate ageing"
+                />
+              )}
+            </DsCard>
+
+            <DsCard title="Top overdue parties">
+              {dashboard?.top_parties.length ? (
+                <ol className="space-y-3 text-[13px]">
+                  {dashboard.top_parties.slice(0, 5).map((party, index) => (
+                    <li className="flex items-center justify-between gap-3" key={party.canonical_id}>
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-[var(--color-text)]">
+                          {index + 1}. {party.canonical_name}
+                        </div>
+                        <StatusTag status={party.overdue_bucket} />
+                      </div>
+                      <div className="font-mono tabular-nums text-[var(--color-text)]">
+                        {formatCurrencyCompact(party.outstanding, dashboardCurrency)}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <DsEmptyState
+                  description="Top overdue parties appear after a published snapshot is available."
+                  title="No overdue account ranking"
+                />
+              )}
+            </DsCard>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <PageFrame>

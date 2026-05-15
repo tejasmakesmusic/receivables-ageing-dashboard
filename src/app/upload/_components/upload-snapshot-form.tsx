@@ -2,6 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  DsButton,
+  DsFileDropzone,
+  DsInput,
+  DsSelect,
+} from "../../../../design-system/components";
 
 type UploadStatus = "idle" | "submitting" | "error";
 
@@ -15,6 +21,11 @@ export function UploadSnapshotForm() {
   const router = useRouter();
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState("");
+  const [entityCode, setEntityCode] = useState("IND");
+  const [sourceHint, setSourceHint] = useState("");
+  const [asOfDate, setAsOfDate] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const uiV2 = process.env.NEXT_PUBLIC_UI_V2 === "true";
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,9 +33,24 @@ export function UploadSnapshotForm() {
     setStatus("submitting");
     setMessage("");
 
+    const body = new FormData(event.currentTarget);
+
+    if (uiV2) {
+      if (!file) {
+        setStatus("error");
+        setMessage("Drop a workbook before uploading the snapshot.");
+        return;
+      }
+
+      body.set("entity_code", entityCode);
+      body.set("source_hint", sourceHint);
+      if (asOfDate) body.set("as_of_date", asOfDate);
+      body.set("file", file);
+    }
+
     const response = await fetch("/api/snapshots", {
       method: "POST",
-      body: new FormData(event.currentTarget),
+      body,
     });
     const payload = (await response.json().catch(() => null)) as
       | UploadResponse
@@ -41,6 +67,77 @@ export function UploadSnapshotForm() {
 
     router.push(`/snapshots/${payload.snapshot_id}/staging`);
     router.refresh();
+  }
+
+  if (uiV2) {
+    return (
+      <form className="grid gap-5 text-sm" onSubmit={handleSubmit}>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <DsSelect
+            disabled={status === "submitting"}
+            label="Entity"
+            name="entity_code"
+            onChange={setEntityCode}
+            options={[
+              { label: "India · Tally", value: "IND" },
+              { label: "UAE · Xero", value: "UAE" },
+            ]}
+            value={entityCode}
+          />
+          <DsSelect
+            disabled={status === "submitting"}
+            label="Source"
+            name="source_hint"
+            onChange={setSourceHint}
+            options={[
+              { label: "Auto-detect", value: "" },
+              { label: "Tally", value: "TALLY" },
+              { label: "Xero", value: "XERO" },
+              { label: "Credit Period", value: "CREDIT_PERIOD" },
+            ]}
+            value={sourceHint}
+          />
+        </div>
+
+        <label className="grid gap-2">
+          <span className="text-[13px] font-medium text-[var(--color-text)]">
+            As-of date
+          </span>
+          <DsInput
+            disabled={status === "submitting"}
+            inputMode="numeric"
+            name="as_of_date"
+            onChange={(event) => setAsOfDate(event.currentTarget.value)}
+            pattern="\d{4}-\d{2}-\d{2}"
+            placeholder="YYYY-MM-DD"
+            value={asOfDate}
+          />
+          <span className="text-[12px] leading-4 text-[var(--color-text-muted)]">
+            Required for Tally snapshots. Xero can usually detect this from the workbook.
+          </span>
+        </label>
+
+        <DsFileDropzone
+          disabled={status === "submitting"}
+          file={file}
+          onFile={setFile}
+        />
+
+        <div className="flex flex-wrap items-center gap-3">
+          <DsButton disabled={status === "submitting"} type="submit">
+            {status === "submitting" ? "Uploading snapshot..." : "Upload snapshot"}
+          </DsButton>
+          <span className="text-[12px] text-[var(--color-text-muted)]">
+            Publish remains gated until staging blockers are resolved.
+          </span>
+        </div>
+        {message ? (
+          <p aria-live="polite" className="text-sm text-[var(--color-danger)]">
+            {message}
+          </p>
+        ) : null}
+      </form>
+    );
   }
 
   return (
