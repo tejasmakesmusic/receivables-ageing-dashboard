@@ -2,54 +2,62 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Command } from "cmdk";
 import { ArrowRight, Search, X } from "lucide-react";
 import {
   COMMAND_GROUPS,
-  type ScoredCommandItem,
   type FilteredCommandGroup,
   filterCommandItemsGrouped,
+  flattenCommandItems,
   type CommandItem,
 } from "@/components/shell/command-menu-data";
 
-function CommandRow({
-  active,
-  hasScores,
-  item,
-  onSelect,
-}: {
-  active: boolean;
-  hasScores: boolean;
-  item: ScoredCommandItem;
-  onSelect: () => void;
-}) {
+const RECENT_COMMANDS_KEY = "receivables.command-menu.recent.v1";
+const RECENT_COMMANDS_MAX = 5;
+
+function safeJsonList(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is string => typeof value === "string");
+  } catch {
+    return [];
+  }
+}
+
+function readRecentCommandIds() {
+  if (typeof window === "undefined") return [];
+  return safeJsonList(window.localStorage.getItem(RECENT_COMMANDS_KEY)).slice(
+    0,
+    RECENT_COMMANDS_MAX,
+  );
+}
+
+function writeRecentCommand(item: CommandItem) {
+  const next = [
+    item.id,
+    ...readRecentCommandIds().filter((id) => id !== item.id),
+  ].slice(0, RECENT_COMMANDS_MAX);
+  window.localStorage.setItem(RECENT_COMMANDS_KEY, JSON.stringify(next));
+}
+
+function CommandRow({ item, onSelect }: { item: CommandItem; onSelect: () => void }) {
   return (
-    <button
-      aria-current={active ? "true" : undefined}
-      className={[
-        "flex w-full items-center justify-between gap-4 rounded-[var(--radius-sm)] px-3 py-2.5 text-left transition-colors",
-        active
-          ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-          : "text-[var(--color-text)] hover:bg-[var(--color-bg-subtle)]",
-      ].join(" ")}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onSelect}
-      type="button"
-      >
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">
-            {item.label}
-          </span>
-          <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
-            {item.description}
-          </span>
+    <Command.Item
+      className="group flex cursor-default items-center justify-between gap-4 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[13px] text-[var(--color-text)] outline-none aria-selected:bg-[var(--color-accent-soft)] aria-selected:text-[var(--color-accent)]"
+      keywords={[...item.keywords]}
+      onSelect={onSelect}
+      value={`${item.label} ${item.href} ${item.description}`}
+    >
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{item.label}</span>
+        <span className="mt-0.5 block truncate text-[12px] text-[var(--color-text-muted)]">
+          {item.description}
         </span>
-        {hasScores ? (
-          <span className="shrink-0 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-subtle)]">
-            {item.score}
-          </span>
-        ) : null}
-        <ArrowRight className="h-4 w-4 shrink-0" />
-      </button>
+      </span>
+      <ArrowRight className="h-4 w-4 shrink-0 text-[var(--color-text-subtle)] group-aria-selected:text-[var(--color-accent)]" />
+    </Command.Item>
   );
 }
 
@@ -57,44 +65,39 @@ export function GlobalCommandMenu() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [recentCommandIds, setRecentCommandIds] = useState<string[]>(() =>
+    readRecentCommandIds(),
+  );
+  const allCommands = useMemo(() => flattenCommandItems(COMMAND_GROUPS), []);
+  const recentCommands = useMemo(() => {
+    const byId = new Map(allCommands.map((item) => [item.id, item] as const));
+    return recentCommandIds
+      .map((id) => byId.get(id))
+      .filter((item): item is CommandItem => Boolean(item));
+  }, [allCommands, recentCommandIds]);
   const groupedResults = useMemo(
     () => filterCommandItemsGrouped(query, COMMAND_GROUPS),
     [query],
   );
-  const visibleGroups = useMemo(() => {
+  const visibleGroups: FilteredCommandGroup[] = useMemo(() => {
     const limitedGroups: FilteredCommandGroup[] = [];
-    let remaining = 10;
+    let remaining = 12;
 
     for (const group of groupedResults) {
-      if (remaining <= 0) {
-        break;
-      }
-
+      if (remaining <= 0) break;
       const items = group.items.slice(0, remaining);
-
-      if (items.length === 0) {
-        continue;
-      }
-
-      limitedGroups.push({
-        id: group.id,
-        label: group.label,
-        items,
-      });
+      if (items.length === 0) continue;
+      limitedGroups.push({ id: group.id, label: group.label, items });
       remaining -= items.length;
     }
 
     return limitedGroups;
   }, [groupedResults]);
-  const flatResults = useMemo(
-    () => visibleGroups.flatMap((group) => group.items),
-    [visibleGroups],
+  const resultCount = visibleGroups.reduce(
+    (sum, group) => sum + group.items.length,
+    0,
   );
-  const hasVisibleResults = flatResults.length > 0;
-  const hasSearchScores = query.trim().length > 1;
-  let renderIndex = 0;
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -125,10 +128,7 @@ export function GlobalCommandMenu() {
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
-
+    if (!open) return;
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
@@ -136,15 +136,11 @@ export function GlobalCommandMenu() {
   function close() {
     setOpen(false);
     setQuery("");
-    setActiveIndex(0);
-  }
-
-  function updateQuery(value: string) {
-    setQuery(value);
-    setActiveIndex(0);
   }
 
   function selectItem(item: CommandItem, openInNewTab = false) {
+    writeRecentCommand(item);
+    setRecentCommandIds(readRecentCommandIds());
     close();
 
     if (openInNewTab) {
@@ -161,34 +157,12 @@ export function GlobalCommandMenu() {
   }
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-      return;
-    }
-
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActiveIndex((index) =>
-        flatResults.length > 0 ? (index + 1) % flatResults.length : 0,
-      );
-      return;
-    }
-
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActiveIndex((index) =>
-        flatResults.length > 0 ? (index - 1 + flatResults.length) % flatResults.length : 0,
-      );
-      return;
-    }
-
-    if (event.key === "Enter" && flatResults[activeIndex]) {
-      event.preventDefault();
-      selectItem(
-        flatResults[activeIndex],
-        event.ctrlKey || event.metaKey,
-      );
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      const first = visibleGroups[0]?.items[0];
+      if (first) {
+        event.preventDefault();
+        selectItem(first, true);
+      }
     }
   }
 
@@ -204,99 +178,104 @@ export function GlobalCommandMenu() {
         <kbd className="ml-auto hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] sm:inline-flex">
           Cmd K
         </kbd>
-        <kbd className="ml-2 hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] sm:inline-flex">
+        <kbd className="ml-1 hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] sm:inline-flex">
           /
         </kbd>
       </button>
 
-      {open ? (
+      <Command.Dialog
+        className="fixed inset-0 z-50 bg-black/20 px-4 py-[10vh] backdrop-blur-[2px]"
+        label="Command menu"
+        onOpenChange={setOpen}
+        open={open}
+        shouldFilter={false}
+      >
         <div
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-black/20 px-4 py-[10vh] backdrop-blur-[2px]"
-          onMouseDown={close}
-          role="dialog"
+          className="mx-auto max-w-2xl overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-popover)]"
+          onMouseDown={(event) => event.stopPropagation()}
         >
-          <div
-            className="mx-auto max-w-2xl overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4">
-              <Search className="h-4 w-4 text-[var(--color-text-muted)]" />
-              <input
-                aria-label="Command search"
-                className="h-14 min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-subtle)]"
-                onChange={(event) => updateQuery(event.target.value)}
-                onKeyDown={onInputKeyDown}
-                placeholder="Type a workspace, action, or record"
-                ref={inputRef}
-                value={query}
-              />
-              <button
-                aria-label="Close command menu"
-                className="grid h-8 w-8 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
-                onClick={close}
-                type="button"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+          <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4">
+            <Search className="h-4 w-4 text-[var(--color-text-muted)]" />
+            <Command.Input
+              className="h-12 min-w-0 flex-1 bg-transparent text-[14px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-subtle)]"
+              onKeyDown={onInputKeyDown}
+              onValueChange={setQuery}
+              placeholder="Type a workspace, action, or record"
+              ref={inputRef}
+              value={query}
+            />
+            <button
+              aria-label="Close command menu"
+              className="grid h-8 w-8 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
+              onClick={close}
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
 
-            <div className="max-h-[52vh] overflow-y-auto p-2">
-              {flatResults.length === 0 ? (
-                <div className="grid min-h-32 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] p-6 text-center text-sm text-[var(--color-text-muted)]">
-                  No matching command.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {visibleGroups.map((group, groupIndex) => (
-                    <div key={`${group.id}-${groupIndex}`} className="space-y-1">
-                      <div className="px-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                        {group.label}
-                      </div>
-                      <div className="space-y-1">
-                        {group.items.map((item) => {
-                          const rowIndex = renderIndex;
-                          renderIndex += 1;
-                          return (
-                            <CommandRow
-                              active={rowIndex === activeIndex}
-                              hasScores={hasSearchScores}
-                              item={item}
-                              key={item.id}
-                              onSelect={() => selectItem(item)}
-                            />
-                          );
-                        })}
-                      </div>
+          <Command.List className="max-h-[52vh] overflow-y-auto p-2">
+            {query.trim().length === 0 && recentCommands.length > 0 ? (
+              <Command.Group
+                className="space-y-1 pb-2"
+                heading={
+                  <div className="px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                    Recent
+                  </div>
+                }
+              >
+                {recentCommands.map((item) => (
+                  <CommandRow
+                    item={item}
+                    key={`recent-${item.id}`}
+                    onSelect={() => selectItem(item)}
+                  />
+                ))}
+              </Command.Group>
+            ) : null}
+
+            {resultCount === 0 ? (
+              <Command.Empty className="grid min-h-32 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] p-6 text-center text-[13px] text-[var(--color-text-muted)]">
+                No matching command.
+              </Command.Empty>
+            ) : (
+              visibleGroups.map((group) => (
+                <Command.Group
+                  className="space-y-1 pb-2"
+                  heading={
+                    <div className="px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                      {group.label}
                     </div>
+                  }
+                  key={group.id}
+                >
+                  {group.items.map((item) => (
+                    <CommandRow
+                      item={item}
+                      key={item.id}
+                      onSelect={() => selectItem(item)}
+                    />
                   ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-[11px] text-[var(--color-text-subtle)]">
-              <span>
-                {hasVisibleResults
-                  ? `Showing ${flatResults.length} command${flatResults.length === 1 ? "" : "s"}`
-                  : "No matches"}
-              </span>
-              <span>
-                <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
-                  Up/Down
-                </kbd>{" "}
-                navigate,{" "}
-                <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
-                  Enter
-                </kbd>{" "}
-                open,{" "}
-                <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
-                  Ctrl/Cmd + Enter
-                </kbd>{" "}
-                open new tab
-              </span>
-            </div>
+                </Command.Group>
+              ))
+            )}
+          </Command.List>
+
+          <div className="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-[11px] text-[var(--color-text-subtle)]">
+            <span>{resultCount} command{resultCount === 1 ? "" : "s"}</span>
+            <span>
+              <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
+                Up/Down
+              </kbd>{" "}
+              navigate, {" "}
+              <kbd className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[10px]">
+                Enter
+              </kbd>{" "}
+              open
+            </span>
           </div>
         </div>
-      ) : null}
+      </Command.Dialog>
     </>
   );
 }

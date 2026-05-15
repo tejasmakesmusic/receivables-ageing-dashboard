@@ -32,6 +32,7 @@
     "@vercel/blob": "^2.3.3",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "exceljs": "^4.4.0",
     "fuse.js": "^7.0.1",
     "google-auth-library": "^10.6.2",
