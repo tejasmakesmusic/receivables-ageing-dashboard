@@ -38,6 +38,9 @@ import {
   verifyEmailPassword,
   verifyEmailToken,
   resendVerificationEmail,
+  requestOtp,
+  verifyOtpCode,
+  verifyOtpToken,
 } from "@/server/core/email-auth";
 
 describe("generateVerificationToken", () => {
@@ -300,5 +303,160 @@ describe("resendVerificationEmail", () => {
     const emailArgs = mockSendEmail.mock.calls[0][0];
     expect(emailArgs.to).toContain("a@b.com");
     expect(emailArgs.subject).toContain("Verify");
+  });
+});
+
+describe("requestOtp", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns true without doing anything when user not found", async () => {
+    mockFindUnique.mockResolvedValue(null);
+    const result = await requestOtp("nobody@example.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("generates otp_code + otp_token, updates user, sends email, returns true", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice" });
+    mockUpdate.mockResolvedValue({ id: "u1" });
+    mockSendEmail.mockResolvedValue({ id: "e1", skipped: false });
+
+    const result = await requestOtp("a@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "u1" },
+      data: expect.objectContaining({
+        otp_code: expect.stringMatching(/^\d{6}$/),
+        otp_token: expect.any(String),
+        otp_expires_at: expect.any(Date),
+      }),
+    }));
+    expect(mockSendEmail).toHaveBeenCalledOnce();
+    const emailArgs = mockSendEmail.mock.calls[0][0];
+    expect(emailArgs.subject).toContain("sign-in code");
+    expect(emailArgs.html).toContain("sign in directly");
+  });
+
+  it("returns true even when email send fails (token still saved)", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice" });
+    mockUpdate.mockResolvedValue({ id: "u1" });
+    mockSendEmail.mockRejectedValue(new Error("SMTP error"));
+
+    const result = await requestOtp("a@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).toHaveBeenCalledOnce();
+  });
+});
+
+describe("verifyOtpCode", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns user on valid code", async () => {
+    const futureDate = new Date(Date.now() + 15 * 60 * 1000);
+    mockFindFirst.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      name: "Alice",
+      role: "ANALYST",
+      otp_code: "123456",
+      otp_expires_at: futureDate,
+    });
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockFindUnique.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      name: "Alice",
+      role: "ANALYST",
+      is_active: true,
+    });
+
+    const result = await verifyOtpCode("a@b.com", "123456");
+    expect(result).not.toBeNull();
+    expect(result?.email).toBe("a@b.com");
+    expect(mockUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "u1", otp_code: "123456" },
+      data: expect.objectContaining({
+        otp_code: null,
+        otp_token: null,
+        otp_expires_at: null,
+        last_login_at: expect.any(Date),
+      }),
+    }));
+  });
+
+  it("returns null when code not found or expired (findFirst returns null)", async () => {
+    mockFindFirst.mockResolvedValue(null);
+    const result = await verifyOtpCode("a@b.com", "000000");
+    expect(result).toBeNull();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("returns null on race condition (updateMany count=0)", async () => {
+    const futureDate = new Date(Date.now() + 15 * 60 * 1000);
+    mockFindFirst.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      otp_code: "123456",
+      otp_expires_at: futureDate,
+    });
+    mockUpdateMany.mockResolvedValue({ count: 0 });
+
+    const result = await verifyOtpCode("a@b.com", "123456");
+    expect(result).toBeNull();
+    expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("verifyOtpToken", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns user on valid token", async () => {
+    const futureDate = new Date(Date.now() + 15 * 60 * 1000);
+    mockFindFirst.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      otp_token: "abc123token",
+      otp_expires_at: futureDate,
+    });
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockFindUnique.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      name: "Alice",
+      role: "ANALYST",
+      is_active: true,
+    });
+
+    const result = await verifyOtpToken("abc123token");
+    expect(result).not.toBeNull();
+    expect(mockUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "u1", otp_token: "abc123token" },
+      data: expect.objectContaining({
+        otp_code: null,
+        otp_token: null,
+        otp_expires_at: null,
+        last_login_at: expect.any(Date),
+      }),
+    }));
+  });
+
+  it("returns null when token not found or expired (findFirst returns null)", async () => {
+    mockFindFirst.mockResolvedValue(null);
+    expect(await verifyOtpToken("bad-token")).toBeNull();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("returns null on race condition (updateMany count=0)", async () => {
+    const futureDate = new Date(Date.now() + 15 * 60 * 1000);
+    mockFindFirst.mockResolvedValue({
+      id: "u1",
+      otp_token: "raced-token",
+      otp_expires_at: futureDate,
+    });
+    mockUpdateMany.mockResolvedValue({ count: 0 });
+
+    expect(await verifyOtpToken("raced-token")).toBeNull();
+    expect(mockFindUnique).not.toHaveBeenCalled();
   });
 });

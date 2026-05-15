@@ -163,6 +163,90 @@ export async function resendVerificationEmail(email: string): Promise<boolean> {
   return true;
 }
 
+const OTP_EXPIRY_MINUTES = 15;
+
+function generateOtpCode(): string {
+  return Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+}
+
+export async function requestOtp(email: string): Promise<true> {
+  const prisma = getPrisma();
+  const user = await prisma.users.findUnique({ where: { email } });
+  if (!user) return true;
+
+  const otp_code = generateOtpCode();
+  const otp_token = generateVerificationToken();
+  const otp_expires_at = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await prisma.users.update({
+    where: { id: user.id },
+    data: { otp_code, otp_token, otp_expires_at },
+  });
+
+  try {
+    await sendOtpEmail({ to: email, name: user.name, code: otp_code, token: otp_token });
+  } catch (err) {
+    console.error("[email-auth] requestOtp: email send failed", {
+      userId: user.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return true;
+}
+
+export async function verifyOtpCode(
+  email: string,
+  code: string,
+): Promise<EmailUserRecord | null> {
+  const prisma = getPrisma();
+  const now = new Date();
+
+  const user = await prisma.users.findFirst({
+    where: { email, otp_code: code, otp_expires_at: { gt: now } },
+  });
+  if (!user) return null;
+
+  const result = await prisma.users.updateMany({
+    where: { id: user.id, otp_code: code },
+    data: {
+      otp_code: null,
+      otp_token: null,
+      otp_expires_at: null,
+      last_login_at: new Date(),
+    },
+  });
+  if (result.count === 0) return null;
+
+  const updated = await prisma.users.findUnique({ where: { id: user.id } });
+  return updated as unknown as EmailUserRecord;
+}
+
+export async function verifyOtpToken(
+  token: string,
+): Promise<EmailUserRecord | null> {
+  const prisma = getPrisma();
+  const now = new Date();
+
+  const user = await prisma.users.findFirst({
+    where: { otp_token: token, otp_expires_at: { gt: now } },
+  });
+  if (!user) return null;
+
+  const result = await prisma.users.updateMany({
+    where: { id: user.id, otp_token: token },
+    data: {
+      otp_code: null,
+      otp_token: null,
+      otp_expires_at: null,
+      last_login_at: new Date(),
+    },
+  });
+  if (result.count === 0) return null;
+
+  const updated = await prisma.users.findUnique({ where: { id: user.id } });
+  return updated as unknown as EmailUserRecord;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -194,6 +278,34 @@ async function sendVerificationEmail({
       <p><a href="${link}">Verify my email</a></p>
       <p>This link expires in 24 hours.</p>
       <p>If you didn't create an account, you can ignore this email.</p>
+      <p>— EMB Receivables</p>
+    `,
+  });
+}
+
+async function sendOtpEmail({
+  to,
+  name,
+  code,
+  token,
+}: {
+  to: string;
+  name: string;
+  code: string;
+  token: string;
+}) {
+  const baseUrl = env.NEXTAUTH_URL ?? env.NEXT_PUBLIC_API_URL;
+  const link = `${baseUrl}/api/auth/otp/confirm?token=${token}`;
+
+  await sendEmail({
+    to: [to],
+    subject: "Your sign-in code — EMB Receivables",
+    html: `
+      <p>Hi ${escapeHtml(name)},</p>
+      <p>Use either of these to sign in to EMB Receivables:</p>
+      <p><strong>Sign-in code: ${escapeHtml(code)}</strong> (valid for 15 minutes)</p>
+      <p><a href="${link}">Or click here to sign in directly</a></p>
+      <p>If you didn't request this, you can ignore this email.</p>
       <p>— EMB Receivables</p>
     `,
   });
