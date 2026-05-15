@@ -1777,6 +1777,204 @@ export async function autoCreateCanonicals(
   };
 }
 
+export async function bulkMapParties(
+  snapshotId: string,
+  currentUser: AuthenticatedUser,
+): Promise<BulkMapPartiesResult> {
+  const snapshot = await assertSnapshotAccess(snapshotId, currentUser);
+  if (snapshot.status !== "STAGED") {
+    throw new HttpError("snapshot_not_staged", 409, "Snapshot is not STAGED");
+  }
+  if (snapshot.source_hint === "CREDIT_PERIOD") {
+    throw new HttpError(
+      "invalid_snapshot_source",
+      422,
+      "Bulk party mapping is not supported for CREDIT_PERIOD snapshots",
+    );
+  }
+
+  const { rows } = await buildStagingRows(snapshot, currentUser);
+  const summary = computePartyMappingSummary(rows);
+  const actionableGroups = summary.groups.filter((g) => g.bulk_actionable);
+
+  if (actionableGroups.length === 0) {
+    const refreshed = await assertSnapshotAccess(snapshotId, currentUser);
+    const { gate } = await buildStagingRows(refreshed, currentUser);
+    return {
+      snapshot_id: snapshotId,
+      rows_mapped: 0,
+      parties_created: 0,
+      parties_resolved: 0,
+      groups_skipped: summary.groups.length,
+      publish_gate: gate,
+    };
+  }
+
+  const now = new Date().toISOString();
+  let partiesCreated = 0;
+  let partiesResolved = 0;
+  let rowsMapped = 0;
+  let groupsSkipped = summary.groups.length - actionableGroups.length;
+
+  // normalized_key → canonical_id resolved during transaction
+  const groupResolutions = new Map<string, string>();
+
+  await getPrisma().$transaction(async (tx) => {
+    const lockedRows = await tx.$queryRawUnsafe<
+      { staging_overrides_json: unknown }[]
+    >(
+      `SELECT staging_overrides_json FROM snapshots WHERE id = $1::uuid FOR UPDATE`,
+      snapshot.id,
+    );
+    const latestOverrides = normalizeOverrides(lockedRows[0]?.staging_overrides_json);
+
+    // Phase 1: resolve a canonical_id for each actionable group
+    for (const group of actionableGroups) {
+      if (group.match_status === "EXACT" || group.match_status === "FUZZY_HIGH") {
+        if (group.existing_canonical_id) {
+          groupResolutions.set(group.normalized_key, group.existing_canonical_id);
+          partiesResolved += 1;
+        } else {
+          groupsSkipped += 1;
+        }
+        continue;
+      }
+
+      // UNMAPPED: check DB for existing party (by name, GSTIN, or alias)
+      const existing = await tx.parties_canonical.findFirst({
+        where: {
+          entity_id: snapshot.entity_id,
+          OR: [
+            { name: group.display_name },
+            ...(group.gstin ? ([{ gstin: group.gstin }] as const) : []),
+            {
+              party_aliases: {
+                some: { alias_text: { in: group.raw_names } },
+              },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        groupResolutions.set(group.normalized_key, existing.id);
+        partiesResolved += 1;
+      } else {
+        const canonical = await tx.parties_canonical.create({
+          data: {
+            id: createId(),
+            entity_id: snapshot.entity_id,
+            name: group.display_name,
+            gstin: group.gstin ?? null,
+            created_by: currentUser.id,
+          },
+        });
+        for (const rawName of group.raw_names) {
+          await tx.party_aliases
+            .create({
+              data: {
+                id: createId(),
+                canonical_id: canonical.id,
+                alias_text: rawName,
+                source: "MANUAL",
+                confidence: new Prisma.Decimal("100"),
+                confirmed_by: currentUser.id,
+                confirmed_at: new Date(),
+                created_by: currentUser.id,
+              },
+            })
+            .catch(() => undefined);
+        }
+        groupResolutions.set(group.normalized_key, canonical.id);
+        partiesCreated += 1;
+      }
+    }
+
+    // Phase 2: build override records for all rows in actionable groups
+    const newOverrides: StagingOverride[] = [];
+    for (const group of actionableGroups) {
+      const canonicalId = groupResolutions.get(group.normalized_key);
+      if (!canonicalId) continue;
+
+      // For FUZZY_HIGH groups, register new aliases so future uploads auto-match
+      if (group.match_status === "FUZZY_HIGH") {
+        for (const rawName of group.raw_names) {
+          await tx.party_aliases
+            .create({
+              data: {
+                id: createId(),
+                canonical_id: canonicalId,
+                alias_text: rawName,
+                source: "MANUAL",
+                confidence: new Prisma.Decimal("100"),
+                confirmed_by: currentUser.id,
+                confirmed_at: new Date(),
+                created_by: currentUser.id,
+              },
+            })
+            .catch(() => undefined);
+        }
+      }
+
+      for (const rowIndex of group.row_indices) {
+        newOverrides.push({
+          row_index: rowIndex,
+          action: "resolve_alias",
+          created_at: now,
+          actor_id: currentUser.id,
+          resolved_canonical_id: canonicalId,
+        });
+        rowsMapped += 1;
+      }
+    }
+
+    // Phase 3: write all overrides atomically
+    await tx.snapshots.update({
+      where: { id: snapshot.id },
+      data: {
+        staging_overrides_json: [
+          ...latestOverrides,
+          ...newOverrides,
+        ] as Prisma.InputJsonValue,
+        updated_at: new Date(),
+      },
+    });
+
+    await tx.audit_log.create({
+      data: {
+        id: createId(),
+        actor_user_id: currentUser.id,
+        action: "staging.bulk_map_parties",
+        entity_type: "snapshots",
+        entity_id: snapshot.id,
+        before: {
+          prior_overrides: latestOverrides.length,
+        } as Prisma.InputJsonValue,
+        after: {
+          rows_mapped: rowsMapped,
+          parties_created: partiesCreated,
+          parties_resolved: partiesResolved,
+        } as Prisma.InputJsonValue,
+      },
+    });
+  });
+
+  invalidateAliasCorpus(snapshot.entity_id);
+
+  const refreshed = await assertSnapshotAccess(snapshotId, currentUser);
+  const { gate } = await buildStagingRows(refreshed, currentUser);
+
+  return {
+    snapshot_id: snapshotId,
+    rows_mapped: rowsMapped,
+    parties_created: partiesCreated,
+    parties_resolved: partiesResolved,
+    groups_skipped: groupsSkipped,
+    publish_gate: gate,
+  };
+}
+
 export async function ackSnapshotWarnings(
   snapshotId: string,
   body: WarningsAckInput,
