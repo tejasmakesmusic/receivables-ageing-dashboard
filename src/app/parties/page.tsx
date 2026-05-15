@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Building2, Upload } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { RowActionLink } from "@/components/ui/row-actions";
+import { RecordPeek } from "@/components/ui/record-peek";
 import { SidePanel, SidePanelField } from "@/components/ui/side-panel";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
@@ -592,6 +593,71 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
           </Panel>
         </RightRail>
       </div>
+
+      {selectedAccount ? (
+        <RecordPeek
+          closeHref={viewHref(activeView)}
+          expandHref={`/party/${selectedAccount.canonical_id}`}
+          meta={`Audit record ${selectedAccount.canonical_id.slice(0, 8)} - ${selectedAccount.entity_code}`}
+          open={Boolean(selectedId)}
+          status={
+            <StatusTag
+              label={selectedAccount.collection_health}
+              status={healthStatus(selectedAccount.collection_health)}
+            />
+          }
+          subtitle={`${selectedAccount.entity_code} account`}
+          title={selectedAccount.canonical_name}
+        >
+          <div className="space-y-4">
+            <div>
+              <div className="text-[24px] font-semibold tabular-nums text-[var(--color-text)]">
+                {formatCurrency(
+                  selectedAccount.total_outstanding,
+                  selectedAccount.currency_display,
+                )}
+              </div>
+              <div className="mt-1 text-[13px] text-[var(--color-text-muted)]">
+                Total open exposure
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <SidePanelField label="90+ Exposure">
+                {formatCurrency(
+                  selectedAccount.ninety_plus_exposure,
+                  selectedAccount.currency_display,
+                )}
+              </SidePanelField>
+              <SidePanelField label="Open Invoices">
+                {selectedAccount.open_invoice_count}
+              </SidePanelField>
+              <SidePanelField label="Open Tasks">
+                {selectedAccount.open_task_count}
+              </SidePanelField>
+              <SidePanelField label="Exceptions">
+                {selectedAccount.active_exception_count}
+              </SidePanelField>
+            </div>
+
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
+              <div className="text-[13px] font-semibold text-[var(--color-text)]">
+                Next action
+              </div>
+              <p className="mt-1 text-[13px] text-[var(--color-text-muted)]">
+                Review open tasks before sending reminders or escalating the account.
+              </p>
+              <Link
+                className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-[13px] font-medium text-white hover:bg-[var(--color-accent-strong)]"
+                href={`/tasks?canonical_id=${selectedAccount.canonical_id}`}
+              >
+                Review tasks
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </RecordPeek>
+      ) : null}
     </PageFrame>
   );
 }
