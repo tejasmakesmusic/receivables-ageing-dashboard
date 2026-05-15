@@ -132,6 +132,33 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       </section>
 
       <Panel>
+        <div className="grid gap-0 lg:grid-cols-2">
+          <div className="border-b border-[var(--color-border)] p-4 lg:border-b-0 lg:border-r">
+            <div className="text-[13px] font-semibold text-[var(--color-text)]">
+              Accounting statement side
+            </div>
+            <p className="mt-1 text-[13px] text-[var(--color-text-muted)]">
+              Closing AR values entered for published snapshots. Missing entries are routed to the unreconciled queue.
+            </p>
+            <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-bg-subtle)] p-3 text-[13px]">
+              {unreconciled} snapshots need closing AR input.
+            </div>
+          </div>
+          <div className="p-4">
+            <div className="text-[13px] font-semibold text-[var(--color-text)]">
+              Receivables OS side
+            </div>
+            <p className="mt-1 text-[13px] text-[var(--color-text-muted)]">
+              Dashboard AR from uploaded workbooks. Mismatches should be triaged before finance close.
+            </p>
+            <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-bg-subtle)] p-3 text-[13px]">
+              {mismatched} snapshots need mismatch review.
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel>
         <div className="grid gap-3 p-4 md:grid-cols-5">
           {[
             {

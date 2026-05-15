@@ -717,6 +717,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
             ) : (
               <DataTable<InvoiceListRow>
                 columns={invoiceColumns()}
+                density="compact"
                 emptyState={{
                   icon: <FileText className="h-6 w-6" />,
                   title: "No invoices yet",
@@ -747,7 +748,41 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   ),
                 }}
                 isFiltered={activeFilterCount > 0}
+                filterBar={
+                  filterLabels.length > 0 ? (
+                    <>
+                      {filterLabels.map((label) => (
+                        <span
+                          className="rounded-[var(--radius-sm)] bg-[var(--color-bg-muted)] px-2 py-1 text-[12px] text-[var(--color-text)]"
+                          key={label}
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </>
+                  ) : null
+                }
                 minWidthClass="min-w-[1120px]"
+                selectable
+                selectedRowKeys={
+                  selectedInvoice ? [selectedInvoice.invoice_id] : []
+                }
+                bulkActions={
+                  <>
+                    <Link
+                      className="inline-flex h-8 items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-2.5 text-[12px] font-medium text-white"
+                      href="/tasks"
+                    >
+                      Create task
+                    </Link>
+                    <Link
+                      className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2.5 text-[12px] font-medium text-[var(--color-text)]"
+                      href="/follow-ups"
+                    >
+                      Log follow-up
+                    </Link>
+                  </>
+                }
               rowHref={(invoice) => previewHref(invoice.invoice_id, params)}
               rowCreateHref={(invoice) =>
                 `/follow-ups?invoice_id=${invoice.invoice_id}`

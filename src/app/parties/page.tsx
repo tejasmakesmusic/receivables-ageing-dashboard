@@ -441,6 +441,7 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
 
             <DataTable<PartyRegisterRow>
               columns={partyColumns()}
+              density="compact"
               emptyState={{
                 action: (
                   <Link
@@ -468,7 +469,18 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
                 title: "No parties match this view",
               }}
               isFiltered={isFiltered}
+              filterBar={
+                isFiltered ? (
+                  <span className="rounded-[var(--radius-sm)] bg-[var(--color-bg-muted)] px-2 py-1 text-[12px] text-[var(--color-text)]">
+                    View: {activeView}
+                  </span>
+                ) : null
+              }
               minWidthClass="min-w-[1060px]"
+              selectable
+              selectedRowKeys={
+                selectedAccount ? [selectedAccount.canonical_id] : []
+              }
               rowHref={(account) => previewHref(account.canonical_id, activeView)}
               rowCreateHref={(account) =>
                 `/follow-ups?canonical_id=${account.canonical_id}`

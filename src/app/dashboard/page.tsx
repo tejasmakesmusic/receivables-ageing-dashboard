@@ -184,7 +184,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             <StatusTag status={dashboard.snapshot_status} />
           </span>
         }
-        title="Dashboard"
+        title="Collections Dashboard"
         actions={
           currentUser.role !== role_enum.ANALYST ? (
             <EntitySwitcher current={entity} />
@@ -192,8 +192,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         }
       >
         {entity === "ALL"
-          ? "Consolidated receivables across every entity."
-          : `Receivables for ${entity}, derived from the latest published snapshot.`}
+          ? "Operator dashboard for cash risk, overdue exposure, source quality, and next collection focus."
+          : `Collections view for ${entity}, derived from the latest published snapshot.`}
       </PageHeader>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
