@@ -1,21 +1,11 @@
 import Link from "next/link";
-import { CalendarDays, LogOut } from "lucide-react";
+import { Bell, CalendarDays, LogOut } from "lucide-react";
+import { Breadcrumb } from "@/components/shell/breadcrumb";
 import { GlobalCommandMenu } from "@/components/shell/global-command-menu";
 import { role_enum } from "@/generated/prisma/enums";
 import { getCurrentUser } from "@/server/core/auth";
 import { getPrisma } from "@/lib/prisma";
 import { formatDate } from "@/lib/format";
-
-// PR C — topbar polish.
-// Was: three decorative chips ("All Entities", "Latest Snapshot", "Live
-// Workspace · AR operations") that all pointed at fixed routes but looked
-// interactive. Replaced with real, server-fetched data:
-//   • Latest published snapshot chip (date · entity), linked to that
-//     snapshot. Scoped per analyst's entity, all entities for CFO/Admin/
-//     Reviewer.
-//   • User pill — name, role badge, sign-out.
-// When unauthenticated (e.g. /auth/* routes), the topbar gracefully
-// renders just the command menu without crashing.
 
 async function loadTopbarContext() {
   try {
@@ -52,71 +42,61 @@ function initialsFor(name: string, email: string): string {
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
-function roleAccent(role: string): string {
-  if (role === "ADMIN") return "var(--color-accent)";
-  if (role === "CFO") return "var(--color-status-warning-text)";
-  if (role === "REVIEWER") return "var(--color-status-info-text)";
-  return "var(--color-text-muted)";
-}
-
 export async function Topbar() {
   const { user, latestSnapshot } = await loadTopbarContext();
   const initials = user ? initialsFor(user.name, user.email) : "?";
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6">
-      <div className="flex min-w-0 flex-1 items-center">
-        <GlobalCommandMenu />
+    <header className="flex h-[var(--shell-topbar-height)] shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <Breadcrumb />
+        <div className="min-w-[160px] max-w-[440px] flex-1">
+          <GlobalCommandMenu />
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 items-center gap-1.5">
         {latestSnapshot ? (
           <Link
-            className="hidden h-10 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-muted)] md:inline-flex"
+            className="hidden h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-[12px] font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] md:inline-flex"
             href={`/snapshots/${latestSnapshot.id}`}
-            title="Open the latest published snapshot"
+            title="Open latest published snapshot"
           >
-            <CalendarDays className="h-4 w-4 text-[var(--color-text-muted)]" />
-            <span className="text-[var(--color-text-muted)]">
-              Latest snapshot
-            </span>
-            <span className="text-[var(--color-text)]">
-              {latestSnapshot.as_of_date
-                ? formatDate(latestSnapshot.as_of_date.toISOString())
-                : "—"}
-            </span>
-            <span className="rounded bg-[var(--color-bg-muted)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-text-muted)]">
+            <CalendarDays className="h-3.5 w-3.5" />
+            <span>{latestSnapshot.as_of_date ? formatDate(latestSnapshot.as_of_date.toISOString()) : "-"}</span>
+            <span className="rounded-[var(--radius-xs)] bg-[var(--color-bg-muted)] px-1 font-mono text-[10px]">
               {latestSnapshot.entities.code}
             </span>
           </Link>
         ) : null}
 
+        <button
+          aria-label="Notifications"
+          className="grid h-8 w-8 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
+          type="button"
+        >
+          <Bell className="h-4 w-4" />
+        </button>
+
         {user ? (
-          <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-1 py-1 transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-bg-muted)]">
+          <div className="flex items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 hover:bg-[var(--color-bg-muted)]">
             <div
               aria-hidden="true"
-              className="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-accent-soft)] text-sm font-semibold text-[var(--color-accent)]"
+              className="grid h-7 w-7 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-accent-soft)] text-[12px] font-semibold text-[var(--color-accent)]"
             >
               {initials}
             </div>
-            <div className="hidden text-sm md:block">
-              <div className="font-medium text-[var(--color-text)]">
+            <div className="hidden max-w-28 text-[12px] leading-tight md:block">
+              <div className="truncate font-medium text-[var(--color-text)]">
                 {user.name || user.email.split("@")[0]}
               </div>
-              <div
-                className="text-[11px] uppercase tracking-wide"
-                style={{ color: roleAccent(user.role) }}
-              >
+              <div className="truncate uppercase tracking-[0.08em] text-[10px] text-[var(--color-text-muted)]">
                 {user.role}
-                {user.role === role_enum.CFO ||
-                user.role === role_enum.REVIEWER
-                  ? " · read-only"
-                  : null}
               </div>
             </div>
             <Link
               aria-label="Sign out"
-              className="grid h-9 w-9 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text)]"
+              className="grid h-8 w-8 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
               href="/auth/logout"
               prefetch={false}
               title="Sign out"

@@ -195,14 +195,14 @@ export function GlobalCommandMenu() {
   return (
     <>
       <button
-        className="flex h-10 w-full max-w-[520px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-bg-subtle)]"
+        className="flex h-8 w-full max-w-[520px] items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-[13px] text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-bg-subtle)]"
         onClick={() => setOpen(true)}
         type="button"
       >
         <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="truncate">Search workspaces, actions, records...</span>
+        <span className="truncate">Search or run command</span>
         <kbd className="ml-auto hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] sm:inline-flex">
-          Ctrl K
+          Cmd K
         </kbd>
         <kbd className="ml-2 hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] sm:inline-flex">
           /
