@@ -9,6 +9,8 @@ import {
 } from "@/server/config/creditPeriod";
 import { listAliases, parseAliasListQuery } from "@/server/config/aliases";
 import { listFxRates, parseFxRateListQuery } from "@/server/config/fxRates";
+import { listEntityDefaults } from "@/server/config/entityDefaults";
+import { EntityDefaultsCard } from "./_components/entity-defaults-card";
 
 export default async function ConfigPage() {
   const currentUser = await requirePageRole(
@@ -25,6 +27,7 @@ export default async function ConfigPage() {
   );
   const aliases = await listAliases(parseAliasListQuery({}), currentUser);
   const fxRates = await listFxRates(parseFxRateListQuery({}), currentUser);
+  const entityDefaults = await listEntityDefaults(currentUser);
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-subtle)] p-6 text-[var(--color-text)]">
@@ -139,6 +142,14 @@ export default async function ConfigPage() {
             )}
           </CardContent>
         </Card>
+
+        <EntityDefaultsCard
+          canEdit={
+            currentUser.role === role_enum.ANALYST ||
+            currentUser.role === role_enum.ADMIN
+          }
+          entities={entityDefaults}
+        />
       </div>
     </div>
   );
