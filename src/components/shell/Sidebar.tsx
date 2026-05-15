@@ -364,7 +364,7 @@ export function Sidebar() {
 
     return (
       <div className="space-y-1">
-        <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+        <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
           {groupLabel}
         </div>
         {items.map((item) => {
@@ -480,19 +480,19 @@ export function Sidebar() {
           />
         </div>
         <div className="flex items-center justify-between px-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
             <Globe2 className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
             Navigation
           </span>
           <button
             aria-label={
-              editMode ? "Finish reordering navigation" : "Reorder navigation"
+              editMode ? "Done: finish reordering navigation" : "Edit: reorder navigation"
             }
             className={[
               "rounded-[var(--radius-sm)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors",
               editMode
                 ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                : "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             ].join(" ")}
             onClick={() => setEditMode((v) => !v)}
             type="button"
@@ -529,7 +529,7 @@ export function Sidebar() {
             </div>
           </div>
         </div>
-        <div className="mt-4 text-xs text-[var(--color-text-subtle)]">
+        <div className="mt-4 text-xs text-[var(--color-text-muted)]">
           Receivables OS
         </div>
       </div>
