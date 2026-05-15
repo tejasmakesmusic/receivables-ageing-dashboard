@@ -37,6 +37,7 @@ import {
 import { compareColumnMappings } from "@/server/column-mappings/service";
 import { storeUploadedWorkbook } from "@/server/storage/workbooks";
 import { addDaysUtc, calculateAgeing } from "@/server/ageing/buckets";
+import { dbTransaction } from "@/lib/db-transaction";
 
 const MATCH_TOLERANCE_CENTS = 10000n;
 
@@ -1816,149 +1817,153 @@ export async function bulkMapParties(
   let rowsMapped = 0;
   let groupsSkipped = summary.groups.length - actionableGroups.length;
 
-  // normalized_key → canonical_id resolved during transaction
+  // Phase 1: resolve canonical IDs + create missing canonicals/aliases OUTSIDE
+  // the transaction. This is the N-query loop that previously caused the 5 s
+  // interactive-transaction timeout when a snapshot had many unmapped parties.
+  // Canonical rows created here are idempotent/reusable if the later snapshot
+  // update fails, so there is no correctness regression.
   const groupResolutions = new Map<string, string>();
+  const prisma = getPrisma();
+  const aliasConfidenceDecimal = new Prisma.Decimal("100");
 
-  await getPrisma().$transaction(async (tx) => {
-    const lockedRows = await tx.$queryRawUnsafe<
-      { staging_overrides_json: unknown }[]
-    >(
-      `SELECT staging_overrides_json FROM snapshots WHERE id = $1::uuid FOR UPDATE`,
-      snapshot.id,
-    );
-    const latestOverrides = normalizeOverrides(lockedRows[0]?.staging_overrides_json);
-
-    // Phase 1: resolve a canonical_id for each actionable group
-    for (const group of actionableGroups) {
-      if (group.match_status === "EXACT" || group.match_status === "FUZZY_HIGH") {
-        if (group.existing_canonical_id) {
-          groupResolutions.set(group.normalized_key, group.existing_canonical_id);
-          partiesResolved += 1;
-        } else {
-          groupsSkipped += 1;
-        }
-        continue;
-      }
-
-      // UNMAPPED: check DB for existing party (by name, GSTIN, or alias)
-      const existing = await tx.parties_canonical.findFirst({
-        where: {
-          entity_id: snapshot.entity_id,
-          OR: [
-            { name: group.display_name },
-            ...(group.gstin ? ([{ gstin: group.gstin }] as const) : []),
-            {
-              party_aliases: {
-                some: { alias_text: { in: group.raw_names } },
-              },
-            },
-          ],
-        },
-        select: { id: true },
-      });
-
-      if (existing) {
-        groupResolutions.set(group.normalized_key, existing.id);
+  for (const group of actionableGroups) {
+    if (group.match_status === "EXACT" || group.match_status === "FUZZY_HIGH") {
+      if (group.existing_canonical_id) {
+        groupResolutions.set(group.normalized_key, group.existing_canonical_id);
         partiesResolved += 1;
       } else {
-        const canonical = await tx.parties_canonical.create({
-          data: {
-            id: createId(),
-            entity_id: snapshot.entity_id,
-            name: group.display_name,
-            gstin: group.gstin ?? null,
-            created_by: currentUser.id,
+        groupsSkipped += 1;
+      }
+      continue;
+    }
+
+    // UNMAPPED: check DB for existing party (by name, GSTIN, or alias)
+    const existing = await prisma.parties_canonical.findFirst({
+      where: {
+        entity_id: snapshot.entity_id,
+        OR: [
+          { name: group.display_name },
+          ...(group.gstin ? ([{ gstin: group.gstin }] as const) : []),
+          {
+            party_aliases: {
+              some: { alias_text: { in: group.raw_names } },
+            },
           },
-        });
-        for (const rawName of group.raw_names) {
-          await tx.party_aliases
-            .create({
-              data: {
-                id: createId(),
-                canonical_id: canonical.id,
-                alias_text: rawName,
-                source: "MANUAL",
-                confidence: new Prisma.Decimal("100"),
-                confirmed_by: currentUser.id,
-                confirmed_at: new Date(),
-                created_by: currentUser.id,
-              },
-            })
-            .catch(() => undefined);
-        }
-        groupResolutions.set(group.normalized_key, canonical.id);
-        partiesCreated += 1;
-      }
-    }
-
-    // Phase 2: build override records for all rows in actionable groups
-    const newOverrides: StagingOverride[] = [];
-    for (const group of actionableGroups) {
-      const canonicalId = groupResolutions.get(group.normalized_key);
-      if (!canonicalId) continue;
-
-      // For FUZZY_HIGH groups, register new aliases so future uploads auto-match
-      if (group.match_status === "FUZZY_HIGH") {
-        for (const rawName of group.raw_names) {
-          await tx.party_aliases
-            .create({
-              data: {
-                id: createId(),
-                canonical_id: canonicalId,
-                alias_text: rawName,
-                source: "MANUAL",
-                confidence: new Prisma.Decimal("100"),
-                confirmed_by: currentUser.id,
-                confirmed_at: new Date(),
-                created_by: currentUser.id,
-              },
-            })
-            .catch(() => undefined);
-        }
-      }
-
-      for (const rowIndex of group.row_indices) {
-        newOverrides.push({
-          row_index: rowIndex,
-          action: "resolve_alias",
-          created_at: now,
-          actor_id: currentUser.id,
-          resolved_canonical_id: canonicalId,
-        });
-        rowsMapped += 1;
-      }
-    }
-
-    // Phase 3: write all overrides atomically
-    await tx.snapshots.update({
-      where: { id: snapshot.id },
-      data: {
-        staging_overrides_json: [
-          ...latestOverrides,
-          ...newOverrides,
-        ] as Prisma.InputJsonValue,
-        updated_at: new Date(),
+        ],
       },
+      select: { id: true },
     });
 
-    await tx.audit_log.create({
-      data: {
-        id: createId(),
-        actor_user_id: currentUser.id,
-        action: "staging.bulk_map_parties",
-        entity_type: "snapshots",
-        entity_id: snapshot.id,
-        before: {
-          prior_overrides: latestOverrides.length,
-        } as Prisma.InputJsonValue,
-        after: {
-          rows_mapped: rowsMapped,
-          parties_created: partiesCreated,
-          parties_resolved: partiesResolved,
-        } as Prisma.InputJsonValue,
-      },
-    });
-  });
+    if (existing) {
+      groupResolutions.set(group.normalized_key, existing.id);
+      partiesResolved += 1;
+    } else {
+      const canonical = await prisma.parties_canonical.create({
+        data: {
+          id: createId(),
+          entity_id: snapshot.entity_id,
+          name: group.display_name,
+          gstin: group.gstin ?? null,
+          created_by: currentUser.id,
+        },
+      });
+      await prisma.party_aliases.createMany({
+        data: group.raw_names.map((rawName) => ({
+          id: createId(),
+          canonical_id: canonical.id,
+          alias_text: rawName,
+          source: "MANUAL",
+          confidence: aliasConfidenceDecimal,
+          confirmed_by: currentUser.id,
+          confirmed_at: new Date(),
+          created_by: currentUser.id,
+        })),
+        skipDuplicates: true,
+      });
+      groupResolutions.set(group.normalized_key, canonical.id);
+      partiesCreated += 1;
+    }
+  }
+
+  // Phase 2: register FUZZY_HIGH aliases + build override records (in-memory +
+  // a few createMany calls — still outside the transaction).
+  const newOverrides: StagingOverride[] = [];
+  for (const group of actionableGroups) {
+    const canonicalId = groupResolutions.get(group.normalized_key);
+    if (!canonicalId) continue;
+
+    if (group.match_status === "FUZZY_HIGH") {
+      await prisma.party_aliases.createMany({
+        data: group.raw_names.map((rawName) => ({
+          id: createId(),
+          canonical_id: canonicalId,
+          alias_text: rawName,
+          source: "MANUAL",
+          confidence: aliasConfidenceDecimal,
+          confirmed_by: currentUser.id,
+          confirmed_at: new Date(),
+          created_by: currentUser.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    for (const rowIndex of group.row_indices) {
+      newOverrides.push({
+        row_index: rowIndex,
+        action: "resolve_alias",
+        created_at: now,
+        actor_id: currentUser.id,
+        resolved_canonical_id: canonicalId,
+      });
+      rowsMapped += 1;
+    }
+  }
+
+  // Phase 3: atomically append overrides to the snapshot JSON. The FOR UPDATE
+  // lock serialises concurrent bulk-map calls so no override is lost.
+  await dbTransaction(
+    "bulkMapParties.snapshot-update",
+    async (tx) => {
+      const lockedRows = await tx.$queryRawUnsafe<
+        { staging_overrides_json: unknown }[]
+      >(
+        `SELECT staging_overrides_json FROM snapshots WHERE id = $1::uuid FOR UPDATE`,
+        snapshot.id,
+      );
+      const latestOverrides = normalizeOverrides(lockedRows[0]?.staging_overrides_json);
+
+      await tx.snapshots.update({
+        where: { id: snapshot.id },
+        data: {
+          staging_overrides_json: [
+            ...latestOverrides,
+            ...newOverrides,
+          ] as Prisma.InputJsonValue,
+          updated_at: new Date(),
+        },
+      });
+
+      await tx.audit_log.create({
+        data: {
+          id: createId(),
+          actor_user_id: currentUser.id,
+          action: "staging.bulk_map_parties",
+          entity_type: "snapshots",
+          entity_id: snapshot.id,
+          before: {
+            prior_overrides: latestOverrides.length,
+          } as Prisma.InputJsonValue,
+          after: {
+            rows_mapped: rowsMapped,
+            parties_created: partiesCreated,
+            parties_resolved: partiesResolved,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    },
+    { maxWait: 5_000, timeout: 10_000 },
+  );
 
   invalidateAliasCorpus(snapshot.entity_id);
 
