@@ -53,7 +53,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-[var(--radius-pill)] px-2 py-0.5 text-xs font-medium",
+        "inline-flex min-h-5 items-center rounded-[var(--radius-sm)] px-1.5 py-0.5 text-[12px] font-medium leading-none",
         variantClasses[variant],
         className,
       )}

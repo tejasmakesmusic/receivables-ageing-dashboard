@@ -14,16 +14,16 @@ export interface StatusTagDefinition {
 
 const TONE_CLASSES: Record<StatusTagTone, string> = {
   neutral:
-    "border-[var(--color-status-neutral-border)] bg-[var(--color-status-neutral-bg)] text-[var(--color-status-neutral-text)]",
-  info: "border-[var(--color-status-info-border)] bg-[var(--color-status-info-bg)] text-[var(--color-status-info-text)]",
+    "border-transparent bg-[var(--color-status-neutral-bg)] text-[var(--color-status-neutral-text)]",
+  info: "border-transparent bg-[var(--color-status-info-bg)] text-[var(--color-status-info-text)]",
   current:
-    "border-[var(--color-status-current-border)] bg-[var(--color-status-current-bg)] text-[var(--color-status-current-text)]",
+    "border-transparent bg-[var(--color-status-current-bg)] text-[var(--color-status-current-text)]",
   warning:
-    "border-[var(--color-status-warning-border)] bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning-text)]",
+    "border-transparent bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning-text)]",
   alert:
-    "border-[var(--color-status-alert-border)] bg-[var(--color-status-alert-bg)] text-[var(--color-status-alert-text)]",
+    "border-transparent bg-[var(--color-status-alert-bg)] text-[var(--color-status-alert-text)]",
   danger:
-    "border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-text)]",
+    "border-transparent bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-text)]",
 };
 
 function tag(label: string, tone: StatusTagTone): StatusTagDefinition {
