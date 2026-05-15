@@ -49,7 +49,7 @@ function stripLegalSuffix(value: string): string {
   return s;
 }
 
-function normalizePartyText(value: string): string {
+export function normalizePartyText(value: string): string {
   const collapsed = value.replace(WS, " ").trim().toLowerCase();
   return stripLegalSuffix(collapsed);
 }
