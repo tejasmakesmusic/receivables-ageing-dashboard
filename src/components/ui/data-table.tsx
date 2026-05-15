@@ -206,7 +206,7 @@ export function DataTable<Row>({
   return (
     <TableShell className={className}>
       <table className={cn("w-full text-sm", minWidthClass)}>
-        <thead className="bg-[var(--color-bg-subtle)] text-left text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+        <thead className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-left text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
           <tr>
             {columns.map((column) => {
               const sortable = Boolean(column.sortKey && sortHref);
@@ -333,6 +333,7 @@ export function DataTable<Row>({
                       className={cn(
                         "px-4 py-3 align-middle",
                         alignClass(column.align),
+                        column.align === "right" && "font-mono tabular-nums",
                         stickyClasses(column.sticky),
                         selected && column.sticky === "left"
                           ? "bg-[var(--color-accent-soft)]"

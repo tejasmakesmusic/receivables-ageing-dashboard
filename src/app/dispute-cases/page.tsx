@@ -123,6 +123,9 @@ function fullRecordHref(dispute: DisputeRow) {
 }
 
 function nextActionLabel(dispute: DisputeRow) {
+  if (dispute.status === "WAITING_ON_CUSTOMER") return "Update customer blocker";
+  if (dispute.status === "IN_REVIEW") return "Continue investigation";
+  if (dispute.status === "OPEN") return "Assign and investigate";
   if (dispute.invoice_id) return "Open linked invoice";
   return "Open party record";
 }
@@ -286,6 +289,10 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
   const disputes = items as DisputeRow[];
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const isFiltered = Boolean(params.status) || Boolean(params.entity_id);
+  const activeFilters = [
+    params.status ? `Status: ${params.status}` : null,
+    params.entity_id ? `Entity: ${params.entity_id}` : null,
+  ].filter((value): value is string => Boolean(value));
   const selected =
     disputes.find((dispute) => dispute.id === params.dispute) ??
     disputes[0] ??
@@ -311,8 +318,7 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
   return (
     <PageFrame>
       <PageHeader title="Dispute Cases">
-        Track customer disputes, owners, expected resolution dates, and linked
-        invoice context.
+        Track why cash is blocked, who owns the dispute, and what must happen next.
       </PageHeader>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -369,6 +375,14 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
           </SavedViewTabs>
 
           <Panel>
+            <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-3">
+              <div className="text-sm font-semibold text-[var(--color-text)]">
+                Dispute Review Queue
+              </div>
+              <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Every case should show reason, owner, age, linked invoice, and required next step.
+              </div>
+            </div>
             <form
               action="/dispute-cases"
               className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4 text-sm"
@@ -396,6 +410,27 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
                 Apply Filters
               </Button>
             </form>
+            {activeFilters.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
+                <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                  Applied filters
+                </span>
+                {activeFilters.map((filter) => (
+                  <span
+                    className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)]"
+                    key={filter}
+                  >
+                    {filter}
+                  </span>
+                ))}
+                <Link
+                  className="text-xs font-medium text-[var(--color-accent)] hover:underline"
+                  href="/dispute-cases"
+                >
+                  Clear filters
+                </Link>
+              </div>
+            ) : null}
 
             {activeTab === "kanban" ? (
               <DisputeKanban disputes={kanbanDisputes} />
@@ -515,10 +550,18 @@ export default async function DisputeCasesPage({ searchParams }: PageProps) {
 
               <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
                 <div className="text-sm font-semibold text-[var(--color-text)]">
-                  Case Summary
+                  Why blocked?
                 </div>
                 <p className="mt-2 text-sm text-[var(--color-text-muted)]">
                   {selected.description}
+                </p>
+              </div>
+              <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-3">
+                <div className="text-sm font-semibold text-[var(--color-text)]">
+                  Required next step
+                </div>
+                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                  {nextActionLabel(selected)}
                 </p>
               </div>
             </SidePanel>

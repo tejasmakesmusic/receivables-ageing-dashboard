@@ -13,6 +13,7 @@ import {
   TABLE_ROW_INTERACTIVE_CLASS,
   TABLE_ROW_SELECTED_CLASS,
 } from "@/components/ui/table-row-styles";
+import { TableShell } from "@/components/ui/data-table";
 import { StatusTag } from "@/components/ui/status-tag";
 import type { FocusQueueItem } from "@/server/focus/service";
 
@@ -132,7 +133,8 @@ export function FocusQueueTable({ items }: FocusQueueTableProps) {
   }
 
   return (
-    <table className="w-full text-sm">
+    <TableShell className="rounded-none border-x-0 border-b-0">
+    <table className="w-full min-w-[980px] text-sm">
       <thead className="sticky top-0 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
         <tr>
           <th className="px-[var(--spacing-6)] py-[var(--spacing-2)] text-left text-xs font-medium text-[var(--color-text-muted)]">
@@ -150,8 +152,8 @@ export function FocusQueueTable({ items }: FocusQueueTableProps) {
           <th className="px-[var(--spacing-4)] py-[var(--spacing-2)] text-right text-xs font-medium text-[var(--color-text-muted)]">
             Priority
           </th>
-          <th className="w-16 px-[var(--spacing-4)] py-[var(--spacing-2)] text-right text-xs font-medium text-[var(--color-text-muted)]">
-            Action
+          <th className="w-36 px-[var(--spacing-4)] py-[var(--spacing-2)] text-right text-xs font-medium text-[var(--color-text-muted)]">
+            Next action
           </th>
         </tr>
       </thead>
@@ -213,11 +215,11 @@ export function FocusQueueTable({ items }: FocusQueueTableProps) {
               <td className="px-[var(--spacing-4)] py-[var(--spacing-3)] text-[var(--color-text-muted)]">
                 {formatDate(item.due_date)}
               </td>
-              <td className="px-[var(--spacing-4)] py-[var(--spacing-3)] text-right font-mono text-xs text-[var(--color-text)]">
+              <td className="px-[var(--spacing-4)] py-[var(--spacing-3)] text-right font-mono text-xs tabular-nums text-[var(--color-text)]">
                 {item.priority_score.toFixed(0)}
               </td>
               <td className="px-[var(--spacing-4)] py-[var(--spacing-3)] text-right">
-                <div className="flex justify-end gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <div className="flex justify-end gap-1">
                   <Link
                     aria-label={hint.title}
                     className="inline-flex h-8 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)]"
@@ -244,5 +246,6 @@ export function FocusQueueTable({ items }: FocusQueueTableProps) {
         })}
       </tbody>
     </table>
+    </TableShell>
   );
 }

@@ -116,7 +116,7 @@ function suggestedAction(invoice: InvoiceListRow) {
   if (invoice.bucket === "61_90") return "Manager follow-up";
   if (invoice.bucket === "31_60") return "Promise follow-up";
   if (invoice.bucket === "0_30") return "Customer follow-up";
-  return "Monitor";
+  return "No action needed";
 }
 
 function riskTag(invoice: InvoiceListRow) {
@@ -294,6 +294,20 @@ function filterCount(params: InvoicePageParams) {
   ].filter(Boolean).length;
 }
 
+function activeFilterLabels(params: InvoicePageParams) {
+  const labels: string[] = [];
+  if (params.entity) labels.push(`Entity: ${params.entity}`);
+  if (params.status) labels.push(`Status: ${params.status}`);
+  if (params.overdue_bucket) labels.push(`Bucket: ${params.overdue_bucket}`);
+  if (params.has_active_exceptions === "true") labels.push("Has exceptions");
+  if (params.has_active_exceptions === "false") labels.push("No exceptions");
+  if (params.party_canonical_id) labels.push("Account filtered");
+  if (params.system_view) labels.push("System view");
+  if (params.change_status) labels.push(`Change: ${params.change_status}`);
+  if (params.lob) labels.push(`LOB: ${params.lob}`);
+  return labels;
+}
+
 export default async function InvoicesPage({ searchParams }: PageProps) {
   const currentUser = await requirePageRole(
     "/invoices",
@@ -393,6 +407,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     0,
   );
   const activeFilterCount = filterCount(params);
+  const filterLabels = activeFilterLabels(params);
 
   return (
     <PageFrame>
@@ -531,6 +546,14 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               </div>
 
               <form action="/invoices" className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <div className="text-sm font-semibold text-[var(--color-text)]">
+                    Narrow the review queue
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Use filters to isolate blocked, overdue, changed, or unassigned AR work.
+                  </p>
+                </div>
                 <input name="page_size" type="hidden" value={pageSize} />
                 <select className={fieldClass} defaultValue={params.entity ?? ""} name="entity">
                   <option value="">All entities</option>
@@ -588,6 +611,27 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                 </Button>
               </form>
             </div>
+            {filterLabels.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] px-4 py-3">
+                <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                  Applied filters
+                </span>
+                {filterLabels.map((label) => (
+                  <span
+                    className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)]"
+                    key={label}
+                  >
+                    {label}
+                  </span>
+                ))}
+                <Link
+                  className="text-xs font-medium text-[var(--color-accent)] hover:underline"
+                  href="/invoices"
+                >
+                  Clear filters
+                </Link>
+              </div>
+            ) : null}
           </Panel>
 
           <Panel>

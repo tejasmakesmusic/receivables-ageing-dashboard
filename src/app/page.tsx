@@ -39,12 +39,12 @@ function queueTypeLabel(type: FocusQueueItem["type"]) {
 }
 
 function nextActionLabel(item: FocusQueueItem) {
-  if (item.type === "PTP") return "Review Promise";
-  if (item.type === "DISPUTE") return "Update Dispute";
-  if (item.type === "STAGING_BLOCKER") return "Resolve Blocker";
-  if (item.type === "RECONCILIATION") return "Review Tie-Out";
-  if (item.status.includes("SNOOZED")) return "Review Snooze";
-  return "Work Item";
+  if (item.type === "PTP") return "Review promise follow-up";
+  if (item.type === "DISPUTE") return "Resolve dispute blocker";
+  if (item.type === "STAGING_BLOCKER") return "Resolve staging blocker";
+  if (item.type === "RECONCILIATION") return "Review reconciliation mismatch";
+  if (item.status.includes("SNOOZED")) return "Review snoozed task";
+  return "Open collection task";
 }
 
 function overdueAmount(dashboard: NonNullable<Awaited<ReturnType<typeof getHomeCommandCenter>>["dashboard"]>) {
@@ -134,9 +134,9 @@ export default async function HomePage() {
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               }
-              title="Prioritized Focus Queue"
+              title="Critical Work Queue"
             >
-              Parties and invoices prioritized by risk and impact.
+              Start here: overdue, blocked, disputed, and tie-out work ranked by urgency.
             </PanelHeader>
 
             {home.focus_items.length === 0 ? (

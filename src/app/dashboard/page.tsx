@@ -211,10 +211,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           label="Overdue Share"
           meta="of total receivables"
           tone={
-            overdueShare >= 25
-              ? "warning"
-              : overdueShare >= 50
+            overdueShare >= 50
                 ? "danger"
+              : overdueShare >= 25
+                ? "warning"
                 : "neutral"
           }
           value={`${overdueShare.toFixed(1)}%`}

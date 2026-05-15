@@ -108,7 +108,7 @@ export default async function PartyDetailPage({
               href={`/follow-ups?canonical_id=${party.canonical_id}`}
             >
               <Phone className="h-4 w-4" />
-              Log Activity
+              Log follow-up
             </Link>
             <Link
               className={[
@@ -120,7 +120,7 @@ export default async function PartyDetailPage({
               href={`/promises-to-pay?canonical_id=${party.canonical_id}`}
             >
               <CalendarCheck className="h-4 w-4" />
-              Create Promise
+              Review promises
             </Link>
             <Link
               className={[
@@ -132,7 +132,7 @@ export default async function PartyDetailPage({
               href={`/tasks?canonical_id=${party.canonical_id}`}
             >
               <ShieldAlert className="h-4 w-4" />
-              Escalate
+              Review tasks
             </Link>
           </>
         }
@@ -147,8 +147,8 @@ export default async function PartyDetailPage({
         }
         title={party.canonical_name}
       >
-        {party.entity_code} - {party.currency_display} - Open invoice view and
-        outstanding summary.
+        {party.entity_code} - {party.currency_display} account context, blockers,
+        open invoices, and next collection action.
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -303,8 +303,8 @@ export default async function PartyDetailPage({
                 Key Contacts
               </h2>
               <EmptyState
-                description="Follow-up notes remain the auditable contact trail for this account."
-                title="No dedicated contacts"
+                description="Use follow-up notes to record who was contacted, channel, and next action date."
+                title="No dedicated contacts on this account"
               />
             </Panel>
             <Panel className="p-4">
@@ -320,8 +320,8 @@ export default async function PartyDetailPage({
                     View promises
                   </Link>
                 }
-                description="Open and broken promises for this account appear in the promise register."
-                title="No promises loaded here"
+                description="Open, kept, and broken promises are managed in the promise register for this account."
+                title="No promises in this account view"
               />
             </Panel>
             <Panel className="p-4">
@@ -337,8 +337,8 @@ export default async function PartyDetailPage({
                     View disputes
                   </Link>
                 }
-                description="Dispute cases are tracked separately from exception tags."
-                title="No dispute panel data"
+                description="If an invoice is blocked by a dispute, the dispute register shows owner, reason, and expected resolution."
+                title="No open disputes shown here"
               />
             </Panel>
           </div>
@@ -358,7 +358,7 @@ export default async function PartyDetailPage({
                 </div>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                   Suggested from open invoices, ageing bucket, and active
-                  exception count.
+                  exception count. Review blockers before sending reminders.
                 </p>
               </div>
               <Link

@@ -77,7 +77,7 @@ describe("getOrCreateGoogleUser", () => {
     });
     prismaMock.getPrisma.mockReturnValue(db);
 
-    const { user, isNew } = await getOrCreateGoogleUser({
+    const { isNew } = await getOrCreateGoogleUser({
       googleSub: "g-sub-new",
       email: "alice@emb.global",
       name: "Alice",
@@ -98,7 +98,7 @@ describe("getOrCreateGoogleUser", () => {
     });
     prismaMock.getPrisma.mockReturnValue(db);
 
-    const { user, isNew } = await getOrCreateGoogleUser({
+    const { isNew } = await getOrCreateGoogleUser({
       googleSub: "g-sub-brand-new",
       email: "newperson@emb.global",
       name: "New Person",

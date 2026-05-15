@@ -39,14 +39,14 @@ export function PageHeader({
   title: string;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0">
+    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-border)] pb-4">
+      <div className="min-w-0 max-w-3xl">
         {eyebrow ? (
           <div className="mb-1 text-xs text-[var(--color-text-muted)]">
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="text-2xl font-semibold text-[var(--color-text)]">
+        <h1 className="text-2xl font-semibold tracking-[-0.01em] text-[var(--color-text)]">
           {title}
         </h1>
         {children ? (
@@ -56,7 +56,9 @@ export function PageHeader({
         ) : null}
       </div>
       {actions ? (
-        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {actions}
+        </div>
       ) : null}
     </div>
   );
@@ -118,14 +120,14 @@ export function MetricCard({
   value: ReactNode;
 }) {
   return (
-    <Panel className="min-h-[118px] p-4">
+    <Panel className="min-h-[118px] p-4 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
       <div className="flex items-start justify-between gap-3">
         <div className="text-xs font-semibold text-[var(--color-text)]">
           {label}
         </div>
         {accent}
       </div>
-      <div className="mt-5 text-2xl font-semibold text-[var(--color-text)]">
+      <div className="mt-5 text-2xl font-semibold tabular-nums text-[var(--color-text)]">
         {value}
       </div>
       {meta ? (
@@ -148,6 +150,10 @@ export function EmptyState({
 }) {
   return (
     <div className="flex min-h-48 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] p-8 text-center">
+      <div
+        aria-hidden="true"
+        className="mb-3 h-1.5 w-10 rounded-full bg-[var(--color-border-strong)]"
+      />
       <h2 className="text-sm font-semibold text-[var(--color-text)]">
         {title}
       </h2>
@@ -184,6 +190,7 @@ export function SavedViewLink({
         active
           ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
           : "border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2",
       ].join(" ")}
       href={href}
     >

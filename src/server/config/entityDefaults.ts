@@ -14,6 +14,8 @@ export interface EntityDefaultRow {
 export async function listEntityDefaults(
   _currentUser: AuthenticatedUser,
 ): Promise<EntityDefaultRow[]> {
+  void _currentUser;
+
   const rows = await getPrisma().entities.findMany({
     select: { id: true, code: true, name: true, default_credit_days: true },
     orderBy: { code: "asc" },

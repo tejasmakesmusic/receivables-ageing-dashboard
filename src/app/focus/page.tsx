@@ -6,6 +6,7 @@ import {
 import { StreakBadge } from "@/components/engagement/streak-badge";
 import { NudgeStack } from "@/components/engagement/nudge-stack";
 import { StatusTag } from "@/components/ui/status-tag";
+import { EmptyState } from "@/components/ui/workspace";
 import { FocusQueueTable } from "./_components/focus-queue-table";
 import { collection_task_status, role_enum } from "@/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
@@ -200,8 +201,11 @@ export default async function FocusPage() {
       <div className="flex-1 overflow-y-auto">
         <NudgeStack />
         {queue.items.length === 0 ? (
-          <div className="flex min-h-72 items-center justify-center px-[var(--spacing-6)] text-sm text-[var(--color-text-muted)]">
-            No current focus items for your scope.
+          <div className="px-[var(--spacing-6)] py-[var(--spacing-8)]">
+            <EmptyState
+              description="No overdue tasks, broken promises, disputes, staging blockers, or reconciliation mismatches need attention in your current scope."
+              title="No focus items right now"
+            />
           </div>
         ) : (
           <FocusQueueTable items={queue.items} />

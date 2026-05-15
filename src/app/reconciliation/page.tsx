@@ -115,8 +115,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
         }
         title="Reconciliation Center"
       >
-        Snapshot tie-out for dashboard AR, accounting closing AR, and review
-        exceptions.
+        Review which published snapshots are matched, mismatched, or still missing a closing AR tie-out.
       </PageHeader>
 
       <ViewPreferenceSync
@@ -157,7 +156,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
               detail: `${mismatched} mismatch items in review`,
               icon: AlertTriangle,
               status: mismatched > 0 ? "MISMATCHED" : "MATCHED",
-              title: "Review Exceptions",
+                title: "Review Exceptions",
             },
             {
               detail: "Close after tie-out approval",
@@ -203,6 +202,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
               </div>
               <div className="text-xs text-[var(--color-text-muted)]">
                 Supported reconciliation is currently workbook snapshot to dashboard AR.
+                Mismatches should be reviewed before finance close.
               </div>
             </div>
             <div className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
@@ -342,10 +342,11 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
                           </td>
                           <td className="px-4 py-3">
                             <Link
-                              className="font-medium text-[var(--color-accent)]"
+                              className="inline-flex items-center gap-1 font-medium text-[var(--color-accent)]"
                               href={`/snapshots/${snapshot.id}`}
                             >
-                              View
+                              Review snapshot
+                              <ArrowRight className="h-3.5 w-3.5" />
                             </Link>
                           </td>
                         </tr>
@@ -386,9 +387,19 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
                   </span>
                 </div>
                 <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-subtle)] p-3 text-[var(--color-text-muted)]">
-                  Tie-out notes and closing AR values are captured from the
-                  reconciliation entry associated with this published snapshot.
+                  {selectedReconciliation?.status === "MISMATCHED"
+                    ? "Mismatch requires review before this snapshot can be treated as finance-close ready."
+                    : selectedReconciliation
+                      ? "Tie-out notes and closing AR values are captured from the reconciliation entry associated with this published snapshot."
+                      : "No closing AR entry has been recorded yet for this published snapshot."}
                 </div>
+                <Link
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
+                  href={`/snapshots/${selectedSnapshot.id}`}
+                >
+                  Review snapshot details
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             ) : (
               <div className="p-4">

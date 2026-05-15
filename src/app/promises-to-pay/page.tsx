@@ -356,7 +356,7 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
         }
         title="Promises to Pay"
       >
-        Track customer payment commitments and review kept or broken outcomes.
+        Track customer payment commitments, broken promises, and the next follow-up path.
       </PageHeader>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -422,8 +422,7 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
                     Promise Register
                   </div>
                   <div className="text-xs text-[var(--color-text-muted)]">
-                    Open any promise to inspect invoice, account, and follow-up
-                    context.
+                    Open promises to inspect promised amount, due date, outcome, and linked account work.
                   </div>
                 </div>
                 {isFiltered ? (
@@ -549,10 +548,16 @@ export default async function PromisesToPayPage({ searchParams }: PageProps) {
 
               <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
                 <div className="text-sm font-semibold text-[var(--color-text)]">
-                  Promise Outcome
+                  Promise outcome and next step
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
-                  <span>Kept or broken state</span>
+                  <span>
+                    {selectedPromise.status === promise_to_pay_status.BROKEN
+                      ? "Broken promise: follow up with the account owner."
+                      : selectedPromise.status === promise_to_pay_status.OPEN
+                        ? "Waiting for promised payment date."
+                        : "Kept or closed promise state."}
+                  </span>
                   {selectedOutcome ? (
                     <StatusTag
                       label={selectedOutcome.label}

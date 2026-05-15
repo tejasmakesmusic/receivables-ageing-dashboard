@@ -1,0 +1,284 @@
+2026-05-15T13:50:42.576Z [INFO] [SYSTEM] Using native fetch API
+2026-05-15T13:50:42.578Z [DEBUG] [PROXY] System proxy support disabled (USE_SYSTEM_PROXY=false)
+2026-05-15T13:50:42.578Z [INFO] [PROXY] Starting WordPress MCP Proxy with enhanced authentication
+2026-05-15T13:50:42.579Z [INFO] [PROXY] MCP server connected to transport successfully
+2026-05-15T13:50:42.583Z [INFO] [INIT] 📩 Client Initialize Request received
+2026-05-15T13:50:42.583Z [DEBUG] [INIT] Initialize request details:
+{
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-11-25",
+    "capabilities": {
+      "roots": {},
+      "elicitation": {}
+    },
+    "clientInfo": {
+      "name": "claude-code",
+      "version": "2.1.138",
+      "title": "Claude Code",
+      "description": "Anthropic's agentic coding tool",
+      "websiteUrl": "https://claude.com/claude-code"
+    }
+  }
+}
+2026-05-15T13:50:42.584Z [INFO] [INIT] 🔄 Initializing WordPress connection with client parameters
+2026-05-15T13:50:42.584Z [INFO] [TRANSPORT_DETECT] 🔍 Starting transport detection and WordPress API initialization...
+2026-05-15T13:50:42.585Z [INFO] [TRANSPORT_DETECT] 📋 Added proxy information to clientInfo
+{
+  "originalClient": "claude-code",
+  "proxyName": "@automattic/mcp-wordpress-remote",
+  "proxyVersion": "0.3.0"
+}
+2026-05-15T13:50:42.585Z [INFO] [TRANSPORT_DETECT] 📡 Attempting JSON-RPC transport...
+2026-05-15T13:50:42.585Z [DEBUG] [SESSION] MCP JSON-RPC message being sent to WordPress:
+{
+  "jsonrpc": "2.0",
+  "method": "initialize",
+  "id": 1,
+  "original_mcp_id": "none",
+  "session_id": "not-yet-obtained"
+}
+2026-05-15T13:50:42.585Z [INFO] [TRANSPORT_DETECT] Sending initialization message via JSON-RPC:
+{
+  "method": "initialize",
+  "id": 1,
+  "jsonrpc": "2.0",
+  "hasParams": true
+}
+2026-05-15T13:50:42.586Z [DEBUG] [TRANSPORT_DETECT] Complete JSON-RPC init message:
+{
+  "jsonrpc": "2.0",
+  "method": "initialize",
+  "id": 1,
+  "params": {
+    "protocolVersion": "2025-11-25",
+    "capabilities": {
+      "roots": {},
+      "elicitation": {}
+    },
+    "clientInfo": {
+      "name": "claude-code",
+      "version": "2.1.138",
+      "title": "Claude Code",
+      "description": "Anthropic's agentic coding tool",
+      "websiteUrl": "https://claude.com/claude-code",
+      "proxied": {
+        "name": "@automattic/mcp-wordpress-remote",
+        "version": "0.3.0"
+      }
+    },
+    "_proxy_request_id": 1
+  }
+}
+2026-05-15T13:50:42.586Z [INFO] [API] Request method: initialize (JSON-RPC)
+2026-05-15T13:50:42.587Z [DEBUG] [API] JSON-RPC message: {"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2025-11-25","capabilities":{"roots":{},"elicitation":{}},"clientInfo":{"name":"claude-code","version":"2.1.138","title":"Claude Code","description":"Anthropic's agentic coding tool","websiteUrl":"https://claude.com/claude-code","proxied":{"name":"@automattic/mcp-wordpress-remote","version":"0.3.0"}},"_proxy_request_id":1}}
+2026-05-15T13:50:42.587Z [INFO] [AUTH] Using JWT token authentication
+2026-05-15T13:50:42.587Z [DEBUG] [AUTH] Token length: 240
+2026-05-15T13:50:42.587Z [DEBUG] [API] Environment: development
+2026-05-15T13:50:42.588Z [DEBUG] [API] Base API URL: https://blog.t3jas.com
+2026-05-15T13:50:42.588Z [DEBUG] [API] Final requesting URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:42.588Z [DEBUG] [API] Using Authorization header for authentication
+2026-05-15T13:50:42.588Z [INFO] [API] Sending request to WordPress API...
+2026-05-15T13:50:42.588Z [DEBUG] [API] Request URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:42.589Z [DEBUG] [API] Request method: POST
+2026-05-15T13:50:43.039Z [DEBUG] [API] Response status: 200
+2026-05-15T13:50:43.041Z [INFO] [API] Response received successfully
+2026-05-15T13:50:43.042Z [DEBUG] [API] Response data: {"protocolVersion":"2025-03-26","serverInfo":{"name":"WordPress MCP Server","version":"0.2.5","siteInfo":{"name":"T3JAS","url":"https://blog.t3jas.com","description":"main quest: data. side quests: everything else.","language":"en-US","charset":"UTF-8"}},"capabilities":{"tools":{"list":true,"call":true},"resources":{"list":true,"subscribe":true,"listChanged":true},"prompts":{"list":true,"get":true,"listChanged":true},"logging":{},"completion":{},"roots":{"list":true,"listChanged":true}},"instructions":"This is a WordPress MCP Server implementation that provides tools, resources, and prompts for interacting with the WordPress site T3JAS (https://blog.t3jas.com)."}
+2026-05-15T13:50:43.042Z [INFO] [TRANSPORT_DETECT] ✅ JSON-RPC transport detected and working
+2026-05-15T13:50:43.042Z [DEBUG] [TRANSPORT_DETECT] JSON-RPC initialization response:
+{
+  "protocolVersion": "2025-03-26",
+  "serverInfo": {
+    "name": "WordPress MCP Server",
+    "version": "0.2.5",
+    "siteInfo": {
+      "name": "T3JAS",
+      "url": "https://blog.t3jas.com",
+      "description": "main quest: data. side quests: everything else.",
+      "language": "en-US",
+      "charset": "UTF-8"
+    }
+  },
+  "capabilities": {
+    "tools": {
+      "list": true,
+      "call": true
+    },
+    "resources": {
+      "list": true,
+      "subscribe": true,
+      "listChanged": true
+    },
+    "prompts": {
+      "list": true,
+      "get": true,
+      "listChanged": true
+    },
+    "logging": {},
+    "completion": {},
+    "roots": {
+      "list": true,
+      "listChanged": true
+    }
+  },
+  "instructions": "This is a WordPress MCP Server implementation that provides tools, resources, and prompts for interacting with the WordPress site T3JAS (https://blog.t3jas.com)."
+}
+2026-05-15T13:50:43.043Z [WARN] [PROXY] No session ID received from WordPress - continuing without session
+2026-05-15T13:50:43.043Z [INFO] [PROXY] WordPress connection initialized successfully using jsonrpc transport
+2026-05-15T13:50:43.043Z [INFO] [INIT] ✅ Returning WordPress server initialize response
+2026-05-15T13:50:43.043Z [DEBUG] [INIT] Initialize response:
+{
+  "protocolVersion": "2025-03-26",
+  "serverInfo": {
+    "name": "WordPress MCP Server",
+    "version": "0.2.5",
+    "siteInfo": {
+      "name": "T3JAS",
+      "url": "https://blog.t3jas.com",
+      "description": "main quest: data. side quests: everything else.",
+      "language": "en-US",
+      "charset": "UTF-8"
+    }
+  },
+  "capabilities": {
+    "tools": {
+      "list": true,
+      "call": true
+    },
+    "resources": {
+      "list": true,
+      "subscribe": true,
+      "listChanged": true
+    },
+    "prompts": {
+      "list": true,
+      "get": true,
+      "listChanged": true
+    },
+    "logging": {},
+    "completion": {},
+    "roots": {
+      "list": true,
+      "listChanged": true
+    }
+  },
+  "instructions": "This is a WordPress MCP Server implementation that provides tools, resources, and prompts for interacting with the WordPress site T3JAS (https://blog.t3jas.com)."
+}
+2026-05-15T13:50:43.049Z [INFO] [CLIENT] 📩 Client Message: ListTools
+2026-05-15T13:50:43.049Z [INFO] [CLIENT] Request ID: none | Method: tools/list
+2026-05-15T13:50:43.049Z [INFO] [CLIENT] No request parameters
+2026-05-15T13:50:43.050Z [DEBUG] [CLIENT] Session context - ID: none, Transport: jsonrpc, Counter: 1
+2026-05-15T13:50:43.050Z [DEBUG] [CLIENT] Complete client request object:
+{
+  "method": "tools/list"
+}
+2026-05-15T13:50:43.050Z [DEBUG] [MCP] Processing ListToolsRequest
+2026-05-15T13:50:43.050Z [DEBUG] [SESSION] MCP JSON-RPC message being sent to WordPress:
+{
+  "jsonrpc": "2.0",
+  "method": "tools/list",
+  "id": 2,
+  "original_mcp_id": "none",
+  "session_id": "not-yet-obtained"
+}
+2026-05-15T13:50:43.051Z [INFO] [API] Request method: tools/list (JSON-RPC)
+2026-05-15T13:50:43.051Z [DEBUG] [API] JSON-RPC message: {"jsonrpc":"2.0","method":"tools/list","id":2,"params":{"_proxy_request_id":2}}
+2026-05-15T13:50:43.051Z [INFO] [AUTH] Using JWT token authentication
+2026-05-15T13:50:43.051Z [DEBUG] [AUTH] Token length: 240
+2026-05-15T13:50:43.051Z [DEBUG] [API] Environment: development
+2026-05-15T13:50:43.052Z [DEBUG] [API] Base API URL: https://blog.t3jas.com
+2026-05-15T13:50:43.052Z [DEBUG] [API] Final requesting URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:43.052Z [DEBUG] [API] Using Authorization header for authentication
+2026-05-15T13:50:43.052Z [INFO] [API] Sending request to WordPress API...
+2026-05-15T13:50:43.053Z [DEBUG] [API] Request URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:43.053Z [DEBUG] [API] Request method: POST
+2026-05-15T13:50:43.054Z [INFO] [CLIENT] 📩 Client Message: ListPrompts
+2026-05-15T13:50:43.054Z [INFO] [CLIENT] Request ID: none | Method: prompts/list
+2026-05-15T13:50:43.054Z [INFO] [CLIENT] No request parameters
+2026-05-15T13:50:43.055Z [DEBUG] [CLIENT] Session context - ID: none, Transport: jsonrpc, Counter: 2
+2026-05-15T13:50:43.055Z [DEBUG] [CLIENT] Complete client request object:
+{
+  "method": "prompts/list"
+}
+2026-05-15T13:50:43.055Z [DEBUG] [MCP] Processing ListPromptsRequest
+2026-05-15T13:50:43.055Z [INFO] [CLIENT] 📩 Client Message: ListResources
+2026-05-15T13:50:43.055Z [INFO] [CLIENT] Request ID: none | Method: resources/list
+2026-05-15T13:50:43.056Z [INFO] [CLIENT] No request parameters
+2026-05-15T13:50:43.056Z [DEBUG] [CLIENT] Session context - ID: none, Transport: jsonrpc, Counter: 2
+2026-05-15T13:50:43.056Z [DEBUG] [CLIENT] Complete client request object:
+{
+  "method": "resources/list"
+}
+2026-05-15T13:50:43.056Z [DEBUG] [MCP] Processing ListResourcesRequest
+2026-05-15T13:50:43.056Z [DEBUG] [SESSION] MCP JSON-RPC message being sent to WordPress:
+{
+  "jsonrpc": "2.0",
+  "method": "prompts/list",
+  "id": 3,
+  "original_mcp_id": "none",
+  "session_id": "not-yet-obtained"
+}
+2026-05-15T13:50:43.057Z [INFO] [API] Request method: prompts/list (JSON-RPC)
+2026-05-15T13:50:43.057Z [DEBUG] [API] JSON-RPC message: {"jsonrpc":"2.0","method":"prompts/list","id":3,"params":{"_proxy_request_id":3}}
+2026-05-15T13:50:43.057Z [INFO] [AUTH] Using JWT token authentication
+2026-05-15T13:50:43.057Z [DEBUG] [AUTH] Token length: 240
+2026-05-15T13:50:43.057Z [DEBUG] [API] Environment: development
+2026-05-15T13:50:43.058Z [DEBUG] [API] Base API URL: https://blog.t3jas.com
+2026-05-15T13:50:43.058Z [DEBUG] [API] Final requesting URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:43.058Z [DEBUG] [API] Using Authorization header for authentication
+2026-05-15T13:50:43.058Z [INFO] [API] Sending request to WordPress API...
+2026-05-15T13:50:43.058Z [DEBUG] [API] Request URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:43.059Z [DEBUG] [API] Request method: POST
+2026-05-15T13:50:43.059Z [DEBUG] [SESSION] MCP JSON-RPC message being sent to WordPress:
+{
+  "jsonrpc": "2.0",
+  "method": "resources/list",
+  "id": 4,
+  "original_mcp_id": "none",
+  "session_id": "not-yet-obtained"
+}
+2026-05-15T13:50:43.060Z [INFO] [API] Request method: resources/list (JSON-RPC)
+2026-05-15T13:50:43.060Z [DEBUG] [API] JSON-RPC message: {"jsonrpc":"2.0","method":"resources/list","id":4,"params":{"_proxy_request_id":4}}
+2026-05-15T13:50:43.060Z [INFO] [AUTH] Using JWT token authentication
+2026-05-15T13:50:43.060Z [DEBUG] [AUTH] Token length: 240
+2026-05-15T13:50:43.060Z [DEBUG] [API] Environment: development
+2026-05-15T13:50:43.060Z [DEBUG] [API] Base API URL: https://blog.t3jas.com
+2026-05-15T13:50:43.061Z [DEBUG] [API] Final requesting URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:43.061Z [DEBUG] [API] Using Authorization header for authentication
+2026-05-15T13:50:43.061Z [INFO] [API] Sending request to WordPress API...
+2026-05-15T13:50:43.061Z [DEBUG] [API] Request URL: https://blog.t3jas.com/?rest_route=/wp/v2/wpmcp
+2026-05-15T13:50:43.061Z [DEBUG] [API] Request method: POST
+2026-05-15T13:50:43.155Z [DEBUG] [API] Response status: 200
+2026-05-15T13:50:43.157Z [INFO] [API] Response received successfully
+2026-05-15T13:50:43.157Z [DEBUG] [API] Response data: {"tools":[{"name":"get_site_info","description":"Provides detailed information about the WordPress site like site name, url, description, admin email, plugins, themes, users, and more","type":"read","inputSchema":{"type":"object"},"annotations":{"title":"Get Site Info","readOnlyHint":true,"openWorldHint":false}},{"name":"wp_get_media_file","description":"Get the actual file content (blob) of a WordPress media item","type":"read","inputSchema":{"type":"object","properties":{"id":{"type":"integer","description":"The ID of the media item"},"size":{"type":"string","description":"Optional. The size of the image to retrieve (thumbnail, medium, large, full). Defaults to full/original size."}},"required":["id"]},"annotations":{"title":"Get Media File","readOnlyHint":true,"openWorldHint":false}},{"name":"list_api_functions","description":"List all available WordPress REST API endpoints that support CRUD operations (Create, Read, Update, Delete). Use this first to discover what API functions are available before inspecting or calling them.","type":"read","inputSchema":{"type":"object"},"annotations":{"title":"List API Functions","readOnlyHint":true,"openWorldHint":false}},{"name":"get_function_details","description":"Get detailed metadata for a specific WordPress REST API endpoint and HTTP method. Includes available parameters, required fields, authentication needs, and expected response structure. Use this to get the details of a specific function before calling it.","type":"read","inputSchema":{"type":"object","properties":{"route":{"type":"string","description":"The REST API route (e.g., \"/wp/v2/posts\", \"/wp/v2/users\")"},"method":{"type":"string","enum":["GET","POST","PATCH","DELETE"],"description":"The HTTP method to retrieve metadata for"}},"required":["route","method"]},"annotations":{"title":"Get Function Details","readOnlyHint":true,"openWorldHint":false}},{"name":"run_api_function","description":"Execute a specific WordPress REST API function by providing the endpoint route, HTTP method, and any required parameters or request body. Supports standard CRUD operations: GET (read), POST (create), PATCH (update), DELETE (remove).","type":"action","inputSchema":{"type":"object","properties":{"route":{"type":"string","description":"The REST API route (e.g., \"/wp/v2/posts\", \"/wp/v2/users/123\")"},"method":{"type":"string","enum":["GET","POST","PATCH","DELETE"],"description":"The HTTP method to use: GET, POST, PATCH, or DELETE"},"data":{"type":"object","description":"Payload for POST or PATCH requests. Not required for GET or DELETE."}},"required":["route","method"]},"annotations":{"title":"Run API Function","readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}}]}
+2026-05-15T13:50:43.157Z [INFO] [CLIENT] ✅ Client Response: ListTools completed in 107ms
+2026-05-15T13:50:43.157Z [DEBUG] [CLIENT] Response sent to client:
+{
+  "hasResponse": true,
+  "responseKeys": [
+    "tools"
+  ]
+}
+2026-05-15T13:50:43.227Z [DEBUG] [API] Response status: 200
+2026-05-15T13:50:43.228Z [INFO] [API] Response received successfully
+2026-05-15T13:50:43.228Z [DEBUG] [API] Response data: {"resources":[{"uri":"WordPress://site-info","name":"site-info","description":"Provides general information about the WordPress site including site details, plugins, themes, and users","mimeType":"application/json"},{"uri":"WordPress://plugin-info","name":"plugin-info","description":"Provides detailed information about active WordPress plugins","mimeType":"application/json"},{"uri":"WordPress://theme-info","name":"theme-info","description":"Provides detailed information about the active WordPress theme","mimeType":"application/json"},{"uri":"WordPress://user-info","name":"user-info","description":"Provides detailed information about registered WordPress users and their roles","mimeType":"application/json"},{"uri":"WordPress://site-settings","name":"site-settings","description":"Provides detailed information about WordPress site settings","mimeType":"application/json"}],"nextCursor":""}
+2026-05-15T13:50:43.228Z [INFO] [CLIENT] ✅ Client Response: ListResources completed in 172ms
+2026-05-15T13:50:43.228Z [DEBUG] [CLIENT] Response sent to client:
+{
+  "hasResponse": true,
+  "responseKeys": [
+    "resources",
+    "nextCursor"
+  ]
+}
+2026-05-15T13:50:44.255Z [DEBUG] [API] Response status: 200
+2026-05-15T13:50:44.255Z [INFO] [API] Response received successfully
+2026-05-15T13:50:44.256Z [DEBUG] [API] Response data: {"prompts":[{"name":"get-site-info","description":"Get detailed information about the WordPress site","arguments":[{"name":"info_type","description":"The type of information to retrieve (e.g., general, plugins, theme, users, settings)","required":false,"type":"string"}]},{"name":"analyze-sales","description":"Analyze WooCommerce sales data","arguments":[{"name":"time_span","description":"The time period to analyze (e.g., last_7_days, last_30_days, last_month, last_quarter, last_year)","required":true,"type":"string"}]}]}
+2026-05-15T13:50:44.256Z [INFO] [CLIENT] ✅ Client Response: ListPrompts completed in 1201ms
+2026-05-15T13:50:44.256Z [DEBUG] [CLIENT] Response sent to client:
+{
+  "hasResponse": true,
+  "responseKeys": [
+    "prompts"
+  ]
+}

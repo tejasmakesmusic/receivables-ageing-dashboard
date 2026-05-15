@@ -446,10 +446,9 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
             ))}
           </SavedViewTabs>
         }
-        title="Tasks"
+        title="Collections Work Queue"
       >
-        Manage follow-ups, promises, disputes, and task ownership from one
-        queue.
+        Review due follow-ups, broken promises, disputes, and overdue account work from one queue.
       </PageHeader>
 
       <ViewPreferenceSync
@@ -472,7 +471,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
                 <TabIcon className="h-4 w-4 text-[var(--color-accent)]" />
-                Task Workspace
+                Work Queue
               </div>
               <div className="flex flex-wrap gap-2">
                 <Link
@@ -573,7 +572,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
                     <div className="flex flex-1 flex-col gap-3 p-3">
                       {column.tasks.length === 0 ? (
                         <div className="grid min-h-32 place-items-center rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4 text-center text-xs text-[var(--color-text-muted)]">
-                          No tasks in this lane.
+                          No work items in this lane.
                         </div>
                       ) : (
                         column.tasks.map((task) => (
@@ -666,7 +665,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
           {activeTab === "queue" ? (
             <Panel>
               <PanelHeader title="Queue">
-                Dense task list for scanning and review.
+                Dense task list for scanning, ownership, and follow-up.
               </PanelHeader>
               <DataTable<CollectionTaskView>
                 columns={taskColumns()}
