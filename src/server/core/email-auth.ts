@@ -247,6 +247,65 @@ export async function verifyOtpToken(
   return updated as unknown as EmailUserRecord;
 }
 
+const RESET_EXPIRY_HOURS = 1;
+
+export async function requestPasswordReset(email: string): Promise<true> {
+  const prisma = getPrisma();
+  const user = await prisma.users.findUnique({ where: { email } });
+  if (!user) return true;
+
+  const password_reset_token = generateVerificationToken();
+  const password_reset_expires_at = new Date(
+    Date.now() + RESET_EXPIRY_HOURS * 60 * 60 * 1000,
+  );
+
+  await prisma.users.update({
+    where: { id: user.id },
+    data: { password_reset_token, password_reset_expires_at },
+  });
+
+  try {
+    await sendPasswordResetEmail({ to: email, name: user.name, token: password_reset_token });
+  } catch (err) {
+    console.error("[email-auth] requestPasswordReset: email send failed", {
+      userId: user.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return true;
+}
+
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<EmailUserRecord | null> {
+  if (newPassword.length < 8) throw new Error("password_too_short");
+
+  const prisma = getPrisma();
+  const now = new Date();
+
+  const user = await prisma.users.findFirst({
+    where: { password_reset_token: token, password_reset_expires_at: { gt: now } },
+  });
+  if (!user) return null;
+
+  const password_hash = await hash(newPassword, BCRYPT_COST);
+
+  const result = await prisma.users.updateMany({
+    where: { id: user.id, password_reset_token: token },
+    data: {
+      password_hash,
+      password_reset_token: null,
+      password_reset_expires_at: null,
+      last_login_at: new Date(),
+    },
+  });
+  if (result.count === 0) return null;
+
+  const updated = await prisma.users.findUnique({ where: { id: user.id } });
+  return updated as unknown as EmailUserRecord;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -306,6 +365,32 @@ async function sendOtpEmail({
       <p><strong>Sign-in code: ${escapeHtml(code)}</strong> (valid for 15 minutes)</p>
       <p><a href="${link}">Or click here to sign in directly</a></p>
       <p>If you didn't request this, you can ignore this email.</p>
+      <p>— EMB Receivables</p>
+    `,
+  });
+}
+
+async function sendPasswordResetEmail({
+  to,
+  name,
+  token,
+}: {
+  to: string;
+  name: string;
+  token: string;
+}) {
+  const baseUrl = env.NEXTAUTH_URL ?? env.NEXT_PUBLIC_API_URL;
+  const link = `${baseUrl}/auth/reset-password?token=${encodeURIComponent(token)}`;
+
+  await sendEmail({
+    to: [to],
+    subject: "Reset your password — EMB Receivables",
+    html: `
+      <p>Hi ${escapeHtml(name)},</p>
+      <p>Click the link below to set a new password for your EMB Receivables account:</p>
+      <p><a href="${link}">Reset my password</a></p>
+      <p>This link expires in 1 hour.</p>
+      <p>If you didn't request a password reset, you can ignore this email.</p>
       <p>— EMB Receivables</p>
     `,
   });

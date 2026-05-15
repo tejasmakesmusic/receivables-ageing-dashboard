@@ -41,6 +41,8 @@ import {
   requestOtp,
   verifyOtpCode,
   verifyOtpToken,
+  requestPasswordReset,
+  resetPassword,
 } from "@/server/core/email-auth";
 
 describe("generateVerificationToken", () => {
@@ -465,6 +467,119 @@ describe("verifyOtpToken", () => {
     mockUpdateMany.mockResolvedValue({ count: 0 });
 
     expect(await verifyOtpToken("raced-token")).toBeNull();
+    expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("requestPasswordReset", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns true without doing anything when user not found", async () => {
+    mockFindUnique.mockResolvedValue(null);
+    const result = await requestPasswordReset("nobody@example.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("generates reset token, updates user, sends email, returns true", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", password_hash: "some-hash" });
+    mockUpdate.mockResolvedValue({ id: "u1" });
+    mockSendEmail.mockResolvedValue({ id: "e1", skipped: false });
+
+    const result = await requestPasswordReset("a@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "u1" },
+      data: expect.objectContaining({
+        password_reset_token: expect.any(String),
+        password_reset_expires_at: expect.any(Date),
+      }),
+    }));
+    const emailArgs = mockSendEmail.mock.calls[0][0];
+    expect(emailArgs.subject).toContain("Reset your password");
+  });
+
+  it("works for Google-only accounts (null password_hash)", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "google@b.com", name: "G User", password_hash: null });
+    mockUpdate.mockResolvedValue({ id: "u1" });
+    mockSendEmail.mockResolvedValue({ id: "e1", skipped: false });
+
+    const result = await requestPasswordReset("google@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("returns true even when email send fails (token still saved)", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", password_hash: null });
+    mockUpdate.mockResolvedValue({ id: "u1" });
+    mockSendEmail.mockRejectedValue(new Error("SMTP error"));
+
+    const result = await requestPasswordReset("a@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).toHaveBeenCalledOnce();
+  });
+});
+
+describe("resetPassword", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("throws password_too_short when password is under 8 characters", async () => {
+    await expect(resetPassword("valid-token", "short")).rejects.toThrow("password_too_short");
+    expect(mockFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("returns user and updates password_hash on valid token", async () => {
+    const futureDate = new Date(Date.now() + 3600 * 1000);
+    mockFindFirst.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      password_reset_token: "valid-reset-token",
+      password_reset_expires_at: futureDate,
+    });
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockFindUnique.mockResolvedValue({
+      id: "u1",
+      email: "a@b.com",
+      name: "Alice",
+      role: "ANALYST",
+      is_active: true,
+      password_hash: "bcrypt-hash",
+    });
+
+    const result = await resetPassword("valid-reset-token", "newpassword123");
+    expect(result).not.toBeNull();
+    expect(mockUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "u1", password_reset_token: "valid-reset-token" },
+      data: expect.objectContaining({
+        password_hash: expect.any(String),
+        password_reset_token: null,
+        password_reset_expires_at: null,
+        last_login_at: expect.any(Date),
+      }),
+    }));
+    const updateData = mockUpdateMany.mock.calls[0][0].data;
+    expect(updateData.password_hash).not.toBe("newpassword123");
+  });
+
+  it("returns null when token not found or expired", async () => {
+    mockFindFirst.mockResolvedValue(null);
+    const result = await resetPassword("bad-token", "newpassword123");
+    expect(result).toBeNull();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("returns null on race condition (updateMany count=0)", async () => {
+    const futureDate = new Date(Date.now() + 3600 * 1000);
+    mockFindFirst.mockResolvedValue({
+      id: "u1",
+      password_reset_token: "raced-token",
+      password_reset_expires_at: futureDate,
+    });
+    mockUpdateMany.mockResolvedValue({ count: 0 });
+
+    const result = await resetPassword("raced-token", "newpassword123");
+    expect(result).toBeNull();
     expect(mockFindUnique).not.toHaveBeenCalled();
   });
 });
