@@ -317,8 +317,16 @@ describe("requestOtp", () => {
     expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
+  it("returns true without doing anything when user is inactive", async () => {
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", is_active: false });
+    const result = await requestOtp("a@b.com");
+    expect(result).toBe(true);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
   it("generates otp_code + otp_token, updates user, sends email, returns true", async () => {
-    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice" });
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", is_active: true });
     mockUpdate.mockResolvedValue({ id: "u1" });
     mockSendEmail.mockResolvedValue({ id: "e1", skipped: false });
 
@@ -339,7 +347,7 @@ describe("requestOtp", () => {
   });
 
   it("returns true even when email send fails (token still saved)", async () => {
-    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice" });
+    mockFindUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "Alice", is_active: true });
     mockUpdate.mockResolvedValue({ id: "u1" });
     mockSendEmail.mockRejectedValue(new Error("SMTP error"));
 

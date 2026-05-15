@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { compare, hash } from "bcryptjs";
 import { role_enum } from "@/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
@@ -166,13 +166,13 @@ export async function resendVerificationEmail(email: string): Promise<boolean> {
 const OTP_EXPIRY_MINUTES = 15;
 
 function generateOtpCode(): string {
-  return Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+  return randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
 export async function requestOtp(email: string): Promise<true> {
   const prisma = getPrisma();
   const user = await prisma.users.findUnique({ where: { email } });
-  if (!user) return true;
+  if (!user || !user.is_active) return true;
 
   const otp_code = generateOtpCode();
   const otp_token = generateVerificationToken();
@@ -295,7 +295,7 @@ async function sendOtpEmail({
   token: string;
 }) {
   const baseUrl = env.NEXTAUTH_URL ?? env.NEXT_PUBLIC_API_URL;
-  const link = `${baseUrl}/api/auth/otp/confirm?token=${token}`;
+  const link = `${baseUrl}/api/auth/otp/confirm?token=${encodeURIComponent(token)}`;
 
   await sendEmail({
     to: [to],
