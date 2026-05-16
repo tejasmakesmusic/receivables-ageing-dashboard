@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildSourceArtifactObjectKey,
   buildWorkbookObjectKey,
   storeUploadedWorkbook,
   WorkbookStorageConfigError,
@@ -93,6 +94,50 @@ describe("workbook storage", () => {
       token: "vercel_blob_rw_test_token",
       addRandomSuffix: false,
     });
+  });
+
+  it("builds a deterministic source-artifact object key", () => {
+    expect(
+      buildSourceArtifactObjectKey({
+        entityCode: "UAE",
+        snapshotId: "snapshot-789",
+        fileSha256,
+        fileName: "xero-api-pull.json",
+      }),
+    ).toBe(
+      "source-artifacts/UAE/snapshot-789/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-xero-api-pull.json",
+    );
+  });
+
+  it("uses a custom objectKeyBuilder when provided", async () => {
+    const blobUrl =
+      "https://abc123.public.blob.vercel-storage.com/source-artifacts/UAE/snapshot-789/abc-xero-api-pull.json";
+    const putImpl = vi.fn(async () => ({
+      url: blobUrl,
+      downloadUrl: blobUrl,
+      pathname: "",
+      contentType: "",
+      contentDisposition: "",
+      etag: "",
+    }));
+
+    const result = await storeUploadedWorkbook({
+      fileBytes,
+      fileName: "xero-api-pull.json",
+      entityCode: "UAE",
+      snapshotId: "snapshot-789",
+      fileSha256,
+      env: {
+        NODE_ENV: "production",
+        BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_test_token",
+      },
+      putImpl,
+      objectKeyBuilder: buildSourceArtifactObjectKey,
+    });
+
+    expect(result.key).toBe(
+      `source-artifacts/UAE/snapshot-789/${fileSha256}-xero-api-pull.json`,
+    );
   });
 
   it("wraps Vercel Blob errors as WorkbookStorageUploadError", async () => {

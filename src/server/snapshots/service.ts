@@ -35,7 +35,12 @@ import {
   loadCachedAliasCorpus,
 } from "@/server/matching/alias-corpus-cache";
 import { compareColumnMappings } from "@/server/column-mappings/service";
-import { storeUploadedWorkbook } from "@/server/storage/workbooks";
+import {
+  buildSourceArtifactObjectKey,
+  storeUploadedWorkbook,
+} from "@/server/storage/workbooks";
+import { normalizeXeroInvoicesToParseResult } from "@/server/xero/normalizer";
+import type { XeroInvoice } from "@/server/xero/types";
 import { addDaysUtc, calculateAgeing } from "@/server/ageing/buckets";
 import { canResolveCreditDays } from "@/server/ageing/credit-days-check";
 import { dbTransaction } from "@/lib/db-transaction";
@@ -1114,6 +1119,94 @@ export async function getSnapshotDetail(
   return toDetailRow(await assertSnapshotAccess(snapshotId, currentUser));
 }
 
+/**
+ * Shared transaction body for staged-snapshot creation.
+ *
+ * Both manual workbook uploads and read-only Xero API pulls (ADR-0012)
+ * land here after they've fetched/parsed source data and stored a source
+ * artifact. The function is the only place that writes to `snapshots`
+ * and `audit_log` for snapshot creation — keeping both ingestion paths
+ * lockstep on RBAC, audit shape, and parse-result serialization.
+ */
+async function createSnapshotFromParseResult(params: {
+  entity: { id: string; code: string };
+  parseResult: ParseResult;
+  effectiveAsOf: string | null;
+  currentUser: AuthenticatedUser;
+  snapshotId: string;
+  fileSha256: string;
+  uploadFilePath: string;
+  storageKey: string | null;
+  storageStored: boolean;
+  sourceOrigin: "WORKBOOK_UPLOAD" | "XERO_API";
+  columnMapping: ColumnMappingResultJson | null;
+  auditAction?: string;
+}): Promise<SnapshotCreateResponse> {
+  const rowCount = snapshotRowCount(params.parseResult);
+  const totalOutstanding = snapshotOutstanding(params.parseResult);
+
+  await getPrisma().$transaction(async (tx) => {
+    await tx.snapshots.create({
+      data: {
+        id: params.snapshotId,
+        entity_id: params.entity.id,
+        uploaded_by: params.currentUser.id,
+        upload_file_path: params.uploadFilePath,
+        upload_file_sha256: params.fileSha256,
+        as_of_date: parseDateInput(params.effectiveAsOf),
+        source_hint: params.parseResult.source_hint,
+        status: "STAGED",
+        row_count: rowCount,
+        total_outstanding: totalOutstanding
+          ? new Prisma.Decimal(totalOutstanding)
+          : null,
+        parse_result_json: serializeParseResult(
+          params.parseResult,
+        ) as unknown as Prisma.InputJsonValue,
+        column_mapping_json: params.columnMapping
+          ? (params.columnMapping as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        warnings_acknowledged_json: [],
+        staging_overrides_json: [],
+      },
+    });
+
+    await tx.audit_log.create({
+      data: {
+        id: createId(),
+        actor_user_id: params.currentUser.id,
+        action: params.auditAction ?? "snapshot.create",
+        entity_type: "snapshots",
+        entity_id: params.snapshotId,
+        before: Prisma.JsonNull,
+        after: {
+          entity_code: params.entity.code,
+          source_hint: params.parseResult.source_hint,
+          source_origin: params.sourceOrigin,
+          as_of_date: params.effectiveAsOf,
+          row_count: rowCount,
+          file_sha256: params.fileSha256,
+          upload_file_path: params.uploadFilePath,
+          workbook_storage_key: params.storageKey,
+          workbook_stored: params.storageStored,
+        },
+      },
+    });
+  });
+
+  return {
+    snapshot_id: params.snapshotId,
+    status: "STAGED",
+    entity_code: params.entity.code as EntityCode,
+    source_hint: params.parseResult.source_hint,
+    as_of_date: params.effectiveAsOf,
+    row_count: rowCount,
+    file_sha256: params.fileSha256,
+    warnings_count: params.parseResult.warnings.length,
+    errors_count: params.parseResult.errors.length,
+  };
+}
+
 export async function createSnapshotFromUpload(params: {
   fileBytes: Uint8Array;
   fileName: string;
@@ -1191,8 +1284,6 @@ export async function createSnapshotFromUpload(params: {
   }
 
   const snapshotId = createId();
-  const rowCount = snapshotRowCount(parseResult);
-  const totalOutstanding = snapshotOutstanding(parseResult);
   const storedWorkbook = await storeUploadedWorkbook({
     fileBytes: params.fileBytes,
     fileName: params.fileName,
@@ -1230,65 +1321,99 @@ export async function createSnapshotFromUpload(params: {
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.snapshots.create({
-      data: {
-        id: snapshotId,
-        entity_id: entity.id,
-        uploaded_by: params.currentUser.id,
-        upload_file_path: storedWorkbook.uri,
-        upload_file_sha256: fileSha256,
-        as_of_date: parseDateInput(effectiveAsOf),
-        source_hint: sourceHint,
-        status: "STAGED",
-        row_count: rowCount,
-        total_outstanding: totalOutstanding
-          ? new Prisma.Decimal(totalOutstanding)
-          : null,
-        parse_result_json: serializeParseResult(
-          parseResult,
-        ) as unknown as Prisma.InputJsonValue,
-        column_mapping_json: detectedMapping
-          ? (detectedMapping as unknown as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
-        warnings_acknowledged_json: [],
-        staging_overrides_json: [],
-      },
-    });
+  return createSnapshotFromParseResult({
+    entity,
+    parseResult,
+    effectiveAsOf,
+    currentUser: params.currentUser,
+    snapshotId,
+    fileSha256,
+    uploadFilePath: storedWorkbook.uri,
+    storageKey: storedWorkbook.key,
+    storageStored: storedWorkbook.stored,
+    sourceOrigin: "WORKBOOK_UPLOAD",
+    columnMapping: detectedMapping,
+  });
+}
 
-    await tx.audit_log.create({
-      data: {
-        id: createId(),
-        actor_user_id: params.currentUser.id,
-        action: "snapshot.create",
-        entity_type: "snapshots",
-        entity_id: snapshotId,
-        before: Prisma.JsonNull,
-        after: {
-          entity_code: entity.code,
-          source_hint: sourceHint,
-          as_of_date: effectiveAsOf,
-          row_count: rowCount,
-          file_sha256: fileSha256,
-          upload_file_path: storedWorkbook.uri,
-          workbook_storage_key: storedWorkbook.key,
-          workbook_stored: storedWorkbook.stored,
-        },
-      },
-    });
+/**
+ * ADR-0012 — stage a UAE snapshot from already-fetched Xero invoices.
+ *
+ * Accepts a pre-fetched invoice array so it remains independently testable
+ * without OAuth plumbing; the orchestrator in {@link pullXeroSnapshot}
+ * wires it up to {@link fetchOpenReceivableInvoices}. The source payload
+ * (pulled_at + raw invoices) is serialized to JSON and persisted as the
+ * source artifact under `source-artifacts/UAE/<snapshot-id>/...` so the
+ * pull is reproducible from evidence storage.
+ */
+export async function createSnapshotFromXeroPull(params: {
+  entityCode: "UAE";
+  invoices: XeroInvoice[];
+  currentUser: AuthenticatedUser;
+  pulledAt?: Date;
+}): Promise<SnapshotCreateResponse> {
+  const prisma = getPrisma();
+  const entity = await prisma.entities.findUnique({
+    where: { code: params.entityCode },
+    select: { id: true, code: true },
+  });
+  if (!entity) {
+    throw new HttpError("not_found", 404, "Entity not found");
+  }
+  await assertAnalystCanAccessEntity(params.currentUser, entity.id);
+
+  const pulledAt = params.pulledAt ?? new Date();
+  const sourcePayload = {
+    source_origin: "XERO_API",
+    pulled_at: pulledAt.toISOString(),
+    invoices: params.invoices,
+  };
+  const sourceBytes = new Uint8Array(
+    Buffer.from(JSON.stringify(sourcePayload), "utf8"),
+  );
+  const fileSha256 = computeFileSha256(sourceBytes);
+
+  const duplicate = await prisma.snapshots.findUnique({
+    where: { upload_file_sha256: fileSha256 },
+    select: { id: true },
+  });
+  if (duplicate) {
+    throw new HttpError(
+      "duplicate_snapshot",
+      409,
+      "This Xero pull has already been staged",
+    );
+  }
+
+  const snapshotId = createId();
+  const parseResult = normalizeXeroInvoicesToParseResult({
+    invoices: params.invoices,
+    pulledAt,
+    fileSha256,
+  });
+  const storedArtifact = await storeUploadedWorkbook({
+    fileBytes: sourceBytes,
+    fileName: `xero-api-pull-${pulledAt.toISOString().slice(0, 10)}.json`,
+    entityCode: entity.code as EntityCode,
+    snapshotId,
+    fileSha256,
+    objectKeyBuilder: buildSourceArtifactObjectKey,
   });
 
-  return {
-    snapshot_id: snapshotId,
-    status: "STAGED",
-    entity_code: entity.code as EntityCode,
-    source_hint: sourceHint,
-    as_of_date: effectiveAsOf,
-    row_count: rowCount,
-    file_sha256: fileSha256,
-    warnings_count: parseResult.warnings.length,
-    errors_count: parseResult.errors.length,
-  };
+  return createSnapshotFromParseResult({
+    entity,
+    parseResult,
+    effectiveAsOf: toDate(parseResult.as_of_date),
+    currentUser: params.currentUser,
+    snapshotId,
+    fileSha256,
+    uploadFilePath: storedArtifact.uri,
+    storageKey: storedArtifact.key,
+    storageStored: storedArtifact.stored,
+    sourceOrigin: "XERO_API",
+    columnMapping: null,
+    auditAction: "snapshot.create_xero_api",
+  });
 }
 
 async function buildStagingRows(

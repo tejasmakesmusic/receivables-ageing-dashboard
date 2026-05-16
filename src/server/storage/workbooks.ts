@@ -15,6 +15,13 @@ interface StoreUploadedWorkbookInput extends WorkbookObjectKeyInput {
   fileBytes: Uint8Array;
   env?: RuntimeEnv;
   putImpl?: BlobPutFn;
+  /**
+   * ADR-0012 — override the object-key layout. Default is the workbook
+   * path under `workbooks/`. Xero API pulls pass {@link buildSourceArtifactObjectKey}
+   * to land under `source-artifacts/` instead, keeping the namespaces
+   * distinguishable in Vercel Blob.
+   */
+  objectKeyBuilder?: (input: WorkbookObjectKeyInput) => string;
 }
 
 export interface StoredWorkbook {
@@ -69,6 +76,12 @@ export function buildWorkbookObjectKey(input: WorkbookObjectKeyInput): string {
   return `workbooks/${input.entityCode}/${input.snapshotId}/${input.fileSha256}-${sanitizeFileName(input.fileName)}`;
 }
 
+export function buildSourceArtifactObjectKey(
+  input: WorkbookObjectKeyInput,
+): string {
+  return `source-artifacts/${input.entityCode}/${input.snapshotId}/${input.fileSha256}-${sanitizeFileName(input.fileName)}`;
+}
+
 export async function storeUploadedWorkbook(
   input: StoreUploadedWorkbookInput,
 ): Promise<StoredWorkbook> {
@@ -84,7 +97,7 @@ export async function storeUploadedWorkbook(
     };
   }
 
-  const key = buildWorkbookObjectKey(input);
+  const key = (input.objectKeyBuilder ?? buildWorkbookObjectKey)(input);
 
   let putImpl: BlobPutFn;
   if (input.putImpl) {
