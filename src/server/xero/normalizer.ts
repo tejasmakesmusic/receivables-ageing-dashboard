@@ -131,12 +131,15 @@ export function normalizeXeroInvoicesToParseResult(input: {
   fileSha256: string;
 }): ParseResult {
   // Filter to open ACCREC invoices before the row index is assigned so
-  // rejected lines (voided, deleted, paid) aren't counted as PARSE_ERROR.
+  // rejected lines (voided, deleted, paid, draft, submitted) aren't
+  // counted as PARSE_ERROR. We restrict to AUTHORISED to mirror Xero's
+  // "Aged Receivables Detail" report — DRAFT/SUBMITTED rows are present
+  // in the /Invoices API response but excluded from the AR report, so
+  // including them here causes the staging total to overshoot the
+  // analyst's reference report.
   const openInvoices = input.invoices.filter((invoice) => {
     if (invoice.Type !== "ACCREC") return false;
-    if (invoice.Status === "VOIDED" || invoice.Status === "DELETED") {
-      return false;
-    }
+    if (invoice.Status !== "AUTHORISED") return false;
     return typeof invoice.AmountDue === "number" && invoice.AmountDue > 0;
   });
   const rows = openInvoices.map(normalizeInvoice);

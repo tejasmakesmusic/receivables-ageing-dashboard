@@ -50,7 +50,7 @@ describe("xero normalizer", () => {
     expect(result.is_valid).toBe(true);
   });
 
-  it("filters out voided, deleted, and zero-balance invoices before assigning row indices", () => {
+  it("keeps only AUTHORISED ACCREC invoices with positive AmountDue (matches Xero AR Detail report)", () => {
     const result = normalizeXeroInvoicesToParseResult({
       invoices: [
         {
@@ -81,6 +81,30 @@ describe("xero normalizer", () => {
           Contact: { ContactID: "c", Name: "Supplier" },
           DateString: "2026-05-01T00:00:00",
           AmountDue: 100,
+          CurrencyCode: "AED",
+        },
+        {
+          // DRAFT invoices have AmountDue > 0 but are excluded from
+          // Xero's Aged Receivables Detail report; we must drop them
+          // here so staging totals reconcile with the report.
+          InvoiceID: "draft-1",
+          InvoiceNumber: "INV-DRAFT",
+          Type: "ACCREC",
+          Status: "DRAFT",
+          Contact: { ContactID: "c", Name: "Draft" },
+          DateString: "2026-05-01T00:00:00",
+          AmountDue: 500,
+          CurrencyCode: "AED",
+        },
+        {
+          // SUBMITTED — same reasoning as DRAFT.
+          InvoiceID: "submitted-1",
+          InvoiceNumber: "INV-SUB",
+          Type: "ACCREC",
+          Status: "SUBMITTED",
+          Contact: { ContactID: "c", Name: "Submitted" },
+          DateString: "2026-05-01T00:00:00",
+          AmountDue: 750,
           CurrencyCode: "AED",
         },
         {
