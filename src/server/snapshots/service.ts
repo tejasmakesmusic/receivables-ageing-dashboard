@@ -2854,7 +2854,11 @@ export async function publishSnapshot(
       },
     });
     },
-    { timeout: 30_000, maxWait: 10_000 },
+    // Publish does meaningful per-row work (diff, upsert, snapshot row,
+    // cascade) over Neon — 30s is too tight for real batches. 120s leaves
+    // ample headroom under Vercel's 300s function ceiling. Tracked for
+    // refactor: pull reads outside the tx and batch writes via createMany.
+    { timeout: 120_000, maxWait: 10_000 },
   );
 
   return {
