@@ -29,11 +29,13 @@ describe("Focus Queue interactions", () => {
   it("exposes a stable row action rail for opening context", () => {
     const source = readFileSync(FOCUS_QUEUE_TABLE, "utf8");
 
+    // The action rail used to fade in on hover/focus; current design keeps
+    // it persistently visible so keyboard users don't need a hover state to
+    // discover it. Assert the open-context affordance is present and a11y-labelled.
     expect(source).toContain('data-focus-queue-action="open-context"');
     expect(source).toContain("ExternalLink");
-    expect(source).toContain("focus-within:opacity-100");
-    expect(source).toContain("group-hover:opacity-100");
     expect(source).toContain('title="Open context"');
+    expect(source).toContain('aria-label={`Open ${item.title}`}');
   });
 
   it("exposes route-backed action hints for queue item types", () => {

@@ -56,14 +56,16 @@ describe("GET /auth/google/callback", () => {
     const req = makeRequest({ error: "access_denied" }, "nonce-abc");
     const res = await GET(req);
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/auth/google/login");
+    expect(res.headers.get("location")).toContain("/auth/login");
+    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to login when code or state is missing", async () => {
     const req = makeRequest({ code: "abc" });
     const res = await GET(req);
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/auth/google/login");
+    expect(res.headers.get("location")).toContain("/auth/login");
+    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to login when state cookie is missing", async () => {
@@ -71,7 +73,8 @@ describe("GET /auth/google/callback", () => {
     const req = makeRequest({ code: "abc", state: "encoded-state" });
     const res = await GET(req);
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/auth/google/login");
+    expect(res.headers.get("location")).toContain("/auth/login");
+    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to login when nonce mismatch", async () => {
@@ -79,7 +82,8 @@ describe("GET /auth/google/callback", () => {
     const req = makeRequest({ code: "abc", state: "encoded-state" }, "nonce-abc");
     const res = await GET(req);
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/auth/google/login");
+    expect(res.headers.get("location")).toContain("/auth/login");
+    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to dashboard for an existing non-PENDING user", async () => {

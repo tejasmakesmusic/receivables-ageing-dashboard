@@ -35,7 +35,9 @@ describe("status tag map", () => {
       expect(tag.className, state).toContain("--color-status-");
       expect(tag.className, state).toContain("bg-[var(");
       expect(tag.className, state).toContain("text-[var(");
-      expect(tag.className, state).toContain("border-[var(");
+      // Status tags use `border-transparent` (relying on bg color for shape)
+      // — borders are kept only on banner-style alerts, not chip-style badges.
+      expect(tag.className, state).toMatch(/border-(?:transparent|\[var\()/);
     }
   });
 
