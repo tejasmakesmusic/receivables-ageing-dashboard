@@ -69,6 +69,24 @@ export function proxy(request: NextRequest) {
     }
   }
 
+  // Allow Vercel cron / scripted callers to reach API handlers without
+  // a session cookie when they present the Bearer CRON_SECRET. The
+  // route handlers re-validate (Bearer + role) themselves, so this is
+  // just removing the cookie-only middleware redirect from the path.
+  // Without this, /api/cron/* and the admin cron endpoints (digest,
+  // email-outbox) silently 307 to /auth/login on every scheduled tick.
+  if (pathname.startsWith("/api/")) {
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get("authorization");
+    if (
+      cronSecret &&
+      authHeader &&
+      authHeader === `Bearer ${cronSecret}`
+    ) {
+      return NextResponse.next();
+    }
+  }
+
   // Require session cookie for protected pages
   if (!request.cookies.has(SESSION_COOKIE_NAME)) {
     const loginUrl = new URL("/auth/login", request.url);

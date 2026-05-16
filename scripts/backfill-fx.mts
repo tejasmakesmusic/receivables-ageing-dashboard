@@ -17,6 +17,7 @@
  * UAE Central Bank USD peg.
  */
 import {
+  appendDailyRates,
   backfillFromOpenInvoices,
   backfillFxPair,
 } from "@/server/fx/backfill";
@@ -26,6 +27,7 @@ interface ParsedArgs {
   pair?: { source: string; target: string };
   from?: Date;
   to?: Date;
+  daily?: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -33,7 +35,9 @@ function parseArgs(argv: string[]): ParsedArgs {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = argv[i + 1];
-    if (arg === "--pair" && next) {
+    if (arg === "--daily") {
+      out.daily = true;
+    } else if (arg === "--pair" && next) {
       const [source, target] = next.split(":");
       if (!source || !target) {
         throw new Error(`--pair must be SOURCE:TARGET (e.g. AED:INR), got ${next}`);
@@ -62,6 +66,23 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  if (args.daily) {
+    const actorUserId = process.env.CRON_ACTOR_USER_ID ?? "system";
+    console.log(`Daily-tick append (actor=${actorUserId})`);
+    const result = await appendDailyRates({ actorUserId });
+    console.log(`  asOf=${result.asOf}`);
+    for (const pair of result.pairs) {
+      console.log(
+        `  ${pair.source}→${pair.target}: inserted=${pair.inserted} skipped=${pair.skipped} closedPrior=${pair.closedPrior} (${pair.fromDate ?? "—"} .. ${pair.toDate ?? "—"})`,
+      );
+    }
+    for (const err of result.errors) {
+      console.log(`  ${err.source}→${err.target}: ERROR — ${err.reason}`);
+    }
+    await getPrisma().$disconnect();
+    return;
+  }
 
   if (args.pair) {
     const from = args.from;
