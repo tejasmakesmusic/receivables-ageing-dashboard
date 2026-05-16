@@ -38,16 +38,12 @@ export function EntityDefaultsCard({ entities, canEdit }: Props) {
   }
 
   async function save(id: string) {
-    const captured = { draft: null as string | null };
-    setRowStates((s) => {
-      const state = s[id];
-      if (state.mode !== "editing") return s;
-      captured.draft = state.draft;
-      return { ...s, [id]: { mode: "saving" } };
-    });
-    if (captured.draft === null) return;
+    const state = rowStates[id];
+    if (!state || state.mode !== "editing") return;
+    const draft = state.draft;
+    setRowStates((s) => ({ ...s, [id]: { mode: "saving" } }));
 
-    const trimmed = captured.draft.trim();
+    const trimmed = draft.trim();
     const newValue = trimmed === "" ? null : Number(trimmed);
 
     if (newValue !== null && (!Number.isInteger(newValue) || newValue < 0)) {
