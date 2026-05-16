@@ -287,10 +287,10 @@ export function StagingPublishPanel({
             <GateBlockerItem
               actions={
                 <>
-                  <BlockerLink href="/config#credit-periods">
+                  <BlockerLink href="/config/credit-periods">
                     Set party credit period
                   </BlockerLink>
-                  <BlockerLink href="/config#entity-defaults">
+                  <BlockerLink href="/config/credit-periods#entity-defaults">
                     Set entity default
                   </BlockerLink>
                 </>

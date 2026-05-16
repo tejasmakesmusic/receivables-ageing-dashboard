@@ -161,21 +161,31 @@ function NavGroup({
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1",
-  );
-  const [recentHrefs, setRecentHrefs] = useState<string[]>(() =>
-    readStoredRecent(),
-  );
+  // Initial state must match SSR (no window) — sync from localStorage in
+  // useEffect after mount to avoid a React #418 hydration mismatch.
+  const [collapsed, setCollapsed] = useState(false);
+  const [recentHrefs, setRecentHrefs] = useState<string[]>([]);
+  const [hasMounted, setHasMounted] = useState(false);
   const [userRole, setUserRole] = useState<Role | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [pinnedFavorites, setPinnedFavorites] = useState<NavItem[]>([]);
 
+  // Post-mount sync from localStorage. Intentional setState-in-effect to
+  // dodge React #418 hydration mismatch — same pattern as the next-themes
+  // mounted guard documented in CLAUDE.md.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCollapsed(
+      window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1",
+    );
+    setRecentHrefs(readStoredRecent());
+    setHasMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasMounted) return;
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
-  }, [collapsed]);
+  }, [collapsed, hasMounted]);
 
   useEffect(() => {
     let active = true;

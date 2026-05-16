@@ -142,7 +142,7 @@ export function CreditPeriodPanel({ canonicalId, currentConfig, canEdit }: Props
             ) : null}
             <Link
               className="text-xs font-medium text-[var(--color-accent)] hover:underline"
-              href="/config#entity-defaults"
+              href="/config/credit-periods#entity-defaults"
             >
               View entity defaults
             </Link>

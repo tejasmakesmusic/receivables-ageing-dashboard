@@ -68,11 +68,19 @@ function buildAdminQueues({
       status: "PUBLISHED",
     },
     {
-      description: `Email policy gates: ${activeRules}/${totalRules} active.`,
+      description:
+        totalRules === 0
+          ? "No rules configured — outbound emails will not be sent."
+          : `Email policy gates: ${activeRules}/${totalRules} active.`,
       href: "/admin/email-rules",
       icon: ShieldCheck,
       label: "Email Rules",
-      status: activeRules === 0 ? "STAGING_BLOCKED" : "GATE_OK",
+      status:
+        totalRules === 0
+          ? "NO_DATA"
+          : activeRules === 0
+            ? "STAGING_BLOCKED"
+            : "GATE_OK",
     },
     {
       description: "Snapshot closing AR tie-out and mismatch review.",
@@ -264,7 +272,13 @@ export default async function AdminPage() {
               <div className="space-y-3 p-4">
                 {[
                   ["User approvals", "/admin", `${pendingUsers} pending`],
-                  ["Email policy", "/admin/email-rules", "Delivery gated"],
+                  [
+                    "Email policy",
+                    "/admin/email-rules",
+                    emailRules.length === 0
+                      ? "Not configured"
+                      : `${activeRules}/${emailRules.length} active`,
+                  ],
                   ["Reconciliation review", "/admin/reconciliation", "Snapshot tie-out"],
                   ["Audit trail", "/admin/audit-log", "Mutation history"],
                 ].map(([label, href, detail]) => (
