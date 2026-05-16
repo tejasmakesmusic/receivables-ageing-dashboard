@@ -43,6 +43,10 @@ function stringifyRecord(invoice: XeroInvoice): Record<string, string | null> {
       typeof invoice.AmountDue === "number" ? String(invoice.AmountDue) : null,
     Total: typeof invoice.Total === "number" ? String(invoice.Total) : null,
     CurrencyCode: invoice.CurrencyCode ?? null,
+    CurrencyRate:
+      typeof invoice.CurrencyRate === "number"
+        ? String(invoice.CurrencyRate)
+        : null,
     Reference: invoice.Reference ?? null,
     SentToContact:
       typeof invoice.SentToContact === "boolean"
@@ -53,11 +57,17 @@ function stringifyRecord(invoice: XeroInvoice): Record<string, string | null> {
 }
 
 function missingRequiredFields(invoice: XeroInvoice): string[] {
+  // Only structural blockers — fields without which we literally cannot
+  // stage the row. Currency-specific checks moved out (multi-currency
+  // is allowed per 2026-05-16 UAT feedback) and CurrencyCode itself is
+  // also required because the published `invoices.currency` column is
+  // NOT NULL VARCHAR(3).
   const missing: string[] = [];
   if (!invoice.Contact?.Name?.trim()) missing.push("Contact.Name");
   if (!invoice.InvoiceNumber?.trim()) missing.push("InvoiceNumber");
   if (!invoice.DateString && !invoice.Date) missing.push("Date");
   if (typeof invoice.AmountDue !== "number") missing.push("AmountDue");
+  if (!invoice.CurrencyCode?.trim()) missing.push("CurrencyCode");
   return missing;
 }
 
@@ -75,14 +85,23 @@ function normalizeInvoice(
     parseError = `Missing required Xero fields: ${required.join(", ")}`;
   } else if (!invoiceDate) {
     parseError = "Could not parse Xero invoice date";
-  } else if (invoice.CurrencyCode !== "AED") {
-    parseError = `Unsupported Xero invoice currency: ${invoice.CurrencyCode ?? "missing"}`;
   }
+
+  // Xero `CurrencyRate` is the multiplier from invoice currency to org
+  // base currency at the time of posting. Capture it as authoritative
+  // for this invoice (analysts may still apply our internal FX rates
+  // for cross-entity reporting, but the per-invoice GL match should
+  // use Xero's number).
+  const currencyRate =
+    typeof invoice.CurrencyRate === "number" &&
+    Number.isFinite(invoice.CurrencyRate)
+      ? invoice.CurrencyRate.toString()
+      : null;
 
   return {
     row_index: rowIndex,
     status: parseError ? "PARSE_ERROR" : "OK",
-    source_currency: "AED",
+    source_currency: invoice.CurrencyCode?.trim() || "AED",
     party_name_raw: invoice.Contact?.Name ?? "",
     gstin: null,
     xero_contact_id: invoice.Contact?.ContactID ?? null,
@@ -100,6 +119,7 @@ function normalizeInvoice(
       service_month: null,
       primary_person: null,
       email: invoice.Contact?.EmailAddress ?? null,
+      currency_rate: currencyRate,
     },
     parse_error_reason: parseError,
   };
@@ -131,20 +151,15 @@ export function normalizeXeroInvoicesToParseResult(input: {
       ),
     );
 
+  // No synthetic warnings here — the API origin is already captured in
+  // `source_hint = "XERO"`, the snapshot's audit row's `source_origin`
+  // field, and the persisted source artifact JSON. Emitting a warning
+  // just to record provenance was forcing analysts to "acknowledge"
+  // every Xero pull before publish, which is pure noise.
   return makeParseResult({
     invoices: rows,
     errors,
-    warnings: [
-      {
-        row_index: -1,
-        code: "XERO_API_SOURCE",
-        message: `Xero API pull normalized on ${input.pulledAt.toISOString()}`,
-        detail: {
-          source_origin: "XERO_API",
-          pulled_at: input.pulledAt.toISOString(),
-        },
-      },
-    ],
+    warnings: [],
     as_of_date: new Date(`${dateOnly(input.pulledAt)}T00:00:00.000Z`),
     file_sha256: input.fileSha256,
     source_hint: "XERO",

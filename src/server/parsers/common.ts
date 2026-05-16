@@ -12,7 +12,13 @@ export type EntityCode = "IND" | "UAE";
 export interface ParsedInvoiceRow {
   row_index: number;
   status: ParseStatus;
-  source_currency: "INR" | "AED";
+  /**
+   * ISO 4217 3-letter currency code. Tally always emits INR, the Xero
+   * workbook export always emits AED, but the Xero API connector may
+   * emit any currency (e.g. USD/EUR for cross-border UAE invoices)
+   * because Xero supports multi-currency invoicing per organisation.
+   */
+  source_currency: string;
   party_name_raw: string;
   gstin: string | null;
   xero_contact_id: string | null;
@@ -31,6 +37,13 @@ export interface ParsedXeroMetadata {
   service_month: string | null;
   primary_person: string | null;
   email: string | null;
+  /**
+   * Xero-side exchange rate at invoice posting (CurrencyRate from the
+   * Xero API). For an org with base AED, a USD invoice with rate=3.67
+   * means 1 USD = 3.67 AED. Null for workbook-source rows; null for
+   * single-currency invoices where Xero doesn't emit a rate.
+   */
+  currency_rate?: string | null;
 }
 
 export interface ParsedCreditPeriodRow {

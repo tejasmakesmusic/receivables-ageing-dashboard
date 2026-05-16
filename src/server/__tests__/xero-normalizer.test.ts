@@ -20,6 +20,7 @@ describe("xero normalizer", () => {
           AmountDue: 1250.5,
           Total: 1250.5,
           CurrencyCode: "AED",
+          CurrencyRate: 1,
           Reference: "Project Alpha",
           SentToContact: true,
         },
@@ -43,6 +44,7 @@ describe("xero normalizer", () => {
       invoice_sent: "true",
       email: "ar@acme.example",
       project_id: "Project Alpha",
+      currency_rate: "1",
     });
     expect(result.errors).toHaveLength(0);
     expect(result.is_valid).toBe(true);
@@ -128,7 +130,7 @@ describe("xero normalizer", () => {
     });
   });
 
-  it("keeps unsupported currencies visible as PARSE_ERROR", () => {
+  it("accepts non-AED invoices and captures the Xero-side exchange rate", () => {
     const result = normalizeXeroInvoicesToParseResult({
       invoices: [
         {
@@ -140,6 +142,7 @@ describe("xero normalizer", () => {
           DateString: "2026-05-01T00:00:00",
           AmountDue: 100,
           CurrencyCode: "USD",
+          CurrencyRate: 3.67,
         },
       ],
       pulledAt: new Date("2026-05-16T00:00:00.000Z"),
@@ -147,8 +150,41 @@ describe("xero normalizer", () => {
     });
 
     expect(result.invoices[0]).toMatchObject({
+      status: "OK",
+      source_currency: "USD",
+      amount: "100.00",
+      parse_error_reason: null,
+    });
+    expect(result.invoices[0].xero_metadata).toMatchObject({
+      currency_rate: "3.67",
+    });
+    expect(result.invoices[0].raw_row_json).toMatchObject({
+      CurrencyCode: "USD",
+      CurrencyRate: "3.67",
+    });
+  });
+
+  it("rejects invoices missing CurrencyCode (NOT NULL on invoices.currency)", () => {
+    const result = normalizeXeroInvoicesToParseResult({
+      invoices: [
+        {
+          InvoiceID: "inv-missing-cur",
+          InvoiceNumber: "INV-NC",
+          Type: "ACCREC",
+          Status: "AUTHORISED",
+          Contact: { ContactID: "c", Name: "Acme" },
+          DateString: "2026-05-01T00:00:00",
+          AmountDue: 100,
+          // CurrencyCode intentionally omitted
+        },
+      ],
+      pulledAt: new Date("2026-05-16T00:00:00.000Z"),
+      fileSha256: "c2".repeat(32),
+    });
+
+    expect(result.invoices[0]).toMatchObject({
       status: "PARSE_ERROR",
-      parse_error_reason: "Unsupported Xero invoice currency: USD",
+      parse_error_reason: "Missing required Xero fields: CurrencyCode",
     });
   });
 
@@ -177,17 +213,18 @@ describe("xero normalizer", () => {
     expect(result.invoices[0]).not.toHaveProperty("due_date");
   });
 
-  it("emits an XERO_API_SOURCE warning that carries source_origin", () => {
+  it("emits no synthetic warnings — provenance lives in source_hint", () => {
+    // Regression: the earlier XERO_API_SOURCE warning forced analysts
+    // to acknowledge every Xero pull before publish, even though it
+    // carried no actionable information. Provenance is now read from
+    // `source_hint` and the audit log entry's `source_origin` field.
     const result = normalizeXeroInvoicesToParseResult({
       invoices: [],
       pulledAt: new Date("2026-05-16T00:00:00.000Z"),
       fileSha256: "e".repeat(64),
     });
 
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toMatchObject({
-      code: "XERO_API_SOURCE",
-      detail: { source_origin: "XERO_API" },
-    });
+    expect(result.warnings).toEqual([]);
+    expect(result.source_hint).toBe("XERO");
   });
 });

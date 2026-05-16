@@ -237,7 +237,7 @@ export interface StagingInvoiceRow {
   invoice_ref: string | null;
   invoice_date: string | null;
   amount: string | null;
-  source_currency: "INR" | "AED";
+  source_currency: string;
   parse_error_reason: string | null;
   alias_resolution: AliasResolution;
   analyst_overrides: {

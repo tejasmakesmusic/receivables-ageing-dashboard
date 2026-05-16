@@ -43,6 +43,13 @@ export interface XeroInvoice {
   AmountDue?: number;
   Total?: number;
   CurrencyCode?: string;
+  /**
+   * Multiplier from invoice currency to organisation base currency at
+   * the time the invoice was posted. For an org with base AED, a USD
+   * invoice typically carries `CurrencyRate: 3.67`. Equals 1 (or is
+   * omitted) for same-currency invoices.
+   */
+  CurrencyRate?: number;
   Reference?: string;
   SentToContact?: boolean;
   UpdatedDateUTC?: string;
