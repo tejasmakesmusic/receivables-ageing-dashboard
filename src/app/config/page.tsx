@@ -36,11 +36,21 @@ export default async function ConfigPage() {
 
         <Card id="credit-periods" className="scroll-mt-24">
           <CardHeader>
-            <CardTitle>Credit Periods</CardTitle>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Use party-level credit days when one customer has approved terms.
-              This clears staging rows missing credit days for that party.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Credit Periods</CardTitle>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Use party-level credit days when one customer has approved terms.
+                  This clears staging rows missing credit days for that party.
+                </p>
+              </div>
+              <Link
+                className="inline-flex h-9 shrink-0 items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
+                href="/config/credit-periods"
+              >
+                Open workspace →
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             {creditPeriods.items.length === 0 ? (

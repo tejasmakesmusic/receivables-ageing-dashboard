@@ -402,6 +402,154 @@ export async function createCreditPeriod(
   return toCreditPeriodRow(created);
 }
 
+export interface PartyCreditPeriodSummary {
+  canonical_id: string;
+  canonical_name: string;
+  entity_code: "IND" | "UAE";
+  entity_default_credit_days: number | null;
+  credit_days: number | null;
+  source: "party" | "entity_default" | "none";
+  valid_from: string | null;
+  reason_note: string | null;
+  updated_at: string | null;
+}
+
+export async function listPartiesWithCreditPeriodSummary(
+  currentUser: AuthenticatedUser,
+): Promise<PartyCreditPeriodSummary[]> {
+  const prisma = getPrisma();
+  const where: Prisma.parties_canonicalWhereInput =
+    currentUser.role === role_enum.ANALYST && currentUser.entityIdScope
+      ? { entity_id: currentUser.entityIdScope }
+      : {};
+
+  const parties = await prisma.parties_canonical.findMany({
+    where,
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      entities: {
+        select: { code: true, default_credit_days: true },
+      },
+    },
+  });
+
+  const openConfigs = await prisma.credit_period_config.findMany({
+    where: {
+      valid_to: null,
+      canonical_id: { in: parties.map((p) => p.id) },
+    },
+    select: {
+      canonical_id: true,
+      days: true,
+      valid_from: true,
+      reason_note: true,
+      updated_at: true,
+    },
+  });
+
+  const openByParty = new Map(
+    openConfigs.map((c) => [c.canonical_id, c]),
+  );
+
+  return parties.map((p) => {
+    const open = openByParty.get(p.id) ?? null;
+    const entityDefault = p.entities.default_credit_days;
+    const partyDays = open?.days ?? null;
+    const credit_days = partyDays ?? entityDefault;
+    const source: "party" | "entity_default" | "none" =
+      partyDays !== null
+        ? "party"
+        : entityDefault !== null
+          ? "entity_default"
+          : "none";
+
+    return {
+      canonical_id: p.id,
+      canonical_name: p.name,
+      entity_code: p.entities.code as "IND" | "UAE",
+      entity_default_credit_days: entityDefault,
+      credit_days,
+      source,
+      valid_from: open?.valid_from ? toDateOnly(open.valid_from) : null,
+      reason_note: open?.reason_note ?? null,
+      updated_at: open?.updated_at ? toDateTime(open.updated_at) : null,
+    };
+  });
+}
+
+const creditPeriodBulkSchema = z.object({
+  canonical_ids: z
+    .array(z.string().uuid())
+    .min(1, "At least one party required")
+    .max(500, "Too many parties in one batch (max 500)"),
+  credit_days: z.number().int().min(0),
+  valid_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reason_note: z
+    .string()
+    .trim()
+    .transform((v) => v || null)
+    .optional()
+    .nullable(),
+});
+
+export type CreditPeriodBulkBody = z.infer<typeof creditPeriodBulkSchema>;
+
+export function parseCreditPeriodBulkBody(input: unknown): CreditPeriodBulkBody {
+  const parsed = creditPeriodBulkSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new HttpError(
+      "validation_error",
+      400,
+      parsed.error.issues[0]?.message ?? "Invalid bulk payload.",
+    );
+  }
+  return parsed.data;
+}
+
+export interface CreditPeriodBulkResult {
+  applied: number;
+  failed: { canonical_id: string; message: string }[];
+}
+
+export async function bulkCreateCreditPeriod(
+  input: CreditPeriodBulkBody,
+  currentUser: AuthenticatedUser,
+): Promise<CreditPeriodBulkResult> {
+  if (
+    currentUser.role !== role_enum.ANALYST &&
+    currentUser.role !== role_enum.ADMIN
+  ) {
+    throw new HttpError("forbidden", 403, "Insufficient permissions.");
+  }
+
+  let applied = 0;
+  const failed: { canonical_id: string; message: string }[] = [];
+
+  for (const canonicalId of input.canonical_ids) {
+    try {
+      await createCreditPeriod(
+        {
+          canonical_id: canonicalId,
+          credit_days: input.credit_days,
+          valid_from: input.valid_from,
+          reason_note: input.reason_note ?? null,
+        },
+        currentUser,
+      );
+      applied += 1;
+    } catch (err) {
+      failed.push({
+        canonical_id: canonicalId,
+        message: err instanceof Error ? err.message : "Failed",
+      });
+    }
+  }
+
+  return { applied, failed };
+}
+
 export async function patchCreditPeriod(
   configId: string,
   input: CreditPeriodPatchBody,
