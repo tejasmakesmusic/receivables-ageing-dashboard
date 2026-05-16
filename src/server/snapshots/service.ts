@@ -2483,6 +2483,42 @@ export async function publishSnapshot(
         `A published snapshot for this entity and as-of date already exists (${sameDayPublished.id}). Discard it before publishing a new one, or change the as-of date.`,
       );
     }
+
+    // Audit 2026-05-16 / Spec §13.6: the most recent PUBLISHED snapshot for
+    // this entity must be reconciled (MATCHED, or have an explicit accepted
+    // override via reconciliation_entries.notes) before a later snapshot can
+    // be published. This closes the silent gap where analysts could stack
+    // un-reconciled publishes.
+    const priorPublished = await getPrisma().snapshots.findFirst({
+      where: {
+        entity_id: snapshot.entity_id,
+        status: "PUBLISHED",
+        source_hint: { not: "CREDIT_PERIOD" },
+        as_of_date: { lt: snapshot.as_of_date },
+        id: { not: snapshot.id },
+      },
+      orderBy: { as_of_date: "desc" },
+      select: { id: true, as_of_date: true },
+    });
+    if (priorPublished) {
+      const recon = await getPrisma().reconciliation_entries.findUnique({
+        where: { snapshot_id: priorPublished.id },
+        select: { delta: true, notes: true },
+      });
+      const deltaCents = recon ? parseToCents(formatDecimal(recon.delta)) : null;
+      const matched =
+        deltaCents !== null &&
+        (deltaCents <= MATCH_TOLERANCE_CENTS && deltaCents >= -MATCH_TOLERANCE_CENTS);
+      const overrideAccepted =
+        recon !== null && typeof recon.notes === "string" && recon.notes.trim().length > 0;
+      if (!matched && !overrideAccepted) {
+        throw new HttpError(
+          "prior_snapshot_unreconciled",
+          409,
+          `The prior published snapshot for this entity (${priorPublished.id}, as-of ${priorPublished.as_of_date}) is not yet reconciled. Reconcile it on /admin/reconciliation — or record an accepted-variance note — before publishing a later snapshot.`,
+        );
+      }
+    }
   }
 
   const { rows, gate } = await buildStagingRows(snapshot, currentUser);

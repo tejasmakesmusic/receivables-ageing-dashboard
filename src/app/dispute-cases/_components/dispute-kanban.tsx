@@ -125,7 +125,7 @@ export function DisputeKanban({ disputes }: DisputeKanbanProps) {
     }));
 
     try {
-      const response = await fetch(`/api/disputes/${dispute.id}`, {
+      const response = await fetch(`/api/dispute-cases/${dispute.id}`, {
         body: JSON.stringify({ status: targetStatus }),
         headers: { "Content-Type": "application/json" },
         method: "PATCH",

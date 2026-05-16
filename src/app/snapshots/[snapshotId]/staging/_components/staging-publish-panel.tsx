@@ -86,6 +86,7 @@ export function StagingPublishPanel({
   const gate = publishGate;
   const [state, setState] = useState<ActionState>("idle");
   const [message, setMessage] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const warningCodes = gate.warnings_unacknowledged;
   const hasWarnings = warningCodes.length > 0;
@@ -173,7 +174,13 @@ export function StagingPublishPanel({
     }
   }
 
+  function requestPublish() {
+    if (!canPublish) return;
+    setConfirmOpen(true);
+  }
+
   async function publish() {
+    setConfirmOpen(false);
     setState("publishing");
     setMessage("");
     try {
@@ -242,7 +249,7 @@ export function StagingPublishPanel({
           <button
             className="inline-flex h-9 items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)] disabled:pointer-events-none disabled:opacity-50"
             disabled={!canPublish}
-            onClick={publish}
+            onClick={requestPublish}
             type="button"
           >
             {state === "publishing" ? "Publishing…" : publishLabel}
@@ -327,6 +334,61 @@ export function StagingPublishPanel({
         >
           {message}
         </p>
+      ) : null}
+
+      {confirmOpen ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-labelledby="publish-confirm-title"
+        >
+          <div className="w-full max-w-md rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-lg">
+            <h3
+              className="text-base font-semibold text-[var(--color-text)]"
+              id="publish-confirm-title"
+            >
+              Publish this snapshot?
+            </h3>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+              Publishing writes invoices, invoice snapshots, invoice-change
+              diffs, and cascades into PTPs, disputes, and tasks. This action
+              is recorded in the audit log and cannot be undone — only
+              superseded by a later snapshot.
+            </p>
+            <ul className="mt-3 space-y-1 text-xs text-[var(--color-text-muted)]">
+              <li>
+                <strong>Source:</strong> {sourceHint || "ageing"}
+              </li>
+              <li>
+                <strong>Review status:</strong>{" "}
+                {gate.review_status ?? "—"}
+              </li>
+              {gate.warnings_unacknowledged.length === 0 ? null : (
+                <li>
+                  <strong>Warnings acknowledged:</strong>{" "}
+                  {gate.warnings_unacknowledged.length}
+                </li>
+              )}
+            </ul>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-bg-muted)]"
+                onClick={() => setConfirmOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="inline-flex h-9 items-center rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
+                onClick={publish}
+                type="button"
+              >
+                Publish snapshot
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

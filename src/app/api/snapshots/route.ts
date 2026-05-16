@@ -3,9 +3,7 @@ import { role_enum } from "@/generated/prisma/enums";
 import { requireRole } from "@/server/core/auth";
 import { toErrorResponse } from "@/server/core/errors";
 import {
-  createSnapshotFromUpload,
   listSnapshots,
-  snapshotUploadSchema,
   snapshotListFiltersSchema,
 } from "@/server/snapshots/service";
 
@@ -49,32 +47,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const currentUser = await requireRole(role_enum.ANALYST, role_enum.ADMIN);
-    const formData = await request.formData();
-    const file = formData.get("file");
-    if (!(file instanceof File)) {
-      return NextResponse.json(
-        { code: "validation_error", message: "file is required", status: 400 },
-        { status: 400 },
-      );
-    }
-
-    const body = snapshotUploadSchema.parse({
-      entity_code: formData.get("entity_code"),
-      as_of_date: formData.get("as_of_date") || undefined,
-      source_hint: formData.get("source_hint") || undefined,
-    });
-    const response = await createSnapshotFromUpload({
-      fileBytes: new Uint8Array(await file.arrayBuffer()),
-      fileName: file.name,
-      body,
-      currentUser,
-    });
-
-    return NextResponse.json(response, { status: 201 });
-  } catch (error) {
-    return toErrorResponse(error);
-  }
-}
+// POST removed — uploads are handled exclusively by /api/snapshots/upload
+// (see ADR-equivalent note in audit 2026-05-16). Keeping a single canonical
+// upload endpoint avoids divergent error-envelope drift.

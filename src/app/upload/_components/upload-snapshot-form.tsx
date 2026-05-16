@@ -48,20 +48,22 @@ export function UploadSnapshotForm() {
       body.set("file", file);
     }
 
-    const response = await fetch("/api/snapshots", {
+    const response = await fetch("/api/snapshots/upload", {
       method: "POST",
       body,
     });
     const payload = (await response.json().catch(() => null)) as
       | UploadResponse
+      | { success: false; error?: { code?: string; message?: string } }
       | null;
 
-    if (!response.ok || !payload?.snapshot_id) {
+    if (!response.ok || !payload || !("snapshot_id" in payload) || !payload.snapshot_id) {
       setStatus("error");
-      setMessage(
-        payload?.message ??
-          "Upload failed. Check the workbook, entity, and as-of date.",
-      );
+      const message =
+        (payload && "message" in payload && payload.message) ||
+        (payload && "error" in payload && payload.error?.message) ||
+        "Upload failed. Check the workbook, entity, and as-of date.";
+      setMessage(message);
       return;
     }
 
