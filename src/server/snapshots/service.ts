@@ -39,6 +39,8 @@ import {
   buildSourceArtifactObjectKey,
   storeUploadedWorkbook,
 } from "@/server/storage/workbooks";
+import { fetchOpenReceivableInvoices } from "@/server/xero/client";
+import { refreshConnectionAccess } from "@/server/xero/connections";
 import { normalizeXeroInvoicesToParseResult } from "@/server/xero/normalizer";
 import type { XeroInvoice } from "@/server/xero/types";
 import { addDaysUtc, calculateAgeing } from "@/server/ageing/buckets";
@@ -1414,6 +1416,91 @@ export async function createSnapshotFromXeroPull(params: {
     columnMapping: null,
     auditAction: "snapshot.create_xero_api",
   });
+}
+
+/**
+ * ADR-0012 — full UAE Xero pull orchestrator.
+ *
+ * Wraps {@link refreshConnectionAccess} -> {@link fetchOpenReceivableInvoices}
+ * -> {@link createSnapshotFromXeroPull} in a `xero_sync_runs` row so each
+ * attempt (success or failure) is auditable. The sync run is written
+ * RUNNING before the Xero API is touched and transitioned to SUCCEEDED
+ * or FAILED in a finally-equivalent block, so a process death between
+ * Xero and the DB leaves a RUNNING row that a human can investigate.
+ */
+export async function pullXeroSnapshot(params: {
+  currentUser: AuthenticatedUser;
+  connectionId?: string;
+}): Promise<SnapshotCreateResponse & { sync_run_id: string }> {
+  const prisma = getPrisma();
+  const connection = params.connectionId
+    ? await prisma.xero_connections.findUnique({
+        where: { id: params.connectionId },
+      })
+    : await prisma.xero_connections.findFirst({
+        where: { status: "ACTIVE", entities: { code: "UAE" } },
+        orderBy: { updated_at: "desc" },
+      });
+
+  if (!connection || connection.status !== "ACTIVE") {
+    throw new HttpError(
+      "xero_connection_missing",
+      422,
+      "Active Xero connection not found",
+    );
+  }
+  await assertAnalystCanAccessEntity(params.currentUser, connection.entity_id);
+
+  const syncRunId = createId();
+  await prisma.xero_sync_runs.create({
+    data: {
+      id: syncRunId,
+      connection_id: connection.id,
+      triggered_by: params.currentUser.id,
+      status: "RUNNING",
+    },
+  });
+
+  try {
+    const { accessToken } = await refreshConnectionAccess({
+      connectionId: connection.id,
+    });
+    const fetched = await fetchOpenReceivableInvoices({
+      accessToken,
+      tenantId: connection.tenant_id,
+    });
+    const snapshot = await createSnapshotFromXeroPull({
+      entityCode: "UAE",
+      invoices: fetched.invoices,
+      currentUser: params.currentUser,
+    });
+    await prisma.xero_sync_runs.update({
+      where: { id: syncRunId },
+      data: {
+        status: "SUCCEEDED",
+        finished_at: new Date(),
+        snapshot_id: snapshot.snapshot_id,
+        pages_fetched: fetched.pagesFetched,
+        invoices_seen: fetched.invoices.length,
+        invoices_staged: snapshot.row_count,
+        parse_errors: snapshot.errors_count,
+        source_artifact_sha256: snapshot.file_sha256,
+      },
+    });
+    return { ...snapshot, sync_run_id: syncRunId };
+  } catch (error) {
+    await prisma.xero_sync_runs.update({
+      where: { id: syncRunId },
+      data: {
+        status: "FAILED",
+        finished_at: new Date(),
+        error_code:
+          error instanceof HttpError ? error.code : "xero_sync_failed",
+        error_message: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
+  }
 }
 
 async function buildStagingRows(
