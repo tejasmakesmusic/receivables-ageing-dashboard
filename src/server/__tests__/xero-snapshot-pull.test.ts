@@ -119,6 +119,95 @@ describe("createSnapshotFromXeroPull", () => {
     });
   });
 
+  it("dedupes regardless of pulledAt — same invoices at different times collide on the same sha256", async () => {
+    // Capture every sha256 that hits snapshots.findUnique so we can prove
+    // two calls with different `pulledAt` produce the same dedup hash.
+    // Regression for the 2026-05-16 bug where pulled_at was baked into
+    // the hashed payload and dedup never fired in production.
+    const capturedHashes: string[] = [];
+    const findUnique = vi.fn(
+      async (args: { where: { upload_file_sha256: string } }) => {
+        capturedHashes.push(args.where.upload_file_sha256);
+        return null;
+      },
+    );
+    vi.mocked(getPrisma).mockReturnValue({
+      entities: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ id: "entity-uae", code: "UAE" }),
+      },
+      snapshots: { findUnique },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) =>
+        fn({
+          snapshots: { create: vi.fn().mockResolvedValue({}) },
+          audit_log: { create: vi.fn().mockResolvedValue({}) },
+        }),
+      ),
+    } as never);
+
+    await createSnapshotFromXeroPull({
+      entityCode: "UAE",
+      pulledAt: new Date("2026-05-16T00:00:00.000Z"),
+      currentUser: analyst,
+      invoices: [okInvoice],
+    });
+    await createSnapshotFromXeroPull({
+      entityCode: "UAE",
+      pulledAt: new Date("2026-05-17T12:34:56.000Z"), // different timestamp
+      currentUser: analyst,
+      invoices: [okInvoice], // identical invoices
+    });
+
+    expect(capturedHashes).toHaveLength(2);
+    expect(capturedHashes[0]).toBe(capturedHashes[1]);
+  });
+
+  it("dedupes regardless of invoice array order — same set in different order collides", async () => {
+    const otherInvoice: XeroInvoice = {
+      ...okInvoice,
+      InvoiceID: "inv-2",
+      InvoiceNumber: "INV-2",
+    };
+    const capturedHashes: string[] = [];
+    const findUnique = vi.fn(
+      async (args: { where: { upload_file_sha256: string } }) => {
+        capturedHashes.push(args.where.upload_file_sha256);
+        return null;
+      },
+    );
+    vi.mocked(getPrisma).mockReturnValue({
+      entities: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ id: "entity-uae", code: "UAE" }),
+      },
+      snapshots: { findUnique },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) =>
+        fn({
+          snapshots: { create: vi.fn().mockResolvedValue({}) },
+          audit_log: { create: vi.fn().mockResolvedValue({}) },
+        }),
+      ),
+    } as never);
+
+    await createSnapshotFromXeroPull({
+      entityCode: "UAE",
+      pulledAt: new Date("2026-05-16T00:00:00.000Z"),
+      currentUser: analyst,
+      invoices: [okInvoice, otherInvoice],
+    });
+    await createSnapshotFromXeroPull({
+      entityCode: "UAE",
+      pulledAt: new Date("2026-05-16T00:00:00.000Z"),
+      currentUser: analyst,
+      invoices: [otherInvoice, okInvoice], // reversed
+    });
+
+    expect(capturedHashes).toHaveLength(2);
+    expect(capturedHashes[0]).toBe(capturedHashes[1]);
+  });
+
   it("rejects analyst pulls outside their entity scope", async () => {
     vi.mocked(getPrisma).mockReturnValue({
       entities: {

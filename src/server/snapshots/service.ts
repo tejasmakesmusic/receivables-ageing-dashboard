@@ -1365,6 +1365,22 @@ export async function createSnapshotFromXeroPull(params: {
   await assertAnalystCanAccessEntity(params.currentUser, entity.id);
 
   const pulledAt = params.pulledAt ?? new Date();
+
+  // Dedup hash is computed over the invoice array only — sorted by
+  // InvoiceID so equivalent pulls in different orders dedupe — so re-
+  // pulls of unchanged Xero AR always collide on `upload_file_sha256`
+  // and return 409. The persisted source artifact below wraps the same
+  // invoices with `pulled_at` for audit; that wrapper is intentionally
+  // NOT in the dedup hash so the timestamp doesn't break the unique
+  // index (which was the bug discovered during 2026-05-16 UAT).
+  const sortedInvoices = [...params.invoices].sort((a, b) =>
+    (a.InvoiceID ?? "").localeCompare(b.InvoiceID ?? ""),
+  );
+  const dedupBytes = new Uint8Array(
+    Buffer.from(JSON.stringify(sortedInvoices), "utf8"),
+  );
+  const fileSha256 = computeFileSha256(dedupBytes);
+
   const sourcePayload = {
     source_origin: "XERO_API",
     pulled_at: pulledAt.toISOString(),
@@ -1373,7 +1389,6 @@ export async function createSnapshotFromXeroPull(params: {
   const sourceBytes = new Uint8Array(
     Buffer.from(JSON.stringify(sourcePayload), "utf8"),
   );
-  const fileSha256 = computeFileSha256(sourceBytes);
 
   const duplicate = await prisma.snapshots.findUnique({
     where: { upload_file_sha256: fileSha256 },
