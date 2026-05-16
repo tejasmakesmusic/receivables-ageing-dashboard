@@ -108,9 +108,21 @@ function warningCount(snapshot: SnapshotRow) {
     : "-";
 }
 
-function snapshotColumns(
-  params: SnapshotPageParams,
-): DataTableColumn<SnapshotRow>[] {
+function nextActionForSnapshot(snapshot: SnapshotRow) {
+  if (snapshot.status === "STAGED" || snapshot.status === "UPLOADED") {
+    return {
+      href: `/snapshots/${snapshot.id}/staging`,
+      label: "Review upload",
+    };
+  }
+
+  return {
+    href: `/snapshots/${snapshot.id}`,
+    label: "Open snapshot",
+  };
+}
+
+function snapshotColumns(): DataTableColumn<SnapshotRow>[] {
   return [
     {
       key: "snapshot",
@@ -201,15 +213,18 @@ function snapshotColumns(
     {
       key: "next",
       header: "Next Action",
-      cell: (snapshot) => (
-        <Link
-          className="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-accent)]"
-          href={previewHref(snapshot.id, params)}
-        >
-          Review upload
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      ),
+      cell: (snapshot) => {
+        const action = nextActionForSnapshot(snapshot);
+        return (
+          <Link
+            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-accent)]"
+            href={action.href}
+          >
+            {action.label}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        );
+      },
     },
   ];
 }
@@ -348,7 +363,7 @@ export default async function SnapshotsPage({ searchParams }: PageProps) {
             </form>
 
             <DataTable<SnapshotRow>
-              columns={snapshotColumns(params)}
+              columns={snapshotColumns()}
               emptyState={{
                 icon: <Layers className="h-6 w-6" />,
                 title: "No snapshots yet",
@@ -423,9 +438,9 @@ export default async function SnapshotsPage({ searchParams }: PageProps) {
               nextAction={
                 <Link
                   className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 text-sm font-medium text-white hover:bg-[var(--color-accent-strong)]"
-                  href={`/snapshots/${selected.id}`}
+                  href={nextActionForSnapshot(selected).href}
                 >
-                  Open snapshot
+                  {nextActionForSnapshot(selected).label}
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               }
