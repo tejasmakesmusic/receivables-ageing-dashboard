@@ -34,6 +34,8 @@ const adminLinks = [
   ["Users & Roles", "/admin"],
   ["Lines of Business", "/admin/lobs"],
   ["FX Rates", "/admin/fx-rates"],
+  ["Exception Buckets", "/admin/exception-buckets"],
+  ["Party Aliases", "/config/aliases"],
   ["Digest Events", "/admin/digest"],
   ["Email Rules", "/admin/email-rules"],
   ["Reconciliation", "/admin/reconciliation"],

@@ -301,6 +301,7 @@ export function PartiesCreditPeriodTable({ parties, canEdit }: Props) {
               />
               <th className="px-3 py-2">Effective from</th>
               <th className="px-3 py-2">Note</th>
+              {canEdit ? <th className="px-3 py-2 text-right">Edit</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
@@ -308,7 +309,7 @@ export function PartiesCreditPeriodTable({ parties, canEdit }: Props) {
               <tr>
                 <td
                   className="px-3 py-6 text-center text-[var(--color-text-muted)]"
-                  colSpan={7}
+                  colSpan={canEdit ? 8 : 7}
                 >
                   No parties match the current filters.
                 </td>
@@ -362,6 +363,29 @@ export function PartiesCreditPeriodTable({ parties, canEdit }: Props) {
                         "—"
                       )}
                     </td>
+                    {canEdit ? (
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          aria-label={`Edit credit period for ${p.canonical_name}`}
+                          className="inline-flex h-7 items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs hover:bg-[var(--color-bg-muted)]"
+                          onClick={() => {
+                            setSelected(new Set([p.canonical_id]));
+                            setModalDays(
+                              p.credit_days === null ? "" : String(p.credit_days),
+                            );
+                            setModalDate(new Date().toISOString().slice(0, 10));
+                            setModalNote(p.reason_note ?? "");
+                            setError("");
+                            setResultMsg("");
+                            setFailures([]);
+                            setModalOpen(true);
+                          }}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })

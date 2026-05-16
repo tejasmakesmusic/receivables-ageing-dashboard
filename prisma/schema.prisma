@@ -9,8 +9,15 @@ datasource db {
   provider = "postgresql"
 }
 
+// Legacy Python-stack artefacts (Alembic migrations, APScheduler queue).
+// Kept introspected so `prisma db pull` is idempotent against the live
+// Neon database, but `@@ignore`d so the generated client does not expose
+// them — preventing accidental reads/writes from app code. Dropping the
+// underlying tables is a coordinated DBA activity (see audit 2026-05-16).
 model alembic_version {
   version_num String @id(map: "alembic_version_pkc") @db.VarChar(32)
+
+  @@ignore
 }
 
 model apscheduler_jobs {
@@ -19,6 +26,7 @@ model apscheduler_jobs {
   job_state     Bytes
 
   @@index([next_run_time], map: "ix_apscheduler_jobs_next_run_time")
+  @@ignore
 }
 
 model audit_log {

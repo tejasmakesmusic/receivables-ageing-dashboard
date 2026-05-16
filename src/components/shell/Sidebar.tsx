@@ -69,8 +69,10 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/reports", label: "Reports", icon: BarChart3, allowedRoles: SURFACE_ROLES },
   { href: "/admin", label: "Settings", icon: Settings, allowedRoles: ADMIN_ROLES },
   { href: "/config/credit-periods", label: "Credit Periods", icon: SlidersHorizontal, allowedRoles: ADMIN_ROLES },
+  { href: "/config/aliases", label: "Party Aliases", icon: Inbox, allowedRoles: ADMIN_ROLES },
   { href: "/admin/fx-rates", label: "FX Rates", icon: ShieldCheck, allowedRoles: ADMIN_ROLES },
   { href: "/admin/email-rules", label: "Email Rules", icon: ShieldCheck, allowedRoles: ADMIN_ROLES },
+  { href: "/admin/exception-buckets", label: "Exception Buckets", icon: AlertTriangle, allowedRoles: ADMIN_ROLES },
   { href: "/admin/audit-log", label: "Audit Log", icon: FileText, allowedRoles: ADMIN_ROLES },
 ];
 
