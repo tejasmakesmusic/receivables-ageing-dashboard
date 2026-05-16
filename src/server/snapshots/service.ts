@@ -2096,26 +2096,43 @@ export async function ackSnapshotWarnings(
   return { acknowledged, publish_gate: gate };
 }
 
-async function resolveCreditDays(params: {
-  canonicalId: string;
-  invoiceDate: string;
-  override: number | null;
-  entityDefault: number | null;
-}): Promise<{ days: number; source: string }> {
+type CreditPeriodConfigSlim = {
+  canonical_id: string;
+  valid_from: Date;
+  valid_to: Date | null;
+  days: number;
+};
+
+function resolveCreditDaysFromConfigs(
+  configs: CreditPeriodConfigSlim[],
+  params: {
+    canonicalId: string;
+    invoiceDate: string;
+    override: number | null;
+    entityDefault: number | null;
+  },
+): { days: number; source: string } {
   if (params.override !== null) {
     return { days: params.override, source: "MANUAL" };
   }
 
   const invoiceDate = parseDateInput(params.invoiceDate);
-  const config = await getPrisma().credit_period_config.findFirst({
-    where: {
-      canonical_id: params.canonicalId,
-      valid_from: { lte: invoiceDate ?? undefined },
-      OR: [{ valid_to: null }, { valid_to: { gte: invoiceDate ?? undefined } }],
-    },
-    orderBy: { valid_from: "desc" },
-    select: { days: true },
-  });
+  if (!invoiceDate || Number.isNaN(invoiceDate.getTime())) {
+    throw new HttpError(
+      "invoice_date_missing",
+      422,
+      "Invoice date is missing",
+    );
+  }
+
+  const config = configs
+    .filter(
+      (candidate) =>
+        candidate.canonical_id === params.canonicalId &&
+        candidate.valid_from <= invoiceDate &&
+        (candidate.valid_to === null || candidate.valid_to >= invoiceDate),
+    )
+    .sort((a, b) => b.valid_from.getTime() - a.valid_from.getTime())[0];
 
   if (config) {
     return { days: config.days, source: "CONFIG" };
@@ -2578,6 +2595,13 @@ export async function publishSnapshot(
       ? "NORMAL"
       : "OVERRIDE";
   const touchedInvoiceIds: string[] = [];
+  const invoiceInserts: Prisma.invoicesCreateManyInput[] = [];
+  const invoiceUpdates: Array<{
+    id: string;
+    data: Prisma.invoicesUncheckedUpdateInput;
+  }> = [];
+  const invoiceChangesInserts: Prisma.invoice_changesCreateManyInput[] = [];
+  const snapshotRowInserts: Prisma.invoice_snapshotsCreateManyInput[] = [];
   let upserted = 0;
   let snapshotRows = 0;
   let settledCount = 0;
@@ -2591,144 +2615,234 @@ export async function publishSnapshot(
   let changesDetected = 0;
   const changesByField: Record<string, number> = {};
 
+  const publishRowKeys = invoiceRows.map((row) => {
+    const canonicalId =
+      row.analyst_overrides.resolved_canonical_id ??
+      row.alias_resolution.topMatches[0]?.canonicalId;
+    if (
+      !canonicalId ||
+      !row.invoice_ref ||
+      !row.invoice_date ||
+      !row.amount
+    ) {
+      throw new HttpError(
+        "row_not_publishable",
+        422,
+        `Row ${row.row_index} is missing canonical, invoice, date, or amount`,
+      );
+    }
+
+    return { canonicalId, invoiceRef: row.invoice_ref };
+  });
+  const canonicalIds = [
+    ...new Set(
+      publishRowKeys.map((row) => row.canonicalId),
+    ),
+  ];
+  const invoiceRefs = [
+    ...new Set(
+      publishRowKeys.map((row) => row.invoiceRef),
+    ),
+  ];
+
+  const [creditConfigs, existingInvoices] = await Promise.all([
+    getPrisma().credit_period_config.findMany({
+      where: { canonical_id: { in: canonicalIds } },
+      select: {
+        canonical_id: true,
+        valid_from: true,
+        valid_to: true,
+        days: true,
+      },
+    }),
+    getPrisma().invoices.findMany({
+      where: {
+        entity_id: snapshot.entity_id,
+        canonical_id: { in: canonicalIds },
+        invoice_ref: { in: invoiceRefs },
+      },
+      select: {
+        id: true,
+        canonical_id: true,
+        invoice_ref: true,
+        amount: true,
+        due_date: true,
+        credit_days_applied: true,
+        invoice_date: true,
+        currency: true,
+      },
+    }),
+  ]);
+
+  type ExistingInvoice = (typeof existingInvoices)[number];
+  const invoiceKey = (canonicalId: string, invoiceRef: string) =>
+    `${canonicalId}|${invoiceRef}`;
+  // Prisma can't express (canonical_id, invoice_ref) IN (...) tuples, so the
+  // pre-fetch uses cross-product IN clauses. Filter spurious rows (a different
+  // canonical that happens to share an invoice_ref string) out of the map.
+  const batchKeys = new Set(
+    publishRowKeys.map((k) => invoiceKey(k.canonicalId, k.invoiceRef)),
+  );
+  const existingByKey = new Map<string, ExistingInvoice>();
+  for (const invoice of existingInvoices) {
+    const key = invoiceKey(invoice.canonical_id, invoice.invoice_ref);
+    if (batchKeys.has(key)) {
+      existingByKey.set(key, invoice);
+    }
+  }
+
+  for (const row of invoiceRows) {
+    const canonicalId =
+      row.analyst_overrides.resolved_canonical_id ??
+      row.alias_resolution.topMatches[0]?.canonicalId;
+    if (
+      !canonicalId ||
+      !row.invoice_ref ||
+      !row.invoice_date ||
+      !row.amount
+    ) {
+      throw new HttpError(
+        "row_not_publishable",
+        422,
+        `Row ${row.row_index} is missing canonical, invoice, date, or amount`,
+      );
+    }
+
+    const credit = resolveCreditDaysFromConfigs(creditConfigs, {
+      canonicalId,
+      invoiceDate: row.invoice_date,
+      override: row.analyst_overrides.credit_days_override,
+      entityDefault: entity.default_credit_days,
+    });
+    const ageing = calculateAgeing({
+      invoiceDate: row.invoice_date,
+      creditDays: credit.days,
+      asOfDate,
+    });
+    const dueDate = ageing.dueDate;
+    const invoiceDate = parseDateInput(row.invoice_date);
+    if (!invoiceDate || Number.isNaN(invoiceDate.getTime())) {
+      throw new HttpError(
+        "invoice_date_missing",
+        422,
+        "Invoice date is missing",
+      );
+    }
+
+    const key = invoiceKey(canonicalId, row.invoice_ref);
+    const existing = existingByKey.get(key);
+    const invoiceId = existing?.id ?? createId();
+    // PR 9 - auto-tag from Xero project_id. Case-insensitive match
+    // against active LOB codes for this entity. No match -> lob_id stays
+    // null and the analyst can set it manually later.
+    const projectId =
+      (row.xero_metadata as { project_id?: string | null } | null)?.project_id ??
+      null;
+    const lobId = projectId
+      ? (lobByCode.get(projectId.trim().toLowerCase()) ?? null)
+      : null;
+    const invoicePayload = {
+      entity_id: snapshot.entity_id,
+      canonical_id: canonicalId,
+      invoice_ref: row.invoice_ref,
+      invoice_date: invoiceDate,
+      amount: new Prisma.Decimal(row.amount),
+      currency: row.source_currency,
+      credit_days_applied: credit.days,
+      credit_days_source: credit.source,
+      due_date: dueDate,
+      status: "OPEN",
+      lob_id: lobId,
+      raw_row_json: row.raw_row_json as Prisma.InputJsonValue,
+      xero_metadata: row.xero_metadata as Prisma.InputJsonValue,
+      updated_at: now,
+    };
+
+    if (existing) {
+      // PR 3 / Gap 3 - capture the delta BEFORE we overwrite the row, so
+      // analysts can see exactly what shifted vs. the previously-published
+      // invoice. Write one invoice_changes row per changed field.
+      const deltas = diffInvoice(existing, invoicePayload);
+      if (deltas.length > 0) {
+        invoiceChangesInserts.push(
+          ...deltas.map((d) => ({
+            id: createId(),
+            invoice_id: invoiceId,
+            snapshot_id: snapshot.id,
+            field: d.field,
+            before_value: d.before as Prisma.InputJsonValue,
+            after_value: d.after as Prisma.InputJsonValue,
+          })),
+        );
+        changesDetected += deltas.length;
+        for (const d of deltas) {
+          changesByField[d.field] = (changesByField[d.field] ?? 0) + 1;
+        }
+      }
+      invoiceUpdates.push({
+        id: invoiceId,
+        data: {
+          ...invoicePayload,
+          settled_snapshot_id: null,
+        },
+      });
+    } else {
+      invoiceInserts.push({
+        id: invoiceId,
+        ...invoicePayload,
+        first_seen_snapshot_id: snapshot.id,
+      });
+    }
+
+    snapshotRowInserts.push({
+      snapshot_id: snapshot.id,
+      invoice_id: invoiceId,
+      as_of_date: parseDateInput(asOfDate) ?? now,
+      outstanding_amount: new Prisma.Decimal(row.amount),
+      overdue_days: ageing.overdueDays,
+      bucket: ageing.bucket,
+    });
+
+    // Mirror the just-staged row so a duplicate (canonical_id, invoice_ref)
+    // later in the same upload is treated as an update of the first occurrence
+    // (last-write-wins), not a second insert. Pre-refactor this would have
+    // hit a unique-key violation inside the transaction; coalescing here is
+    // the safer behavior for analyst re-pastes.
+    existingByKey.set(key, {
+      id: invoiceId,
+      canonical_id: canonicalId,
+      invoice_ref: row.invoice_ref,
+      amount: invoicePayload.amount,
+      due_date: invoicePayload.due_date,
+      credit_days_applied: invoicePayload.credit_days_applied,
+      invoice_date: invoicePayload.invoice_date,
+      currency: invoicePayload.currency,
+    });
+    touchedInvoiceIds.push(invoiceId);
+    upserted += 1;
+    snapshotRows += 1;
+  }
+
   // The publish transaction does meaningful work per row (diff capture,
   // upsert, invoice_snapshots write) — over a remote Neon connection that
   // can mean tens of milliseconds per round trip. Default Prisma 5s
   // timeout is far too tight for any real-world batch.
   await getPrisma().$transaction(
     async (tx) => {
-    for (const row of invoiceRows) {
-      const canonicalId =
-        row.analyst_overrides.resolved_canonical_id ??
-        row.alias_resolution.topMatches[0]?.canonicalId;
-      if (
-        !canonicalId ||
-        !row.invoice_ref ||
-        !row.invoice_date ||
-        !row.amount
-      ) {
-        throw new HttpError(
-          "row_not_publishable",
-          422,
-          `Row ${row.row_index} is missing canonical, invoice, date, or amount`,
-        );
-      }
-
-      const credit = await resolveCreditDays({
-        canonicalId,
-        invoiceDate: row.invoice_date,
-        override: row.analyst_overrides.credit_days_override,
-        entityDefault: entity.default_credit_days,
+    if (invoiceInserts.length > 0) {
+      await tx.invoices.createMany({ data: invoiceInserts });
+    }
+    for (const update of invoiceUpdates) {
+      await tx.invoices.update({
+        where: { id: update.id },
+        data: update.data,
       });
-      const ageing = calculateAgeing({
-        invoiceDate: row.invoice_date,
-        creditDays: credit.days,
-        asOfDate,
-      });
-      const dueDate = ageing.dueDate;
-      const invoiceDate = parseDateInput(row.invoice_date);
-      if (!invoiceDate) {
-        throw new HttpError(
-          "invoice_date_missing",
-          422,
-          "Invoice date is missing",
-        );
-      }
-
-      const existing = await tx.invoices.findFirst({
-        where: {
-          entity_id: snapshot.entity_id,
-          canonical_id: canonicalId,
-          invoice_ref: row.invoice_ref,
-        },
-        select: {
-          id: true,
-          amount: true,
-          due_date: true,
-          credit_days_applied: true,
-          invoice_date: true,
-          currency: true,
-        },
-      });
-      const invoiceId = existing?.id ?? createId();
-      // PR 9 — auto-tag from Xero project_id. Case-insensitive match
-      // against active LOB codes for this entity. No match → lob_id stays
-      // null and the analyst can set it manually later.
-      const projectId =
-        (row.xero_metadata as { project_id?: string | null } | null)?.project_id ??
-        null;
-      const lobId = projectId
-        ? (lobByCode.get(projectId.trim().toLowerCase()) ?? null)
-        : null;
-      const invoicePayload = {
-        entity_id: snapshot.entity_id,
-        canonical_id: canonicalId,
-        invoice_ref: row.invoice_ref,
-        invoice_date: invoiceDate,
-        amount: new Prisma.Decimal(row.amount),
-        currency: row.source_currency,
-        credit_days_applied: credit.days,
-        credit_days_source: credit.source,
-        due_date: dueDate,
-        status: "OPEN",
-        lob_id: lobId,
-        raw_row_json: row.raw_row_json as Prisma.InputJsonValue,
-        xero_metadata: row.xero_metadata as Prisma.InputJsonValue,
-        updated_at: now,
-      };
-
-      if (existing) {
-        // PR 3 / Gap 3 — capture the delta BEFORE we overwrite the row, so
-        // analysts can see exactly what shifted vs. the previously-published
-        // invoice. Write one invoice_changes row per changed field.
-        const deltas = diffInvoice(existing, invoicePayload);
-        if (deltas.length > 0) {
-          await tx.invoice_changes.createMany({
-            data: deltas.map((d) => ({
-              id: createId(),
-              invoice_id: invoiceId,
-              snapshot_id: snapshot.id,
-              field: d.field,
-              before_value: d.before as Prisma.InputJsonValue,
-              after_value: d.after as Prisma.InputJsonValue,
-            })),
-          });
-          changesDetected += deltas.length;
-          for (const d of deltas) {
-            changesByField[d.field] = (changesByField[d.field] ?? 0) + 1;
-          }
-        }
-        await tx.invoices.update({
-          where: { id: invoiceId },
-          data: {
-            ...invoicePayload,
-            settled_snapshot_id: null,
-          },
-        });
-      } else {
-        await tx.invoices.create({
-          data: {
-            id: invoiceId,
-            ...invoicePayload,
-            first_seen_snapshot_id: snapshot.id,
-          },
-        });
-      }
-
-      await tx.invoice_snapshots.create({
-        data: {
-          snapshot_id: snapshot.id,
-          invoice_id: invoiceId,
-          as_of_date: parseDateInput(asOfDate) ?? now,
-          outstanding_amount: new Prisma.Decimal(row.amount),
-          overdue_days: ageing.overdueDays,
-          bucket: ageing.bucket,
-        },
-      });
-
-      touchedInvoiceIds.push(invoiceId);
-      upserted += 1;
-      snapshotRows += 1;
+    }
+    if (invoiceChangesInserts.length > 0) {
+      await tx.invoice_changes.createMany({ data: invoiceChangesInserts });
+    }
+    if (snapshotRowInserts.length > 0) {
+      await tx.invoice_snapshots.createMany({ data: snapshotRowInserts });
     }
 
     // Capture which invoice IDs are about to be settled so the cascade
