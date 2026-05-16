@@ -44,7 +44,13 @@ const envSchema = z.object({
   XERO_OAUTH_SCOPES: z
     .string()
     .default(
-      "openid profile email offline_access accounting.transactions.read accounting.contacts.read accounting.reports.read",
+      // Granular scope set for apps created after Xero's 2026-03-02 cutover.
+      // - accounting.invoices.read replaces broad accounting.transactions.read
+      // - accounting.contacts.read unchanged
+      // - accounting.reports.aged.read replaces broad accounting.reports.read
+      //   (legacy apps can keep accounting.transactions.read + accounting.reports.read
+      //   until Xero retires broad scopes in September 2027).
+      "openid profile email offline_access accounting.invoices.read accounting.contacts.read accounting.reports.aged.read",
     ),
   XERO_TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
 });

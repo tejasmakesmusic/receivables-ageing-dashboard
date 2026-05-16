@@ -223,7 +223,7 @@ Update `src/lib/env.ts` inside `envSchema`:
   XERO_OAUTH_SCOPES: z
     .string()
     .default(
-      "openid profile email offline_access accounting.transactions.read accounting.contacts.read accounting.reports.read",
+      "openid profile email offline_access accounting.invoices.read accounting.contacts.read accounting.reports.aged.read",
     ),
   XERO_TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
 ```
@@ -235,7 +235,7 @@ Update `.env.example` with comments only:
 XERO_CLIENT_ID=
 XERO_CLIENT_SECRET=
 XERO_REDIRECT_URI=http://localhost:3000/api/admin/xero/callback
-XERO_OAUTH_SCOPES="openid profile email offline_access accounting.transactions.read accounting.contacts.read accounting.reports.read"
+XERO_OAUTH_SCOPES="openid profile email offline_access accounting.invoices.read accounting.contacts.read accounting.reports.aged.read"
 XERO_TOKEN_ENCRYPTION_KEY=
 ```
 
@@ -484,7 +484,7 @@ describe("xero client", () => {
     const url = buildXeroAuthorizationUrl({
       clientId: "client-id",
       redirectUri: "http://localhost:3000/api/admin/xero/callback",
-      scopes: "openid profile email offline_access accounting.transactions.read",
+      scopes: "openid profile email offline_access accounting.invoices.read",
       state: "state-token",
     });
 
@@ -1413,7 +1413,7 @@ vi.mock("@/lib/env", () => ({
     XERO_CLIENT_SECRET: "client-secret",
     XERO_REDIRECT_URI: "http://localhost:3000/api/admin/xero/callback",
     XERO_OAUTH_SCOPES:
-      "openid profile email offline_access accounting.transactions.read accounting.contacts.read",
+      "openid profile email offline_access accounting.invoices.read accounting.contacts.read",
     XERO_TOKEN_ENCRYPTION_KEY: "k".repeat(40),
   },
 }));
@@ -1425,7 +1425,7 @@ vi.mock("@/server/xero/client", () => ({
     refresh_token: "refresh",
     expires_in: 1800,
     token_type: "Bearer",
-    scope: "openid accounting.transactions.read",
+    scope: "openid accounting.invoices.read",
   }),
   listXeroTenants: vi.fn().mockResolvedValue([
     {

@@ -6,7 +6,7 @@ vi.mock("@/lib/env", () => ({
     XERO_CLIENT_SECRET: "client-secret",
     XERO_REDIRECT_URI: "http://localhost:3000/api/admin/xero/callback",
     XERO_OAUTH_SCOPES:
-      "openid profile email offline_access accounting.transactions.read accounting.contacts.read",
+      "openid profile email offline_access accounting.invoices.read accounting.contacts.read",
     XERO_TOKEN_ENCRYPTION_KEY: "k".repeat(40),
   },
 }));
@@ -20,7 +20,7 @@ vi.mock("@/server/xero/client", () => ({
     refresh_token: "refresh-token-value",
     expires_in: 1800,
     token_type: "Bearer",
-    scope: "openid accounting.transactions.read",
+    scope: "openid accounting.invoices.read",
   }),
   refreshAccessToken: vi.fn().mockResolvedValue({
     access_token: "new-access",
@@ -77,7 +77,7 @@ describe("xero connections", () => {
         upsert: vi.fn().mockResolvedValue({
           id: "connection-id",
           tenant_id: "tenant-1",
-          scopes: ["openid", "accounting.transactions.read"],
+          scopes: ["openid", "accounting.invoices.read"],
           status: "ACTIVE",
         }),
       },
