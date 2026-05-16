@@ -38,6 +38,7 @@ has a Focus Queue, audit-safe feedback, and launch system views.
 - Follow-ups, exceptions, config, admin, audit log
 - Snapshot upload, parsing, staging, warnings, reconciliation, publish
 - TALLY/XERO invoice publish and CREDIT_PERIOD config publish
+- **Read-only Xero API ingestion** (ADR-0012) — UAE snapshots can be staged directly from Xero source invoices through OAuth, AES-256-GCM encrypted refresh tokens, `xero_sync_runs` per-pull audit, and the existing staging/publish pipeline. Xero due dates are never used for ageing.
 - Ageing report XLSX export
 - Local stub admin auth for development
 - **Collection tasks** — list (with entity/reason_code/status filters), PATCH (status machine + snooze_until + assign), audit log on every mutation

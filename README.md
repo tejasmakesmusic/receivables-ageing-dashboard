@@ -67,6 +67,28 @@ Set Vercel environment variables from `.env.example`. Use the pooled Neon
 `DATABASE_URL` at runtime and keep `DATABASE_URL_DIRECT` available only for
 explicit database maintenance/migration work.
 
+## Xero API Ingestion
+
+The UAE entity can create staged snapshots from a read-only Xero OAuth
+connection (ADR-0012). Xero supplies source invoices and contacts;
+Receivables OS still computes ageing from snapshot `as_of_date` and EMB
+credit days — Xero's own ageing buckets and due dates are not used.
+
+Required environment variables when enabled (all five are optional, but
+must be set together):
+
+- `XERO_CLIENT_ID`
+- `XERO_CLIENT_SECRET`
+- `XERO_REDIRECT_URI`
+- `XERO_OAUTH_SCOPES` (defaults to `openid profile email offline_access accounting.invoices.read accounting.contacts.read accounting.reports.read`)
+- `XERO_TOKEN_ENCRYPTION_KEY` (minimum 32 characters; rotating it invalidates every stored refresh token)
+
+Admin connection management lives at `/admin/xero`. Analysts with UAE
+scope can trigger pulls via the "Pull from Xero" action on the upload
+form. Each pull writes a `xero_sync_runs` row alongside the snapshot for
+auditability. Tests use fixture JSON and do not require live Xero
+credentials.
+
 ## Production Launch Readiness
 
 Local code-verifiable gates before promoting a preview:
