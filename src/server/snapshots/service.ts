@@ -2968,12 +2968,34 @@ export async function publishSnapshot(
     const lobId = projectId
       ? (lobByCode.get(projectId.trim().toLowerCase()) ?? null)
       : null;
+    // ADR-0013 — derive amount_base in the entity's base currency.
+    //   • Source currency == entity base → trivially equal to `amount`.
+    //   • Source currency != entity base and Xero `currency_rate` is
+    //     present → multiply (Xero's CurrencyRate is source→base).
+    //   • Otherwise leave NULL (e.g. Tally/manual rows with no per-row
+    //     rate) — the analyst can rely on the source-currency `amount`
+    //     and apply an out-of-band rate at report time.
+    const xeroRateRaw =
+      (row.xero_metadata as { currency_rate?: string | null } | null)
+        ?.currency_rate ?? null;
+    let amountBase: Prisma.Decimal | null = null;
+    const rowAmount = new Prisma.Decimal(row.amount);
+    if (row.source_currency === entity.base_currency) {
+      amountBase = rowAmount;
+    } else if (xeroRateRaw) {
+      const rate = new Prisma.Decimal(xeroRateRaw);
+      if (rate.isFinite() && !rate.isZero()) {
+        amountBase = rowAmount.mul(rate);
+      }
+    }
+
     const invoicePayload = {
       entity_id: snapshot.entity_id,
       canonical_id: canonicalId,
       invoice_ref: row.invoice_ref,
       invoice_date: invoiceDate,
-      amount: new Prisma.Decimal(row.amount),
+      amount: rowAmount,
+      amount_base: amountBase,
       currency: row.source_currency,
       credit_days_applied: credit.days,
       credit_days_source: credit.source,

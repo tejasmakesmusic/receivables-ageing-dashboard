@@ -257,6 +257,11 @@ model invoices {
   invoice_date                                         DateTime            @db.Date
   amount                                               Decimal             @db.Decimal(18, 2)
   currency                                             String              @db.VarChar(3)
+  /// ADR-0013 — amount converted into the entity's base currency at
+  /// publish time using the source-system FX rate (Xero `CurrencyRate`
+  /// for Xero pulls, NULL otherwise). Nullable so historical rows are
+  /// not auto-backfilled. Same currency as `entities.base_currency`.
+  amount_base                                          Decimal?            @db.Decimal(18, 2)
   credit_days_applied                                  Int
   credit_days_source                                   String              @db.VarChar(16)
   due_date                                             DateTime            @db.Date
