@@ -3,6 +3,7 @@ import { role_enum } from "@/generated/prisma/enums";
 import { getInteractiveRowClass } from "@/components/ui/table-row-styles";
 import { requirePageRole } from "@/server/core/page-auth";
 import { listEmailRules } from "@/server/admin/emailRules";
+import { RuleToggle } from "@/app/admin/email-rules/_components/rule-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export default async function EmailRulesPage() {
                   <th className="px-4 py-3">Schedule</th>
                   <th className="px-4 py-3">Recipients</th>
                   <th className="px-4 py-3">Notes</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -88,6 +90,13 @@ export default async function EmailRulesPage() {
                       <td className="px-4 py-3 text-xs text-[var(--color-text-muted)]">
                         {rule.notes ?? "—"}
                       </td>
+                      <td className="px-4 py-3 text-right">
+                        <RuleToggle
+                          isActive={rule.is_active}
+                          ruleId={rule.id}
+                          ruleType={rule.rule_type}
+                        />
+                      </td>
                     </tr>
                   );
                 })}
@@ -97,7 +106,8 @@ export default async function EmailRulesPage() {
         </div>
 
         <p className="text-xs text-[var(--color-text-subtle)]">
-          To enable/disable a rule or update recipients, use{" "}
+          Use the row Activate / Deactivate button to gate email delivery.
+          Recipients and cron schedule are still edited via{" "}
           <code className="rounded bg-[var(--color-bg-subtle)] px-1">
             PATCH /api/admin/email-rules/:id
           </code>

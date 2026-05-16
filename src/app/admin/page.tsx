@@ -8,6 +8,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import DataResetForm from "@/app/admin/_components/data-reset-form";
+import { UserRowActions } from "@/app/admin/_components/user-row-actions";
 import { EmptyTableRow, TableShell } from "@/components/ui/data-table";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
@@ -31,6 +32,7 @@ export const dynamic = "force-dynamic";
 const adminLinks = [
   ["Users & Roles", "/admin"],
   ["Lines of Business", "/admin/lobs"],
+  ["FX Rates", "/admin/fx-rates"],
   ["Digest Events", "/admin/digest"],
   ["Email Rules", "/admin/email-rules"],
   ["Reconciliation", "/admin/reconciliation"],
@@ -140,11 +142,12 @@ export default async function AdminPage() {
                     <th className="px-4 py-3">Entity Scope</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Last Login</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)]">
                   {users.items.length === 0 ? (
-                    <EmptyTableRow colSpan={5}>
+                    <EmptyTableRow colSpan={6}>
                       <EmptyState
                         description="Users appear after sign-in and approval."
                         title="No users found"
@@ -180,6 +183,13 @@ export default async function AdminPage() {
                         </td>
                         <td className="px-4 py-3 text-[var(--color-text-muted)]">
                           {user.last_login_at ? formatDateTime(user.last_login_at) : "-"}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <UserRowActions
+                            isActive={user.is_active}
+                            role={user.role}
+                            userId={user.id}
+                          />
                         </td>
                       </tr>
                     ))
