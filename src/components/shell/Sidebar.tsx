@@ -68,6 +68,10 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/workflows", label: "Workflows", icon: SlidersHorizontal, allowedRoles: SURFACE_ROLES },
   { href: "/reports", label: "Reports", icon: BarChart3, allowedRoles: SURFACE_ROLES },
   { href: "/admin", label: "Settings", icon: Settings, allowedRoles: ADMIN_ROLES },
+  { href: "/config/credit-periods", label: "Credit Periods", icon: SlidersHorizontal, allowedRoles: ADMIN_ROLES },
+  { href: "/admin/fx-rates", label: "FX Rates", icon: ShieldCheck, allowedRoles: ADMIN_ROLES },
+  { href: "/admin/email-rules", label: "Email Rules", icon: ShieldCheck, allowedRoles: ADMIN_ROLES },
+  { href: "/admin/audit-log", label: "Audit Log", icon: FileText, allowedRoles: ADMIN_ROLES },
 ];
 
 const FAVORITE_ITEMS: NavItem[] = [
@@ -173,14 +177,28 @@ export function Sidebar() {
   useEffect(() => {
     let active = true;
 
+    async function fetchMe(): Promise<MeResponse | null> {
+      const response = await fetch("/api/auth/me");
+      if (!response.ok) return null;
+      return (await response.json()) as MeResponse;
+    }
+
     async function hydrateMe() {
-      try {
-        const response = await fetch("/api/auth/me");
-        if (!response.ok) return;
-        const payload = (await response.json()) as MeResponse;
-        if (active && payload?.user?.role) setUserRole(payload.user.role);
-      } catch {
-        // Best-effort only; unauthenticated/auth pages still render shell chrome.
+      // Audit 2026-05-16: one retry guards against transient
+      // failures stripping the Admin link until manual reload.
+      for (let attempt = 0; attempt < 2 && active; attempt += 1) {
+        try {
+          const payload = await fetchMe();
+          if (payload?.user?.role) {
+            if (active) setUserRole(payload.user.role);
+            return;
+          }
+        } catch {
+          // fall through to retry
+        }
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
       }
     }
 

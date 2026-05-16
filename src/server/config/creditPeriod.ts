@@ -524,26 +524,43 @@ export async function bulkCreateCreditPeriod(
     throw new HttpError("forbidden", 403, "Insufficient permissions.");
   }
 
+  // Audit 2026-05-16: prior implementation called createCreditPeriod
+  // sequentially. With 500 ids × ~50ms Neon RTT that exceeded the request
+  // timeout. Each createCreditPeriod call still runs in its own transaction
+  // (atomic per-party — partial batch failures don't corrupt that row);
+  // we now bound concurrency to BATCH_SIZE so we get parallelism without
+  // exhausting the Neon connection pool.
+  const BATCH_SIZE = 25;
   let applied = 0;
   const failed: { canonical_id: string; message: string }[] = [];
 
-  for (const canonicalId of input.canonical_ids) {
-    try {
-      await createCreditPeriod(
-        {
+  for (let i = 0; i < input.canonical_ids.length; i += BATCH_SIZE) {
+    const batch = input.canonical_ids.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map((canonicalId) =>
+        createCreditPeriod(
+          {
+            canonical_id: canonicalId,
+            credit_days: input.credit_days,
+            valid_from: input.valid_from,
+            reason_note: input.reason_note ?? null,
+          },
+          currentUser,
+        ).then(() => canonicalId),
+      ),
+    );
+    for (let j = 0; j < results.length; j += 1) {
+      const result = results[j];
+      const canonicalId = batch[j];
+      if (result.status === "fulfilled") {
+        applied += 1;
+      } else {
+        const reason = result.reason;
+        failed.push({
           canonical_id: canonicalId,
-          credit_days: input.credit_days,
-          valid_from: input.valid_from,
-          reason_note: input.reason_note ?? null,
-        },
-        currentUser,
-      );
-      applied += 1;
-    } catch (err) {
-      failed.push({
-        canonical_id: canonicalId,
-        message: err instanceof Error ? err.message : "Failed",
-      });
+          message: reason instanceof Error ? reason.message : "Failed",
+        });
+      }
     }
   }
 

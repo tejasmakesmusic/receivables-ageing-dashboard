@@ -70,13 +70,14 @@ export async function Topbar() {
           </Link>
         ) : null}
 
-        <button
-          aria-label="Notifications"
+        <Link
+          aria-label="Notifications — digest events"
           className="grid h-8 w-8 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
-          type="button"
+          href="/admin/digest"
+          title="Recent digest events"
         >
           <Bell className="h-4 w-4" />
-        </button>
+        </Link>
 
         {user ? (
           <div className="flex items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 hover:bg-[var(--color-bg-muted)]">

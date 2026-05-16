@@ -31,6 +31,9 @@ export function PartiesCreditPeriodTable({ parties, canEdit }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [resultMsg, setResultMsg] = useState("");
+  const [failures, setFailures] = useState<
+    { canonical_id: string; message: string }[]
+  >([]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -137,14 +140,17 @@ export function PartiesCreditPeriodTable({ parties, canEdit }: Props) {
         throw new Error(payload?.message ?? `Request failed (${res.status})`);
       }
       const applied = payload?.applied ?? 0;
-      const failedCount = payload?.failed?.length ?? 0;
+      const failedList = payload?.failed ?? [];
+      setFailures(failedList);
       setResultMsg(
-        failedCount > 0
-          ? `Applied to ${applied}. ${failedCount} failed.`
+        failedList.length > 0
+          ? `Applied to ${applied}. ${failedList.length} failed — see details below.`
           : `Applied to ${applied} parties.`,
       );
-      setSelected(new Set());
-      setModalOpen(false);
+      if (failedList.length === 0) {
+        setSelected(new Set());
+        setModalOpen(false);
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bulk update failed");
@@ -210,9 +216,46 @@ export function PartiesCreditPeriodTable({ parties, canEdit }: Props) {
       </div>
 
       {resultMsg ? (
-        <p className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-xs text-[var(--color-text)]">
-          {resultMsg}
-        </p>
+        <div className="space-y-2">
+          <p className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-xs text-[var(--color-text)]">
+            {resultMsg}
+          </p>
+          {failures.length > 0 ? (
+            <div className="rounded-[var(--radius-sm)] border border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] p-3 text-xs">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-medium text-[var(--color-status-danger-text)]">
+                  Failed parties ({failures.length})
+                </span>
+                <button
+                  className="text-[var(--color-status-danger-text)] underline hover:opacity-70"
+                  onClick={() => {
+                    setFailures([]);
+                    setResultMsg("");
+                  }}
+                  type="button"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <ul className="max-h-48 space-y-1 overflow-y-auto">
+                {failures.map((f) => {
+                  const party = parties.find((p) => p.canonical_id === f.canonical_id);
+                  return (
+                    <li
+                      className="flex items-start gap-2 font-mono text-[11px] text-[var(--color-status-danger-text)]"
+                      key={f.canonical_id}
+                    >
+                      <span className="shrink-0 font-semibold">
+                        {party?.canonical_name ?? f.canonical_id.slice(0, 8)}:
+                      </span>
+                      <span>{f.message}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)]">

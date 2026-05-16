@@ -25,6 +25,7 @@ import { role_enum } from "@/generated/prisma/enums";
 import { formatDateTime } from "@/lib/format";
 import { getImportedDataResetPreview } from "@/server/admin/dataReset";
 import { listUsers, parseUserListQuery } from "@/server/admin/users";
+import { listEmailRules } from "@/server/admin/emailRules";
 import { requirePageRole } from "@/server/core/page-auth";
 
 export const dynamic = "force-dynamic";
@@ -39,42 +40,57 @@ const adminLinks = [
   ["Audit Log", "/admin/audit-log"],
 ] as const;
 
-const adminQueues: {
+type AdminQueue = {
   description: string;
   href: string;
   icon: ComponentType<{ className?: string }>;
   label: string;
   status: string;
-}[] = [
-  {
-    description: "Generated daily digest records and approval state.",
-    href: "/admin/digest",
-    icon: Mail,
-    label: "Digest Events",
-    status: "FOLLOW_UP_DUE",
-  },
-  {
-    description: "Reminder rules, delivery gates, and email policy state.",
-    href: "/admin/email-rules",
-    icon: ShieldCheck,
-    label: "Email Rules",
-    status: "READ_ONLY",
-  },
-  {
-    description: "Snapshot closing AR tie-out and mismatch review.",
-    href: "/admin/reconciliation",
-    icon: Scale,
-    label: "Reconciliation",
-    status: "RECONCILIATION_PENDING",
-  },
-  {
-    description: "Mutation trail for users, snapshots, and operational actions.",
-    href: "/admin/audit-log",
-    icon: ClipboardList,
-    label: "Audit Log",
-    status: "PUBLISHED",
-  },
-];
+};
+
+function buildAdminQueues({
+  pendingUsers,
+  activeRules,
+  totalRules,
+}: {
+  pendingUsers: number;
+  activeRules: number;
+  totalRules: number;
+}): AdminQueue[] {
+  return [
+    {
+      description: "Generated daily digest records and approval state.",
+      href: "/admin/digest",
+      icon: Mail,
+      label: "Digest Events",
+      status: "PUBLISHED",
+    },
+    {
+      description: `Email policy gates: ${activeRules}/${totalRules} active.`,
+      href: "/admin/email-rules",
+      icon: ShieldCheck,
+      label: "Email Rules",
+      status: activeRules === 0 ? "STAGING_BLOCKED" : "GATE_OK",
+    },
+    {
+      description: "Snapshot closing AR tie-out and mismatch review.",
+      href: "/admin/reconciliation",
+      icon: Scale,
+      label: "Reconciliation",
+      status: "READ_ONLY",
+    },
+    {
+      description:
+        pendingUsers > 0
+          ? `${pendingUsers} pending user${pendingUsers === 1 ? "" : "s"} awaiting approval.`
+          : "Mutation trail for users, snapshots, and operational actions.",
+      href: pendingUsers > 0 ? "/admin" : "/admin/audit-log",
+      icon: ClipboardList,
+      label: pendingUsers > 0 ? "Pending users" : "Audit Log",
+      status: pendingUsers > 0 ? "FOLLOW_UP_DUE" : "PUBLISHED",
+    },
+  ];
+}
 
 function roleStatus(role: string) {
   if (role === "PENDING") return "STAGING_BLOCKED";
@@ -85,10 +101,19 @@ function roleStatus(role: string) {
 
 export default async function AdminPage() {
   const currentUser = await requirePageRole("/admin", role_enum.ADMIN);
-  const users = await listUsers(parseUserListQuery({}));
-  const resetPreview = await getImportedDataResetPreview(currentUser);
+  const [users, emailRules, resetPreview] = await Promise.all([
+    listUsers(parseUserListQuery({})),
+    listEmailRules(currentUser),
+    getImportedDataResetPreview(currentUser),
+  ]);
   const activeUsers = users.items.filter((user) => user.is_active).length;
   const pendingUsers = users.items.filter((user) => user.role === "PENDING").length;
+  const activeRules = emailRules.filter((r) => r.is_active).length;
+  const adminQueues = buildAdminQueues({
+    pendingUsers,
+    activeRules,
+    totalRules: emailRules.length,
+  });
 
   return (
     <PageFrame>

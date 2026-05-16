@@ -281,5 +281,53 @@ export async function getOrCreateGoogleUser({
     },
   });
 
+  // Audit 2026-05-16 / Spec §13.7: notify admins on first login. Only sends
+  // if the PENDING_ADMIN_NOTIFY email_rule is active — same guardrail as
+  // the CFO digest. Failure to enqueue must not block the user creation.
+  try {
+    await enqueuePendingAdminNotification({ email, name, userId: newUser.id });
+  } catch (err) {
+    console.error("[auth] failed to enqueue PENDING admin notification", err);
+  }
+
   return { user: newUser as UserRecord, isNew: true };
+}
+
+async function enqueuePendingAdminNotification(params: {
+  email: string;
+  name: string;
+  userId: string;
+}): Promise<void> {
+  const prisma = getPrisma();
+  const rule = await prisma.email_rules.findUnique({
+    where: { rule_type: "PENDING_ADMIN_NOTIFY" },
+    select: { is_active: true, recipients_json: true },
+  });
+  if (!rule || !rule.is_active) return;
+
+  const recipients = Array.isArray(rule.recipients_json)
+    ? (rule.recipients_json as unknown[]).filter(
+        (r): r is string => typeof r === "string",
+      )
+    : [];
+  if (recipients.length === 0) return;
+
+  const safeName = params.name.replace(/[<>]/g, "");
+  const safeEmail = params.email.replace(/[<>]/g, "");
+  await prisma.email_outbox.create({
+    data: {
+      id: createId(),
+      rule_type: "PENDING_ADMIN_NOTIFY",
+      subject: `New user awaiting approval — ${safeEmail}`,
+      body_html: `<p>A new user has signed in with Google and is awaiting role assignment:</p>
+<ul>
+  <li><strong>Name:</strong> ${safeName}</li>
+  <li><strong>Email:</strong> ${safeEmail}</li>
+  <li><strong>User ID:</strong> ${params.userId}</li>
+</ul>
+<p>Approve them on the <a href="/admin">Admin → Users &amp; Roles</a> page.</p>`,
+      recipients_json: recipients,
+      status: "QUEUED",
+    },
+  });
 }
