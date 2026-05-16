@@ -47,13 +47,30 @@ describe("xero admin UI", () => {
     expect(source).toContain("role_enum.ADMIN");
   });
 
-  it("adds a pull action to the upload form without removing manual upload", () => {
-    const source = readFileSync(
+  it("exposes both Xero pull and workbook upload paths from /upload", () => {
+    const pageSource = readFileSync(
+      join(root, "src/app/upload/page.tsx"),
+      "utf8",
+    );
+    // The two ingestion paths are surfaced as separate cards so users
+    // don't have to fill workbook fields just to trigger a Xero sync.
+    expect(pageSource).toContain("XeroPullCard");
+    expect(pageSource).toContain("UploadSnapshotForm");
+
+    const xeroCard = readFileSync(
+      join(root, "src/app/upload/_components/xero-pull-card.tsx"),
+      "utf8",
+    );
+    expect(xeroCard).toContain("/api/xero/snapshots/pull");
+    expect(xeroCard).toContain("Pull from Xero");
+
+    const uploadForm = readFileSync(
       join(root, "src/app/upload/_components/upload-snapshot-form.tsx"),
       "utf8",
     );
-    expect(source).toContain("/api/xero/snapshots/pull");
-    expect(source).toContain("Pull from Xero");
-    expect(source).toContain('type="file"');
+    // The workbook form still has its file input; it must NOT silently
+    // own the Xero pull anymore (that moved into XeroPullCard).
+    expect(uploadForm).toContain('type="file"');
+    expect(uploadForm).not.toContain("/api/xero/snapshots/pull");
   });
 });

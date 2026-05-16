@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { role_enum } from "@/generated/prisma/enums";
 import { requirePageRole } from "@/server/core/page-auth";
 import { UploadSnapshotForm } from "./_components/upload-snapshot-form";
+import { XeroPullCard } from "./_components/xero-pull-card";
 
 export default async function UploadPage() {
   await requirePageRole("/upload", role_enum.ANALYST, role_enum.ADMIN);
@@ -38,8 +39,21 @@ export default async function UploadPage() {
             </div>
 
             <DsCard
-              subtitle="Select the entity, confirm the source, and drop the workbook. No publish action happens from this page."
-              title="Workbook intake"
+              subtitle="One-click read-only pull from the UAE Xero organisation. Receivables OS still owns ageing, credit days, staging, and publish."
+              title="Pull from Xero (UAE)"
+            >
+              <XeroPullCard />
+            </DsCard>
+
+            <div className="flex items-center gap-3 text-[12px] uppercase tracking-wide text-[var(--color-text-muted)]">
+              <span className="h-px flex-1 bg-[var(--color-border)]" />
+              <span>or upload a workbook</span>
+              <span className="h-px flex-1 bg-[var(--color-border)]" />
+            </div>
+
+            <DsCard
+              subtitle="For Tally exports (IND) or Xero workbook exports (UAE). The parser stages every row for review before publish."
+              title="Upload Excel/CSV workbook"
             >
               <div className="mb-5">
                 <DsStepper
@@ -107,7 +121,22 @@ export default async function UploadPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Workbook</CardTitle>
+            <CardTitle>Pull from Xero (UAE)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <XeroPullCard />
+          </CardContent>
+        </Card>
+
+        <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
+          <span className="h-px flex-1 bg-[var(--color-border)]" />
+          <span>or upload a workbook</span>
+          <span className="h-px flex-1 bg-[var(--color-border)]" />
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Excel/CSV workbook</CardTitle>
           </CardHeader>
           <CardContent>
             <UploadSnapshotForm />

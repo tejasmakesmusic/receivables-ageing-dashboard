@@ -25,37 +25,7 @@ export function UploadSnapshotForm() {
   const [sourceHint, setSourceHint] = useState("");
   const [asOfDate, setAsOfDate] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [xeroPullStatus, setXeroPullStatus] = useState<UploadStatus>("idle");
   const uiV2 = process.env.NEXT_PUBLIC_UI_V2 === "true";
-
-  async function pullFromXero() {
-    setXeroPullStatus("submitting");
-    setMessage("");
-    const response = await fetch("/api/xero/snapshots/pull", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          snapshot_id?: string;
-          message?: string;
-          error?: { message?: string };
-        }
-      | null;
-
-    if (!response.ok || !payload?.snapshot_id) {
-      setXeroPullStatus("error");
-      setMessage(
-        payload?.message ??
-          payload?.error?.message ??
-          "Xero pull failed. Check the connection and try again.",
-      );
-      return;
-    }
-    router.push(`/snapshots/${payload.snapshot_id}/staging`);
-    router.refresh();
-  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -151,19 +121,9 @@ export function UploadSnapshotForm() {
         />
 
         <div className="flex flex-wrap items-center gap-3">
-          <DsButton disabled={status === "submitting" || xeroPullStatus === "submitting"} loading={status === "submitting"} type="submit">
+          <DsButton disabled={status === "submitting"} loading={status === "submitting"} type="submit">
             {status === "submitting" ? "Uploading snapshot..." : "Upload snapshot"}
           </DsButton>
-          {entityCode === "UAE" ? (
-            <DsButton
-              type="button"
-              disabled={status === "submitting" || xeroPullStatus === "submitting"}
-              loading={xeroPullStatus === "submitting"}
-              onClick={pullFromXero}
-            >
-              {xeroPullStatus === "submitting" ? "Pulling from Xero..." : "Pull from Xero"}
-            </DsButton>
-          ) : null}
           <span className="text-[12px] text-[var(--color-text-muted)]">
             Publish remains gated until staging blockers are resolved.
           </span>
@@ -228,21 +188,11 @@ export function UploadSnapshotForm() {
       </label>
       <button
         className="w-fit rounded bg-[var(--color-accent)] px-4 py-2 text-[var(--color-bg)] transition-colors hover:bg-[var(--color-accent-strong)] disabled:pointer-events-none disabled:opacity-60"
-        disabled={status === "submitting" || xeroPullStatus === "submitting"}
+        disabled={status === "submitting"}
         type="submit"
       >
         {status === "submitting" ? "Uploading..." : "Upload"}
       </button>
-      {entityCode === "UAE" ? (
-        <button
-          className="w-fit rounded border border-[var(--color-border)] px-4 py-2 transition-colors hover:bg-[var(--color-bg-subtle)] disabled:pointer-events-none disabled:opacity-60"
-          disabled={status === "submitting" || xeroPullStatus === "submitting"}
-          onClick={pullFromXero}
-          type="button"
-        >
-          {xeroPullStatus === "submitting" ? "Pulling from Xero..." : "Pull from Xero"}
-        </button>
-      ) : null}
       {message ? (
         <p aria-live="polite" className="text-sm text-[var(--color-danger)]">
           {message}
