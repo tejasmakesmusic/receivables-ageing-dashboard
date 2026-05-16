@@ -35,6 +35,18 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   // ExchangeRate-API - Admin-triggered immutable FX rate imports.
   EXCHANGERATE_API_KEY: z.string().optional(),
+  // ADR-0012 — read-only Xero API ingestion. Required only when enabling
+  // direct Xero pulls; without these the connect route returns 500
+  // xero_not_configured and the upload form falls back to manual workbook.
+  XERO_CLIENT_ID: z.string().optional(),
+  XERO_CLIENT_SECRET: z.string().optional(),
+  XERO_REDIRECT_URI: z.string().url().optional(),
+  XERO_OAUTH_SCOPES: z
+    .string()
+    .default(
+      "openid profile email offline_access accounting.invoices.read accounting.contacts.read accounting.reports.read",
+    ),
+  XERO_TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
 });
 
 export const env = envSchema.parse(process.env);

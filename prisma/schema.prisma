@@ -110,6 +110,7 @@ model entities {
   parties_canonical   parties_canonical[]
   snapshots           snapshots[]
   users               users[]
+  xero_connections    xero_connections[]
 }
 
 /// PR 9 — Lines of Business per entity. Tag invoices to slice receivables
@@ -412,6 +413,7 @@ model snapshots {
   users_snapshots_published_byTousers                 users?                  @relation("snapshots_published_byTousers", fields: [published_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_published_by_users")
   users_snapshots_uploaded_byTousers                  users                   @relation("snapshots_uploaded_byTousers", fields: [uploaded_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_uploaded_by_users")
   users_snapshots_reviewed_byTousers                  users?                  @relation("snapshots_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_reviewed_by_users")
+  xero_sync_runs                                      xero_sync_runs[]
 
   @@index([entity_id, status], map: "ix_snapshots_entity_status")
 }
@@ -469,6 +471,8 @@ model users {
   engagement_streak                                                    engagement_streaks?
   engagement_streak_freezes                                            engagement_streak_freezes[] @relation("freeze_owner")
   engagement_streak_freezes_applied                                    engagement_streak_freezes[] @relation("freeze_applier")
+  xero_connections_connected_byTousers                                 xero_connections[]       @relation("xero_connections_connected_byTousers")
+  xero_sync_runs_triggered_byTousers                                   xero_sync_runs[]         @relation("xero_sync_runs_triggered_byTousers")
 }
 
 model user_saved_views {
@@ -680,4 +684,61 @@ model digest_events {
 
   @@unique([digest_date], map: "uq_digest_events_digest_date")
   @@index([state, digest_date], map: "ix_digest_events_state_date")
+}
+
+/// ADR-0012 — read-only Xero OAuth connection per UAE entity tenant.
+/// Refresh tokens are encrypted at rest with AES-256-GCM; the access
+/// token is not persisted (refreshed per pull). Status transitions:
+/// ACTIVE -> DISCONNECTED on admin disconnect, ACTIVE -> ERROR if the
+/// connector ever rejects the refresh token. See `xero_sync_runs` for
+/// per-pull audit detail.
+model xero_connections {
+  id                      String           @id(map: "pk_xero_connections") @db.Uuid
+  entity_id               String           @db.Uuid
+  tenant_id               String           @db.VarChar(128)
+  tenant_name             String           @db.VarChar(255)
+  scopes                  String[]
+  encrypted_refresh_token String
+  access_token_expires_at DateTime?        @db.Timestamptz(6)
+  status                  String           @default("ACTIVE") @db.VarChar(16)
+  connected_by            String           @db.Uuid
+  disconnected_at         DateTime?        @db.Timestamptz(6)
+  created_at              DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime         @default(now()) @db.Timestamptz(6)
+  entities                entities         @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_xero_connections_entity_id_entities")
+  users_connected_by      users            @relation("xero_connections_connected_byTousers", fields: [connected_by], references: [id], onUpdate: NoAction, map: "fk_xero_connections_connected_by_users")
+  xero_sync_runs          xero_sync_runs[]
+
+  @@unique([entity_id, tenant_id], map: "uq_xero_connections_entity_tenant")
+  @@index([status], map: "ix_xero_connections_status")
+}
+
+/// ADR-0012 — one row per Xero pull attempt. RUNNING rows older than a
+/// few minutes indicate an orphaned run (process died mid-fetch); cron
+/// recovery is out of scope for v1.
+model xero_sync_runs {
+  id                     String           @id(map: "pk_xero_sync_runs") @db.Uuid
+  connection_id          String           @db.Uuid
+  snapshot_id            String?          @db.Uuid
+  triggered_by           String           @db.Uuid
+  status                 String           @default("RUNNING") @db.VarChar(16)
+  started_at             DateTime         @default(now()) @db.Timestamptz(6)
+  finished_at            DateTime?        @db.Timestamptz(6)
+  pages_fetched          Int              @default(0)
+  invoices_seen          Int              @default(0)
+  invoices_staged        Int              @default(0)
+  parse_errors           Int              @default(0)
+  source_artifact_uri    String?
+  source_artifact_sha256 String?          @db.VarChar(64)
+  error_code             String?          @db.VarChar(64)
+  error_message          String?
+  rate_limit_json        Json?
+  created_at             DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime         @default(now()) @db.Timestamptz(6)
+  xero_connections       xero_connections @relation(fields: [connection_id], references: [id], onUpdate: NoAction, map: "fk_xero_sync_runs_connection_id_xero_connections")
+  snapshots              snapshots?       @relation(fields: [snapshot_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_xero_sync_runs_snapshot_id_snapshots")
+  users_triggered_by     users            @relation("xero_sync_runs_triggered_byTousers", fields: [triggered_by], references: [id], onUpdate: NoAction, map: "fk_xero_sync_runs_triggered_by_users")
+
+  @@index([connection_id, started_at(sort: Desc)], map: "ix_xero_sync_runs_connection_started")
+  @@index([snapshot_id], map: "ix_xero_sync_runs_snapshot_id")
 }
