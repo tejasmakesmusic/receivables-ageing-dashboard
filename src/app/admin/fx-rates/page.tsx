@@ -14,6 +14,7 @@ import { formatDateTime } from "@/lib/format";
 import { listFxRates } from "@/server/config/fxRates";
 import { requirePageRole } from "@/server/core/page-auth";
 import { FxRateForm } from "./_components/fx-rate-form";
+import { FxRateImportForm } from "./_components/fx-rate-import-form";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +106,16 @@ export default async function FxRatesPage() {
         </Panel>
 
         <RightRail>
+          <Panel>
+            <PanelHeader
+              action={<StatusTag label="ExchangeRate-API" status="READ_ONLY" />}
+              title="Import FX rate"
+            >
+              Pull one historical rate from the configured provider.
+            </PanelHeader>
+            <FxRateImportForm />
+          </Panel>
+
           <Panel>
             <PanelHeader
               action={<StatusTag label="Admin only" status="STAGING_BLOCKED" />}

@@ -33,6 +33,8 @@ const envSchema = z.object({
   R2_ENDPOINT: z.string().url().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
+  // ExchangeRate-API - Admin-triggered immutable FX rate imports.
+  EXCHANGERATE_API_KEY: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

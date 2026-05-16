@@ -16,58 +16,15 @@ import {
   type ReconciliationResponse,
   type SnapshotDetailResponse,
 } from "@/server/snapshots/service";
+import {
+  summarizeSnapshotProgressParse,
+  type SnapshotProgressParseSummary,
+} from "@/server/snapshots/progress-summary";
 import { SnapshotReviewActions } from "./_components/snapshot-review-actions";
 
 type PageProps = {
   params: Promise<{ snapshotId: string }>;
 };
-
-type ParseSummary = {
-  totalRows: number;
-  okRows: number;
-  parseErrorRows: number;
-  warningCount: number;
-  fileErrorCount: number;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function countArray(value: unknown) {
-  return Array.isArray(value) ? value.length : 0;
-}
-
-function summarizeParseResult(value: unknown): ParseSummary {
-  if (!isRecord(value)) {
-    return {
-      totalRows: 0,
-      okRows: 0,
-      parseErrorRows: 0,
-      warningCount: 0,
-      fileErrorCount: 0,
-    };
-  }
-
-  const invoices = Array.isArray(value.invoices) ? value.invoices : [];
-  const creditPeriods = Array.isArray(value.credit_periods)
-    ? value.credit_periods
-    : [];
-  const parseErrorRows = invoices.filter(
-    (row) => isRecord(row) && row.status === "PARSE_ERROR",
-  ).length;
-  const okInvoiceRows = invoices.filter(
-    (row) => isRecord(row) && row.status !== "PARSE_ERROR",
-  ).length;
-
-  return {
-    totalRows: invoices.length + creditPeriods.length,
-    okRows: okInvoiceRows + creditPeriods.length,
-    parseErrorRows,
-    warningCount: countArray(value.warnings),
-    fileErrorCount: countArray(value.errors),
-  };
-}
 
 function pluralize(count: number, singular: string, plural: string) {
   return count === 1 ? singular : plural;
@@ -75,14 +32,15 @@ function pluralize(count: number, singular: string, plural: string) {
 
 function buildProgressSteps(params: {
   snapshot: SnapshotDetailResponse;
-  parseSummary: ParseSummary;
+  parseSummary: SnapshotProgressParseSummary;
   reconciliation: ReconciliationResponse | null;
 }): ProgressStep[] {
   const { snapshot, parseSummary, reconciliation } = params;
   const totalErrors = parseSummary.parseErrorRows + parseSummary.fileErrorCount;
   const parseCompleted = parseSummary.okRows > 0;
   const parseBlocked = parseSummary.totalRows > 0 && !parseCompleted;
-  const readyToPublish = parseCompleted && totalErrors === 0;
+  const readyToPublish =
+    parseCompleted && totalErrors === 0 && parseSummary.warningCount === 0;
   const isPublished = snapshot.status === "PUBLISHED";
   const hasReconciliation =
     reconciliation !== null && reconciliation.status !== "UNRECONCILED";
@@ -203,11 +161,19 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
   const currency = snapshot.entity_code === "IND" ? "INR" : "AED";
   const snapshotParse = await getPrisma().snapshots.findUnique({
     where: { id: snapshotId },
-    select: { parse_result_json: true },
+    select: {
+      parse_result_json: true,
+      staging_overrides_json: true,
+      warnings_acknowledged_json: true,
+    },
   });
   const progressSteps = buildProgressSteps({
     snapshot,
-    parseSummary: summarizeParseResult(snapshotParse?.parse_result_json),
+    parseSummary: summarizeSnapshotProgressParse({
+      parseResult: snapshotParse?.parse_result_json,
+      stagingOverrides: snapshotParse?.staging_overrides_json,
+      warningsAcknowledged: snapshotParse?.warnings_acknowledged_json,
+    }),
     reconciliation,
   });
 
