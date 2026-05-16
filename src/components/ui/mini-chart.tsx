@@ -1,16 +1,60 @@
+/**
+ * MiniSparkline — renders a small line chart from a numeric series.
+ *
+ * Audit 2026-05-16: the previous prop-less version drew a fixed rising
+ * curve regardless of data, which misled users into reading it as a real
+ * trend. The component now requires `values`; with fewer than 2 points
+ * it renders a flat baseline so the affordance still occupies the same
+ * grid space without implying a trend.
+ */
 export function MiniSparkline({
+  values,
   color = "var(--color-accent)",
 }: {
+  values?: number[];
   color?: string;
 }) {
+  const width = 96;
+  const height = 36;
+  const padding = 3;
+
+  if (!values || values.length < 2) {
+    return (
+      <svg aria-hidden="true" className="h-9 w-24" viewBox={`0 0 ${width} ${height}`}>
+        <line
+          stroke="var(--color-border)"
+          strokeDasharray="2 3"
+          strokeWidth="1"
+          x1={padding}
+          x2={width - padding}
+          y1={height / 2}
+          y2={height / 2}
+        />
+      </svg>
+    );
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const step = (width - 2 * padding) / (values.length - 1);
+  const d = values
+    .map((v, i) => {
+      const x = padding + i * step;
+      const y = height - padding - ((v - min) / range) * (height - 2 * padding);
+      return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
+
   return (
-    <svg aria-hidden="true" className="h-9 w-24" viewBox="0 0 96 36">
+    <svg aria-hidden="true" className="h-9 w-24" viewBox={`0 0 ${width} ${height}`}>
       <path
-        d="M2 30 C14 26 14 17 26 19 C39 22 37 8 50 11 C61 14 60 6 72 8 C82 10 83 5 94 6"
+        d={d}
         fill="none"
         stroke={color}
         strokeLinecap="round"
-        strokeWidth="2.5"
+        strokeLinejoin="round"
+        strokeWidth="2"
       />
     </svg>
   );

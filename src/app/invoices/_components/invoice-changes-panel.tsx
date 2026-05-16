@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { CheckCircle2, GitCompare, History } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { AlertTriangle, CheckCircle2, GitCompare, History } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 
@@ -14,6 +14,8 @@ const FIELD_LABEL: Record<string, string> = {
   currency: "Currency",
 };
 
+const MATERIAL_AMOUNT_THRESHOLD = 0.05; // spec §13.2
+
 export interface InvoiceChangeItem {
   id: string;
   field: string;
@@ -22,6 +24,14 @@ export interface InvoiceChangeItem {
   detected_at: string;
   snapshot_id: string;
   acknowledged_at: string | null;
+}
+
+function isMaterialAmountChange(change: InvoiceChangeItem): boolean {
+  if (change.field !== "amount") return false;
+  const before = Number(change.before_value);
+  const after = Number(change.after_value);
+  if (!Number.isFinite(before) || !Number.isFinite(after) || before === 0) return false;
+  return Math.abs((after - before) / before) > MATERIAL_AMOUNT_THRESHOLD;
 }
 
 function formatValue(field: string, value: unknown): string {
@@ -42,9 +52,17 @@ function formatValue(field: string, value: unknown): string {
 export function InvoiceChangesPanel({
   invoiceId,
   initialChanges,
+  hasActiveException = false,
 }: {
   invoiceId: string;
   initialChanges: InvoiceChangeItem[];
+  /**
+   * Spec §13.2: when an unacknowledged amount change exceeds 5% AND an
+   * exception is currently open on this invoice, render a review-required
+   * banner. The panel itself doesn't know about exceptions, so the parent
+   * passes this flag down.
+   */
+  hasActiveException?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -54,6 +72,11 @@ export function InvoiceChangesPanel({
 
   const unacked = changes.filter((c) => c.acknowledged_at == null);
   const acked = changes.filter((c) => c.acknowledged_at != null);
+
+  const materialReviewChanges = useMemo(
+    () => (hasActiveException ? unacked.filter(isMaterialAmountChange) : []),
+    [hasActiveException, unacked],
+  );
 
   if (changes.length === 0) {
     return null; // no changes captured for this invoice — render nothing
@@ -124,6 +147,23 @@ export function InvoiceChangesPanel({
           </button>
         ) : null}
       </div>
+
+      {materialReviewChanges.length > 0 ? (
+        <div
+          className="flex items-start gap-2 border-b border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] px-4 py-3 text-sm text-[var(--color-status-danger-text)]"
+          role="alert"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="font-semibold">Review required (spec §13.2)</div>
+            <p className="mt-0.5 text-xs">
+              An open exception is attached to this invoice and the amount has
+              changed by more than 5% since the prior snapshot. Re-validate the
+              exception before acknowledging the change.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="divide-y divide-[var(--color-border)]">
         {unacked.map((change) => (

@@ -162,6 +162,27 @@ export default async function InvoiceDetailPage({
             <PanelHeader title="Snapshot History">
               Ageing uses each snapshot as-of date, not wall-clock today.
             </PanelHeader>
+            {invoice.tally_overdue_days_latest !== null && latestSnapshot ? (
+              <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-2 text-xs text-[var(--color-text-muted)]">
+                <span
+                  className="cursor-help underline decoration-dotted underline-offset-2"
+                  title={`Our calc uses EMB credit period master. Tally's figure: ${invoice.tally_overdue_days_latest}. Ours: ${latestSnapshot.overdue_days}.`}
+                >
+                  EMB calc: <strong className="text-[var(--color-text)]">{latestSnapshot.overdue_days}</strong> days
+                  {" · "}
+                  Tally:{" "}
+                  <strong className="text-[var(--color-text)]">
+                    {invoice.tally_overdue_days_latest}
+                  </strong>{" "}
+                  days
+                  {latestSnapshot.overdue_days !== invoice.tally_overdue_days_latest ? (
+                    <span className="ml-2 text-[var(--color-status-warning-text)]">
+                      (Δ {latestSnapshot.overdue_days - invoice.tally_overdue_days_latest})
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+            ) : null}
             <div className="p-4">
               {invoice.snapshot_history.length === 0 ? (
                 <EmptyState

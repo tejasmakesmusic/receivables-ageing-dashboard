@@ -171,6 +171,7 @@ export function Sidebar() {
   );
   const [userRole, setUserRole] = useState<Role | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [pinnedFavorites, setPinnedFavorites] = useState<NavItem[]>([]);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -210,6 +211,46 @@ export function Sidebar() {
     };
   }, []);
 
+  // Pull the user's pinned saved views and surface them as Favorites.
+  // Falls back to hardcoded FAVORITE_ITEMS when nothing is pinned.
+  useEffect(() => {
+    if (!userRole) return;
+    let active = true;
+
+    async function loadPinned() {
+      try {
+        const response = await fetch("/api/views");
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          data?: Array<{
+            view_id: string;
+            surface: string;
+            name: string;
+            pinned: boolean;
+          }>;
+        };
+        if (!active || !Array.isArray(payload?.data)) return;
+        const pinned = payload.data
+          .filter((v) => v.pinned)
+          .slice(0, 6)
+          .map((v) => ({
+            href: `/${v.surface.replace(/_/g, "-")}?view_id=${v.view_id}`,
+            label: v.name,
+            icon: Star,
+            allowedRoles: SURFACE_ROLES,
+          }));
+        setPinnedFavorites(pinned);
+      } catch {
+        // best effort
+      }
+    }
+
+    loadPinned();
+    return () => {
+      active = false;
+    };
+  }, [userRole]);
+
   useEffect(() => {
     const surface = resolveNavHref(pathname);
     if (!surface) return;
@@ -237,7 +278,10 @@ export function Sidebar() {
   const recentItems = recentHrefs
     .map((href) => visibleByHref.get(href))
     .filter((item): item is NavItem => Boolean(item));
-  const visibleFavorites = FAVORITE_ITEMS.filter((item) => !userRole || item.allowedRoles.includes(userRole));
+  const visibleFavorites =
+    pinnedFavorites.length > 0
+      ? pinnedFavorites.filter((item) => !userRole || item.allowedRoles.includes(userRole))
+      : FAVORITE_ITEMS.filter((item) => !userRole || item.allowedRoles.includes(userRole));
 
   return (
     <aside

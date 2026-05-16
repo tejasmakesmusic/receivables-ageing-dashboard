@@ -40,6 +40,14 @@ export interface InvoiceDetailResponse {
   settled_snapshot_id: string | null;
   exception_tags: ExceptionTagRow[];
   snapshot_history: InvoiceSnapshotHistoryRow[];
+  /**
+   * Spec §13.4: Tally ships its own `overdue_days` column. We don't use it
+   * for ageing, but the UI must display it next to our calc with a tooltip
+   * so analysts can cross-check. Captured from the latest snapshot's
+   * `raw_row_json.overdue_days`. `null` for non-Tally sources (e.g. Xero)
+   * or when the column was empty in the source row.
+   */
+  tally_overdue_days_latest: number | null;
 }
 
 export interface InvoiceListRow {
@@ -169,6 +177,23 @@ function toDateTime(value: Date): string {
   return value.toISOString();
 }
 
+/**
+ * Spec §13.4: Tally exports an `overdue_days` column. We capture it into
+ * `raw_row_json` at ingest time (see src/server/parsers/tally.ts) and
+ * surface it next to our computed value on invoice detail. Non-Tally
+ * sources (Xero etc.) don't write this key — return null. Blanks and
+ * non-numeric strings also become null so the UI can hide the chip.
+ */
+function readTallyOverdueDays(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = (raw as Record<string, unknown>).overdue_days;
+  if (value == null || value === "") return null;
+  const numeric =
+    typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(numeric)) return null;
+  return Math.trunc(numeric);
+}
+
 export async function getInvoiceDetail(
   invoiceId: string,
 ): Promise<InvoiceDetailResponse | null> {
@@ -253,6 +278,10 @@ export async function getInvoiceDetail(
       bucket: snapshot.bucket,
     }));
 
+  // Spec §13.4: pull the source's `overdue_days` from the latest
+  // raw_row_json so the invoice header can cross-display it.
+  const tallyOverdueLatest = readTallyOverdueDays(invoice.raw_row_json);
+
   return {
     invoice_id: invoice.id,
     invoice_ref: invoice.invoice_ref,
@@ -271,6 +300,7 @@ export async function getInvoiceDetail(
     settled_snapshot_id: invoice.settled_snapshot_id,
     exception_tags: exceptionTags,
     snapshot_history: snapshotHistory,
+    tally_overdue_days_latest: tallyOverdueLatest,
   };
 }
 

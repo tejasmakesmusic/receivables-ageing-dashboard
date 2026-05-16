@@ -883,6 +883,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
 
           {selectedInvoice && selectedInvoiceChanges.length > 0 ? (
             <InvoiceChangesPanel
+              hasActiveException={selectedInvoice.active_exception_count > 0}
               initialChanges={selectedInvoiceChanges}
               invoiceId={selectedInvoice.invoice_id}
             />
