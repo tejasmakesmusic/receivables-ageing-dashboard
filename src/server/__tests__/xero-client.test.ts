@@ -18,7 +18,7 @@ describe("xero client", () => {
     const url = buildXeroAuthorizationUrl({
       clientId: "client-id",
       redirectUri: "http://localhost:3000/api/admin/xero/callback",
-      scopes: "openid profile email offline_access accounting.invoices.read",
+      scopes: "openid profile email offline_access accounting.transactions.read",
       state: "state-token",
     });
 

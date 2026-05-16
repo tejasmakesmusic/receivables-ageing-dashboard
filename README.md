@@ -80,7 +80,7 @@ must be set together):
 - `XERO_CLIENT_ID`
 - `XERO_CLIENT_SECRET`
 - `XERO_REDIRECT_URI`
-- `XERO_OAUTH_SCOPES` (defaults to `openid profile email offline_access accounting.invoices.read accounting.contacts.read accounting.reports.read`)
+- `XERO_OAUTH_SCOPES` (defaults to `openid profile email offline_access accounting.transactions.read accounting.contacts.read accounting.reports.read`)
 - `XERO_TOKEN_ENCRYPTION_KEY` (minimum 32 characters; rotating it invalidates every stored refresh token)
 
 Admin connection management lives at `/admin/xero`. Analysts with UAE

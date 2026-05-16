@@ -44,7 +44,7 @@ const envSchema = z.object({
   XERO_OAUTH_SCOPES: z
     .string()
     .default(
-      "openid profile email offline_access accounting.invoices.read accounting.contacts.read accounting.reports.read",
+      "openid profile email offline_access accounting.transactions.read accounting.contacts.read accounting.reports.read",
     ),
   XERO_TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
 });
