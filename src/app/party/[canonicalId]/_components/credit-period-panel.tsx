@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Pencil, Clock } from "lucide-react";
@@ -126,17 +127,26 @@ export function CreditPeriodPanel({ canonicalId, currentConfig, canEdit }: Props
       ) : (
         <div>
           <p className="text-xs text-[var(--color-text-muted)]">
-            No credit period set. Invoices use the entity default.
+            No party credit period set. Invoices fall back to the entity default if
+            one exists.
           </p>
-          {canEdit && !editing ? (
-            <button
-              className="mt-2 text-xs font-medium text-[var(--color-accent)] hover:underline"
-              onClick={openEdit}
-              type="button"
+          <div className="mt-2 flex flex-wrap gap-3">
+            {canEdit && !editing ? (
+              <button
+                className="text-xs font-medium text-[var(--color-accent)] hover:underline"
+                onClick={openEdit}
+                type="button"
+              >
+                Set credit period
+              </button>
+            ) : null}
+            <Link
+              className="text-xs font-medium text-[var(--color-accent)] hover:underline"
+              href="/config#entity-defaults"
             >
-              Set credit period →
-            </button>
-          ) : null}
+              View entity defaults
+            </Link>
+          </div>
         </div>
       )}
 

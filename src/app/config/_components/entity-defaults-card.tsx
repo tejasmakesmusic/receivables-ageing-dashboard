@@ -87,7 +87,12 @@ export function EntityDefaultsCard({ entities, canEdit }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Entity Settings</CardTitle>
+        <CardTitle>Entity Default Credit Days</CardTitle>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          Use this fallback only when an entity has a standard approved credit
+          period. Party-level credit period config still wins. Existing invoices are
+          not backfilled.
+        </p>
       </CardHeader>
       <CardContent>
         <table className="w-full table-auto text-sm">
@@ -139,7 +144,9 @@ export function EntityDefaultsCard({ entities, canEdit }: Props) {
                         Saving…
                       </span>
                     ) : currentDefault === null ? (
-                      <span className="text-[var(--color-text-muted)]">—</span>
+                      <span className="text-[var(--color-text-muted)]">
+                        No fallback set
+                      </span>
                     ) : (
                       <span className="tabular-nums">{currentDefault} days</span>
                     )}

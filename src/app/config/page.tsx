@@ -34,9 +34,13 @@ export default async function ConfigPage() {
       <div className="mx-auto w-full max-w-7xl space-y-6">
         <h1 className="text-2xl font-semibold">Configuration</h1>
 
-        <Card>
+        <Card id="credit-periods" className="scroll-mt-24">
           <CardHeader>
             <CardTitle>Credit Periods</CardTitle>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Use party-level credit days when one customer has approved terms.
+              This clears staging rows missing credit days for that party.
+            </p>
           </CardHeader>
           <CardContent>
             {creditPeriods.items.length === 0 ? (
@@ -143,13 +147,15 @@ export default async function ConfigPage() {
           </CardContent>
         </Card>
 
-        <EntityDefaultsCard
-          canEdit={
-            currentUser.role === role_enum.ANALYST ||
-            currentUser.role === role_enum.ADMIN
-          }
-          entities={entityDefaults}
-        />
+        <div id="entity-defaults" className="scroll-mt-24">
+          <EntityDefaultsCard
+            canEdit={
+              currentUser.role === role_enum.ANALYST ||
+              currentUser.role === role_enum.ADMIN
+            }
+            entities={entityDefaults}
+          />
+        </div>
       </div>
     </div>
   );

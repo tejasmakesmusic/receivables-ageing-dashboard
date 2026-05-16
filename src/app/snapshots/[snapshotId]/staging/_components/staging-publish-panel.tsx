@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -30,12 +31,38 @@ type WarningsAckResponse = {
   publish_gate: PublishGate;
 };
 
-function GateBlockerItem({ children }: { children: React.ReactNode }) {
+function GateBlockerItem({
+  children,
+  actions,
+}: {
+  children: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
   return (
     <div className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] px-3 py-2 text-sm text-[var(--color-status-danger-text)]">
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      {children}
+      <div className="min-w-0 flex-1">
+        <div>{children}</div>
+        {actions ? <div className="mt-2 flex flex-wrap gap-2">{actions}</div> : null}
+      </div>
     </div>
+  );
+}
+
+function BlockerLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      className="inline-flex h-7 items-center rounded-[var(--radius-sm)] border border-[var(--color-status-danger-border)] bg-[var(--color-surface)] px-2.5 text-xs font-semibold text-[var(--color-status-danger-text)] transition hover:bg-[var(--color-bg-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2"
+      href={href}
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -250,10 +277,25 @@ export function StagingPublishPanel({
             </GateBlockerItem>
           ) : null}
           {gate.credit_days_missing_count > 0 ? (
-            <GateBlockerItem>
-              {gate.credit_days_missing_count}{" "}
-              {gate.credit_days_missing_count === 1 ? "row" : "rows"} missing
-              credit days — set a credit period config or entity default
+            <GateBlockerItem
+              actions={
+                <>
+                  <BlockerLink href="/config#credit-periods">
+                    Set party credit period
+                  </BlockerLink>
+                  <BlockerLink href="/config#entity-defaults">
+                    Set entity default
+                  </BlockerLink>
+                </>
+              }
+            >
+              <span className="font-medium">
+                {gate.credit_days_missing_count}{" "}
+                {gate.credit_days_missing_count === 1 ? "row is" : "rows are"} missing
+                credit days.
+              </span>{" "}
+              Resolve by adding party credit period rows for affected customers, or
+              set an entity default when unresolved rows should share the same fallback.
             </GateBlockerItem>
           ) : null}
           {hasWarnings ? (
