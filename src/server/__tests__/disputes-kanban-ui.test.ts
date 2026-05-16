@@ -32,7 +32,7 @@ describe("Dispute Cases Kanban view", () => {
     const source = readFileSync(DISPUTE_KANBAN, "utf8");
 
     expect(source).toContain("validNextStates");
-    expect(source).toContain("/api/disputes/");
+    expect(source).toContain("/api/dispute-cases/");
     expect(source).toContain("onDragStart");
     expect(source).toContain("onDragOver");
     expect(source).toContain("onDrop");

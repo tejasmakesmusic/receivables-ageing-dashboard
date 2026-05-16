@@ -7,20 +7,28 @@ const SIDEBAR_SOURCE = readFileSync(
   "utf8",
 );
 
+// Updated 2026-05-16 to reflect the post-audit canonical order:
+// 13 top-level items + 5 admin-only sub-items appended.
 const EXPECTED_NAV_ITEMS = [
   { href: "/", icon: "Home", label: "Home" },
   { href: "/dashboard", icon: "PieChart", label: "Dashboard" },
   { href: "/focus", icon: "Target", label: "Focus Queue" },
-  { href: "/snapshots", icon: "Layers", label: "Snapshots" },
   { href: "/invoices", icon: "FileText", label: "Invoices" },
-  { href: "/parties", icon: "Building2", label: "Parties" },
-  { href: "/tasks", icon: "Inbox", label: "Tasks" },
+  { href: "/parties", icon: "Building2", label: "Customers" },
+  { href: "/tasks", icon: "Inbox", label: "Collections" },
   { href: "/promises-to-pay", icon: "(?:HandCoins|CalendarClock)", label: "Promises" },
   { href: "/dispute-cases", icon: "AlertTriangle", label: "Disputes" },
   { href: "/reconciliation", icon: "RefreshCw", label: "Reconciliation" },
+  { href: "/snapshots", icon: "Layers", label: "Snapshots" },
   { href: "/workflows", icon: "SlidersHorizontal", label: "Workflows" },
   { href: "/reports", icon: "BarChart3", label: "Reports" },
-  { href: "/admin", icon: "Settings", label: "Admin" },
+  { href: "/admin", icon: "Settings", label: "Settings" },
+  { href: "/config/credit-periods", icon: "SlidersHorizontal", label: "Credit Periods" },
+  { href: "/config/aliases", icon: "Inbox", label: "Party Aliases" },
+  { href: "/admin/fx-rates", icon: "ShieldCheck", label: "FX Rates" },
+  { href: "/admin/email-rules", icon: "ShieldCheck", label: "Email Rules" },
+  { href: "/admin/exception-buckets", icon: "AlertTriangle", label: "Exception Buckets" },
+  { href: "/admin/audit-log", icon: "FileText", label: "Audit Log" },
 ] as const;
 
 function navItemPattern({
@@ -42,7 +50,7 @@ describe("sidebar navigation", () => {
     )?.groups?.items;
 
     expect(navBlock).toBeDefined();
-    expect(navBlock?.match(/\{\s*href:/g)?.length).toBe(13);
+    expect(navBlock?.match(/\{\s*href:/g)?.length).toBe(19);
     expect(navBlock).toMatch(
       new RegExp(EXPECTED_NAV_ITEMS.map(navItemPattern).join(String.raw`[\s\S]*`)),
     );

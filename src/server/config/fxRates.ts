@@ -50,8 +50,6 @@ export const fxRateListResponseSchema = z.object({
   page_size: z.number(),
 });
 
-export const fxRateCreateResponseSchema = fxRateResponseSchema;
-
 export type FxRateListQuery = z.infer<typeof fxRateListQuerySchema>;
 export type FxRateListResponse = z.infer<typeof fxRateListResponseSchema>;
 export type FxRateRow = z.infer<typeof fxRateResponseSchema>;

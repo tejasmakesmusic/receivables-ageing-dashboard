@@ -59,7 +59,7 @@ export default function PendingPage() {
           </Link>
           <a
             className="text-[var(--color-text-muted)] hover:underline"
-            href="/api/auth/logout"
+            href="/auth/logout"
           >
             Sign out
           </a>
