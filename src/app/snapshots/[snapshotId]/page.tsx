@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import {
   ProgressPath,
   type ProgressStep,
@@ -290,63 +291,62 @@ export default async function SnapshotDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Reconciliation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {reconciliation ? (
-              <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                <div>
-                <dt className="text-[var(--color-text-muted)]">Dashboard AR</dt>
-                  <dd>
-                    {formatCurrency(reconciliation.dashboard_ar, currency)}
-                  </dd>
+        {snapshot.status === "PUBLISHED" ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Data Integrity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {reconciliation ? (
+                <div className="space-y-3 text-sm">
+                  <dl className="grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Dashboard AR</dt>
+                      <dd className="font-medium">
+                        {formatCurrency(reconciliation.dashboard_ar, currency)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Source File Total</dt>
+                      <dd className="font-medium">
+                        {reconciliation.tally_xero_closing_ar
+                          ? formatCurrency(reconciliation.tally_xero_closing_ar, currency)
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Delta</dt>
+                      <dd className="font-medium">
+                        {reconciliation.delta
+                          ? formatCurrency(reconciliation.delta, currency)
+                          : "—"}
+                      </dd>
+                    </div>
+                  </dl>
+                  {reconciliation.status === "MATCHED" ? (
+                    <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-status-current-border)] bg-[var(--color-status-current-bg)] px-3 py-2 text-xs text-[var(--color-status-current-text)]">
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      Auto-reconciled — dashboard matches source file.
+                    </div>
+                  ) : reconciliation.status === "MISMATCHED" ? (
+                    <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-status-danger-border)] bg-[var(--color-status-danger-bg)] px-3 py-2 text-xs text-[var(--color-status-danger-text)]">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      {`Mismatch: ${reconciliation.delta ? formatCurrency(reconciliation.delta, currency) : "unknown"} gap between dashboard and source file.`}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      Source file total unavailable — reconciliation skipped.
+                    </p>
+                  )}
                 </div>
-                <div>
-                <dt className="text-[var(--color-text-muted)]">Exception Buckets</dt>
-                  <dd>
-                    {formatCurrency(
-                      reconciliation.exception_bucket_total,
-                      currency,
-                    )}
-                  </dd>
-                </div>
-                <div>
-                <dt className="text-[var(--color-text-muted)]">Status</dt>
-                  <dd>{reconciliation.status}</dd>
-                </div>
-                <div>
-                <dt className="text-[var(--color-text-muted)]">Closing AR</dt>
-                  <dd>
-                    {reconciliation.tally_xero_closing_ar
-                      ? formatCurrency(
-                          reconciliation.tally_xero_closing_ar,
-                          currency,
-                        )
-                      : "-"}
-                  </dd>
-                </div>
-                <div>
-                <dt className="text-[var(--color-text-muted)]">Delta</dt>
-                  <dd>
-                    {reconciliation.delta
-                      ? formatCurrency(reconciliation.delta, currency)
-                      : "-"}
-                  </dd>
-                </div>
-                <div>
-                <dt className="text-[var(--color-text-muted)]">Entered By</dt>
-                  <dd>{reconciliation.entered_by?.email ?? "-"}</dd>
-                </div>
-              </dl>
-            ) : (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {reconciliationMessage}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+              ) : (
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  {reconciliationMessage ?? "Reconciliation unavailable."}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );
