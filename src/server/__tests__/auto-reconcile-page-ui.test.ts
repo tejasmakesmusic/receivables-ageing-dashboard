@@ -45,4 +45,13 @@ describe("snapshot detail page — auto-reconcile UI", () => {
     expect(source).not.toContain("ReconciliationForm");
     expect(source).not.toContain("reconciliation-form");
   });
+
+  it("ProgressPath reconcile step uses auto-reconcile state labels", () => {
+    const source = readFileSync(PAGE, "utf8");
+    expect(source).toContain("Auto-reconciled from source file.");
+    expect(source).toContain("Mismatch detected — check reconciliation.");
+    expect(source).toContain("Pending publish.");
+    // The link to /admin/reconciliation is removed
+    expect(source).not.toContain('"/admin/reconciliation"');
+  });
 });

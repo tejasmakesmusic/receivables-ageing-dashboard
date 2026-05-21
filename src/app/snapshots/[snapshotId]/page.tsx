@@ -43,9 +43,6 @@ function buildProgressSteps(params: {
   const readyToPublish =
     parseCompleted && totalErrors === 0 && parseSummary.warningCount === 0;
   const isPublished = snapshot.status === "PUBLISHED";
-  const hasReconciliation =
-    reconciliation !== null && reconciliation.status !== "UNRECONCILED";
-
   return [
     {
       id: "upload",
@@ -118,15 +115,23 @@ function buildProgressSteps(params: {
     {
       id: "reconcile",
       label: "Reconcile",
-      description: hasReconciliation
-        ? "Reconciliation entry is recorded."
-        : "Reconciliation entry is pending.",
-      state: hasReconciliation
-        ? "completed"
-        : isPublished
-          ? "active"
-          : "not_started",
-      href: isPublished ? "/admin/reconciliation" : undefined,
+      description:
+        reconciliation?.status === "MATCHED"
+          ? "Auto-reconciled from source file."
+          : reconciliation?.status === "MISMATCHED"
+            ? "Mismatch detected — check reconciliation."
+            : isPublished
+              ? "Source file total unavailable."
+              : "Pending publish.",
+      state:
+        reconciliation?.status === "MATCHED"
+          ? "completed"
+          : reconciliation?.status === "MISMATCHED"
+            ? "blocked"
+            : isPublished
+              ? "active"
+              : "not_started",
+      href: undefined,
     },
   ];
 }
