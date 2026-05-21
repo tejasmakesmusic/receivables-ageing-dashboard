@@ -3316,9 +3316,11 @@ export async function getOrComputeReconciliation(
 
   // Auto-reconcile fallback: when no manual entry exists, use the snapshot's
   // stored grand total (from the uploaded source file) as the reference AR.
-  // Delta formula: dashboardAr − total_outstanding (parse-completeness check).
-  // This differs from upsertReconciliation which used dashboardAr + exceptionBucketTotal
-  // because dashboardAr in the code already includes all invoices.
+  // Delta = dashboardAr − total_outstanding (parse-completeness check).
+  // Note: upsertReconciliation uses dashboardAr + exceptionBucketTotal − tallyAr,
+  // which is a different formula for a manually-entered Tally/Xero figure.
+  // Here total_outstanding already covers all invoices, so exceptionBucketTotal
+  // is not added.
   const autoClosingAr = snapshot.total_outstanding
     ? formatDecimal(snapshot.total_outstanding)
     : null;
