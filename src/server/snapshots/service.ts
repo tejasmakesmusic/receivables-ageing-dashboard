@@ -3314,6 +3314,35 @@ export async function getOrComputeReconciliation(
     computeReconciliationParts(snapshot),
   ]);
 
+  // Auto-reconcile fallback: when no manual entry exists, use the snapshot's
+  // stored grand total (from the uploaded source file) as the reference AR.
+  // Delta formula: dashboardAr − total_outstanding (parse-completeness check).
+  // This differs from upsertReconciliation which used dashboardAr + exceptionBucketTotal
+  // because dashboardAr in the code already includes all invoices.
+  const autoClosingAr = snapshot.total_outstanding
+    ? formatDecimal(snapshot.total_outstanding)
+    : null;
+
+  const effectiveClosingAr = entry
+    ? formatDecimal(entry.tally_xero_closing_ar)
+    : autoClosingAr;
+
+  const effectiveDelta = entry
+    ? formatDecimal(entry.delta)
+    : autoClosingAr
+      ? formatFromCents(
+          parseToCents(computed.dashboardAr) - parseToCents(autoClosingAr),
+        )
+      : null;
+
+  const effectiveStatus: ReconciliationResponse["status"] = entry
+    ? (entry.status as ReconciliationResponse["status"])
+    : autoClosingAr
+      ? reconciliationStatus(
+          parseToCents(computed.dashboardAr) - parseToCents(autoClosingAr),
+        )
+      : "UNRECONCILED";
+
   return {
     snapshot_id: snapshotId,
     snapshot_as_of_date: toDate(snapshot.as_of_date),
@@ -3321,12 +3350,9 @@ export async function getOrComputeReconciliation(
     dashboard_ar: computed.dashboardAr,
     exception_bucket_total: computed.exceptionBucketTotal,
     exception_bucket_breakdown: computed.exceptionBucketBreakdown,
-    tally_xero_closing_ar: entry
-      ? formatDecimal(entry.tally_xero_closing_ar)
-      : null,
-    delta: entry ? formatDecimal(entry.delta) : null,
-    status: (entry?.status ??
-      "UNRECONCILED") as ReconciliationResponse["status"],
+    tally_xero_closing_ar: effectiveClosingAr,
+    delta: effectiveDelta,
+    status: effectiveStatus,
     entered_by: entry?.users
       ? { id: entry.users.id, email: entry.users.email }
       : null,
