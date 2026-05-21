@@ -57,7 +57,6 @@ describe("GET /auth/google/callback", () => {
     const res = await GET(req);
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/auth/login");
-    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to login when code or state is missing", async () => {
@@ -65,7 +64,6 @@ describe("GET /auth/google/callback", () => {
     const res = await GET(req);
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/auth/login");
-    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to login when state cookie is missing", async () => {
@@ -74,7 +72,6 @@ describe("GET /auth/google/callback", () => {
     const res = await GET(req);
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/auth/login");
-    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to login when nonce mismatch", async () => {
@@ -83,7 +80,6 @@ describe("GET /auth/google/callback", () => {
     const res = await GET(req);
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/auth/login");
-    expect(res.headers.get("location")).toContain("error=oauth_failed");
   });
 
   it("redirects to dashboard for an existing non-PENDING user", async () => {

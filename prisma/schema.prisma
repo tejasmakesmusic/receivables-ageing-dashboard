@@ -9,15 +9,8 @@ datasource db {
   provider = "postgresql"
 }
 
-// Legacy Python-stack artefacts (Alembic migrations, APScheduler queue).
-// Kept introspected so `prisma db pull` is idempotent against the live
-// Neon database, but `@@ignore`d so the generated client does not expose
-// them — preventing accidental reads/writes from app code. Dropping the
-// underlying tables is a coordinated DBA activity (see audit 2026-05-16).
 model alembic_version {
   version_num String @id(map: "alembic_version_pkc") @db.VarChar(32)
-
-  @@ignore
 }
 
 model apscheduler_jobs {
@@ -26,7 +19,6 @@ model apscheduler_jobs {
   job_state     Bytes
 
   @@index([next_run_time], map: "ix_apscheduler_jobs_next_run_time")
-  @@ignore
 }
 
 model audit_log {
@@ -93,45 +85,44 @@ model email_rules {
 }
 
 model entities {
-  id                  String              @id(map: "pk_entities") @db.Uuid
-  code                String              @unique(map: "uq_entities_code") @db.VarChar(64)
-  name                String              @db.VarChar(255)
-  country             String              @db.VarChar(2)
-  base_currency       String              @db.VarChar(3)
-  default_credit_days Int?
-  require_review_before_publish Boolean   @default(false)
-  created_at          DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime            @default(now()) @db.Timestamptz(6)
-  collection_tasks    collection_tasks[]
-  column_mappings     column_mappings[]
-  dispute_cases       dispute_cases[]
-  invoices            invoices[]
-  lobs                lobs[]
-  parties_canonical   parties_canonical[]
-  snapshots           snapshots[]
-  users               users[]
-  xero_connections    xero_connections[]
+  id                            String              @id(map: "pk_entities") @db.Uuid
+  code                          String              @unique(map: "uq_entities_code") @db.VarChar(64)
+  name                          String              @db.VarChar(255)
+  country                       String              @db.VarChar(2)
+  base_currency                 String              @db.VarChar(3)
+  default_credit_days           Int?
+  require_review_before_publish Boolean             @default(false)
+  created_at                    DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime            @default(now()) @db.Timestamptz(6)
+  collection_tasks              collection_tasks[]
+  column_mappings               column_mappings[]
+  dispute_cases                 dispute_cases[]
+  invoices                      invoices[]
+  lobs                          lobs[]
+  parties_canonical             parties_canonical[]
+  snapshots                     snapshots[]
+  users                         users[]
 }
 
 /// PR 9 — Lines of Business per entity. Tag invoices to slice receivables
 /// by project, vertical, or business unit. Auto-applied from Xero project_id
 /// at publish; manual override via UI.
 model lobs {
-  id          String    @id(map: "pk_lobs") @db.Uuid
-  entity_id   String    @db.Uuid
-  code        String    @db.VarChar(64)
-  name        String    @db.VarChar(255)
+  id          String   @id(map: "pk_lobs") @db.Uuid
+  entity_id   String   @db.Uuid
+  code        String   @db.VarChar(64)
+  name        String   @db.VarChar(255)
   description String?
-  active      Boolean   @default(true)
-  created_by  String    @db.Uuid
-  created_at  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_by  String?   @db.Uuid
-  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  active      Boolean  @default(true)
+  created_by  String   @db.Uuid
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_by  String?  @db.Uuid
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
 
-  entities                          entities   @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_lobs_entity_id_entities")
-  users_lobs_created_byTousers      users      @relation("lobs_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_lobs_created_by_users")
-  users_lobs_updated_byTousers      users?     @relation("lobs_updated_byTousers", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_lobs_updated_by_users")
-  invoices                          invoices[]
+  entities                     entities   @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_lobs_entity_id_entities")
+  users_lobs_created_byTousers users      @relation("lobs_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_lobs_created_by_users")
+  users_lobs_updated_byTousers users?     @relation("lobs_updated_byTousers", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_lobs_updated_by_users")
+  invoices                     invoices[]
 
   @@unique([entity_id, code], map: "uq_lobs_entity_code")
   @@index([entity_id, active], map: "ix_lobs_entity_active")
@@ -150,9 +141,9 @@ model column_mappings {
   updated_by   String?  @db.Uuid
   updated_at   DateTime @default(now()) @db.Timestamptz(6)
 
-  entities                                       entities @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_column_mappings_entity_id_entities")
-  users_column_mappings_created_byTousers        users    @relation("column_mappings_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_column_mappings_created_by_users")
-  users_column_mappings_updated_byTousers        users?   @relation("column_mappings_updated_byTousers", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_column_mappings_updated_by_users")
+  entities                                entities @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_column_mappings_entity_id_entities")
+  users_column_mappings_created_byTousers users    @relation("column_mappings_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_column_mappings_created_by_users")
+  users_column_mappings_updated_byTousers users?   @relation("column_mappings_updated_byTousers", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_column_mappings_updated_by_users")
 
   @@unique([entity_id, source_hint], map: "uq_column_mappings_entity_source")
 }
@@ -257,11 +248,6 @@ model invoices {
   invoice_date                                         DateTime            @db.Date
   amount                                               Decimal             @db.Decimal(18, 2)
   currency                                             String              @db.VarChar(3)
-  /// ADR-0013 — amount converted into the entity's base currency at
-  /// publish time using the source-system FX rate (Xero `CurrencyRate`
-  /// for Xero pulls, NULL otherwise). Nullable so historical rows are
-  /// not auto-backfilled. Same currency as `entities.base_currency`.
-  amount_base                                          Decimal?            @db.Decimal(18, 2)
   credit_days_applied                                  Int
   credit_days_source                                   String              @db.VarChar(16)
   due_date                                             DateTime            @db.Date
@@ -418,66 +404,63 @@ model snapshots {
   users_snapshots_published_byTousers                 users?                  @relation("snapshots_published_byTousers", fields: [published_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_published_by_users")
   users_snapshots_uploaded_byTousers                  users                   @relation("snapshots_uploaded_byTousers", fields: [uploaded_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_uploaded_by_users")
   users_snapshots_reviewed_byTousers                  users?                  @relation("snapshots_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction, map: "fk_snapshots_reviewed_by_users")
-  xero_sync_runs                                      xero_sync_runs[]
 
   @@index([entity_id, status], map: "ix_snapshots_entity_status")
 }
 
 model users {
-  id                                               String                   @id(map: "pk_users") @db.Uuid
-  email                                            String                   @unique(map: "uq_users_email") @db.VarChar(320)
-  google_sub                                       String?                  @unique(map: "uq_users_google_sub") @db.VarChar(64)
-  name                                             String                   @default("") @db.VarChar(255)
-  role                                             role_enum                @default(PENDING)
-  entity_id_scope                                  String?                  @db.Uuid
-  is_active                                        Boolean                  @default(true)
-  created_at                                       DateTime                 @default(now()) @db.Timestamptz(6)
-  updated_at                                       DateTime                 @default(now()) @db.Timestamptz(6)
-  last_login_at                                    DateTime?                @db.Timestamptz(6)
-  password_hash                                    String?                  @db.Text
-  email_verified                                   Boolean                  @default(false)
-  email_verification_token                         String?                  @unique(map: "uq_users_email_verification_token") @db.VarChar(64)
-  email_verification_expires_at                    DateTime?                @db.Timestamptz(6)
-  otp_code                                         String?                  @db.VarChar(6)
-  otp_token                                        String?                  @unique(map: "uq_users_otp_token") @db.VarChar(64)
-  otp_expires_at                                   DateTime?                @db.Timestamptz(6)
-  password_reset_token                             String?                  @unique(map: "uq_users_password_reset_token") @db.VarChar(64)
-  password_reset_expires_at                        DateTime?                @db.Timestamptz(6)
-  audit_log                                        audit_log[]
-  user_saved_views                                 user_saved_views[]
-  credit_period_config                             credit_period_config[]
-  email_rules                                      email_rules[]
-  exception_tags_exception_tags_excluded_byTousers exception_tags[]         @relation("exception_tags_excluded_byTousers")
-  exception_tags_exception_tags_resolved_byTousers exception_tags[]         @relation("exception_tags_resolved_byTousers")
-  exception_tags_exception_tags_tagged_byTousers   exception_tags[]         @relation("exception_tags_tagged_byTousers")
-  column_mappings_column_mappings_created_byTousers column_mappings[]        @relation("column_mappings_created_byTousers")
-  column_mappings_column_mappings_updated_byTousers column_mappings[]        @relation("column_mappings_updated_byTousers")
-  follow_ups                                       follow_ups[]
-  fx_rates                                         fx_rates[]
-  invoice_changes                                  invoice_changes[]
-  lobs_lobs_created_byTousers                      lobs[]                   @relation("lobs_created_byTousers")
-  lobs_lobs_updated_byTousers                      lobs[]                   @relation("lobs_updated_byTousers")
-  parties_canonical                                parties_canonical[]
-  party_aliases_party_aliases_confirmed_byTousers  party_aliases[]          @relation("party_aliases_confirmed_byTousers")
-  party_aliases_party_aliases_created_byTousers    party_aliases[]          @relation("party_aliases_created_byTousers")
-  reconciliation_entries                                               reconciliation_entries[]
-  snapshots_snapshots_discarded_byTousers                              snapshots[]              @relation("snapshots_discarded_byTousers")
-  snapshots_snapshots_published_byTousers                              snapshots[]              @relation("snapshots_published_byTousers")
-  snapshots_snapshots_reviewed_byTousers                               snapshots[]              @relation("snapshots_reviewed_byTousers")
-  snapshots_snapshots_uploaded_byTousers                               snapshots[]              @relation("snapshots_uploaded_byTousers")
-  entities                                                             entities?                @relation(fields: [entity_id_scope], references: [id], onUpdate: NoAction, map: "fk_users_entity_id_scope_entities")
+  id                                                     String                      @id(map: "pk_users") @db.Uuid
+  email                                                  String                      @unique(map: "uq_users_email") @db.VarChar(320)
+  google_sub                                             String?                     @unique(map: "uq_users_google_sub") @db.VarChar(64)
+  name                                                   String                      @default("") @db.VarChar(255)
+  role                                                   role_enum                   @default(PENDING)
+  entity_id_scope                                        String?                     @db.Uuid
+  is_active                                              Boolean                     @default(true)
+  created_at                                             DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime                    @default(now()) @db.Timestamptz(6)
+  last_login_at                                          DateTime?                   @db.Timestamptz(6)
+  password_hash                                          String?                     @db.Text
+  email_verified                                         Boolean                     @default(false)
+  email_verification_token                               String?                     @unique(map: "uq_users_email_verification_token") @db.VarChar(64)
+  email_verification_expires_at                          DateTime?                   @db.Timestamptz(6)
+  otp_code                                               String?                     @db.VarChar(6)
+  otp_token                                              String?                     @unique(map: "uq_users_otp_token") @db.VarChar(64)
+  otp_expires_at                                         DateTime?                   @db.Timestamptz(6)
+  password_reset_token                                   String?                     @unique(map: "uq_users_password_reset_token") @db.VarChar(64)
+  password_reset_expires_at                              DateTime?                   @db.Timestamptz(6)
+  audit_log                                              audit_log[]
+  user_saved_views                                       user_saved_views[]
+  credit_period_config                                   credit_period_config[]
+  email_rules                                            email_rules[]
+  exception_tags_exception_tags_excluded_byTousers       exception_tags[]            @relation("exception_tags_excluded_byTousers")
+  exception_tags_exception_tags_resolved_byTousers       exception_tags[]            @relation("exception_tags_resolved_byTousers")
+  exception_tags_exception_tags_tagged_byTousers         exception_tags[]            @relation("exception_tags_tagged_byTousers")
+  column_mappings_column_mappings_created_byTousers      column_mappings[]           @relation("column_mappings_created_byTousers")
+  column_mappings_column_mappings_updated_byTousers      column_mappings[]           @relation("column_mappings_updated_byTousers")
+  follow_ups                                             follow_ups[]
+  fx_rates                                               fx_rates[]
+  invoice_changes                                        invoice_changes[]
+  lobs_lobs_created_byTousers                            lobs[]                      @relation("lobs_created_byTousers")
+  lobs_lobs_updated_byTousers                            lobs[]                      @relation("lobs_updated_byTousers")
+  parties_canonical                                      parties_canonical[]
+  party_aliases_party_aliases_confirmed_byTousers        party_aliases[]             @relation("party_aliases_confirmed_byTousers")
+  party_aliases_party_aliases_created_byTousers          party_aliases[]             @relation("party_aliases_created_byTousers")
+  reconciliation_entries                                 reconciliation_entries[]
+  snapshots_snapshots_discarded_byTousers                snapshots[]                 @relation("snapshots_discarded_byTousers")
+  snapshots_snapshots_published_byTousers                snapshots[]                 @relation("snapshots_published_byTousers")
+  snapshots_snapshots_reviewed_byTousers                 snapshots[]                 @relation("snapshots_reviewed_byTousers")
+  snapshots_snapshots_uploaded_byTousers                 snapshots[]                 @relation("snapshots_uploaded_byTousers")
+  entities                                               entities?                   @relation(fields: [entity_id_scope], references: [id], onUpdate: NoAction, map: "fk_users_entity_id_scope_entities")
   // Phase 2: operational object relations
-  collection_tasks_collection_tasks_owner_user_idTousers               collection_tasks[]       @relation("collection_tasks_owner_user_idTousers")
-  collection_tasks_collection_tasks_created_byTousers                  collection_tasks[]       @relation("collection_tasks_created_byTousers")
-  promises_to_pay_promises_to_pay_created_byTousers                    promises_to_pay[]        @relation("promises_to_pay_created_byTousers")
-  dispute_cases_dispute_cases_owner_user_idTousers                     dispute_cases[]          @relation("dispute_cases_owner_user_idTousers")
-  dispute_cases_dispute_cases_created_byTousers                        dispute_cases[]          @relation("dispute_cases_created_byTousers")
-  digest_events_digest_events_approved_byTousers                       digest_events[]          @relation("digest_events_approved_byTousers")
-  engagement_streak                                                    engagement_streaks?
-  engagement_streak_freezes                                            engagement_streak_freezes[] @relation("freeze_owner")
-  engagement_streak_freezes_applied                                    engagement_streak_freezes[] @relation("freeze_applier")
-  xero_connections_connected_byTousers                                 xero_connections[]       @relation("xero_connections_connected_byTousers")
-  xero_sync_runs_triggered_byTousers                                   xero_sync_runs[]         @relation("xero_sync_runs_triggered_byTousers")
+  collection_tasks_collection_tasks_owner_user_idTousers collection_tasks[]          @relation("collection_tasks_owner_user_idTousers")
+  collection_tasks_collection_tasks_created_byTousers    collection_tasks[]          @relation("collection_tasks_created_byTousers")
+  promises_to_pay_promises_to_pay_created_byTousers      promises_to_pay[]           @relation("promises_to_pay_created_byTousers")
+  dispute_cases_dispute_cases_owner_user_idTousers       dispute_cases[]             @relation("dispute_cases_owner_user_idTousers")
+  dispute_cases_dispute_cases_created_byTousers          dispute_cases[]             @relation("dispute_cases_created_byTousers")
+  digest_events_digest_events_approved_byTousers         digest_events[]             @relation("digest_events_approved_byTousers")
+  engagement_streak                                      engagement_streaks?
+  engagement_streak_freezes                              engagement_streak_freezes[] @relation("freeze_owner")
+  engagement_streak_freezes_applied                      engagement_streak_freezes[] @relation("freeze_applier")
 }
 
 model user_saved_views {
@@ -611,13 +594,13 @@ model collection_tasks {
   created_at         DateTime                    @default(now()) @db.Timestamptz(6)
   updated_at         DateTime                    @default(now()) @db.Timestamptz(6)
 
-  entities                                               entities          @relation(fields: [entity_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_entity_id_entities")
-  parties_canonical                                      parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_canonical_id_parties_canonical")
-  invoices                                               invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_invoice_id_invoices")
-  snapshots                                              snapshots?        @relation(fields: [source_snapshot_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_source_snapshot_id_snapshots")
-  users_collection_tasks_owner_user_idTousers            users?            @relation("collection_tasks_owner_user_idTousers", fields: [owner_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_owner_user_id_users")
-  users_collection_tasks_created_byTousers               users             @relation("collection_tasks_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_created_by_users")
-  promises_to_pay                                        promises_to_pay[]
+  entities                                    entities          @relation(fields: [entity_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_entity_id_entities")
+  parties_canonical                           parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_canonical_id_parties_canonical")
+  invoices                                    invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_invoice_id_invoices")
+  snapshots                                   snapshots?        @relation(fields: [source_snapshot_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_source_snapshot_id_snapshots")
+  users_collection_tasks_owner_user_idTousers users?            @relation("collection_tasks_owner_user_idTousers", fields: [owner_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_collection_tasks_owner_user_id_users")
+  users_collection_tasks_created_byTousers    users             @relation("collection_tasks_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_collection_tasks_created_by_users")
+  promises_to_pay                             promises_to_pay[]
 
   @@index([entity_id, status], map: "ix_collection_tasks_entity_status")
   @@index([canonical_id, status], map: "ix_collection_tasks_canonical_status")
@@ -639,10 +622,10 @@ model promises_to_pay {
   created_at         DateTime              @default(now()) @db.Timestamptz(6)
   updated_at         DateTime              @default(now()) @db.Timestamptz(6)
 
-  parties_canonical                              parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_promises_to_pay_canonical_id_parties_canonical")
-  invoices                                       invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_promises_to_pay_invoice_id_invoices")
-  collection_tasks                               collection_tasks? @relation(fields: [collection_task_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_promises_to_pay_collection_task_id_collection_tasks")
-  users_promises_to_pay_created_byTousers        users             @relation("promises_to_pay_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_promises_to_pay_created_by_users")
+  parties_canonical                       parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_promises_to_pay_canonical_id_parties_canonical")
+  invoices                                invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_promises_to_pay_invoice_id_invoices")
+  collection_tasks                        collection_tasks? @relation(fields: [collection_task_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_promises_to_pay_collection_task_id_collection_tasks")
+  users_promises_to_pay_created_byTousers users             @relation("promises_to_pay_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_promises_to_pay_created_by_users")
 
   @@index([canonical_id, status], map: "ix_promises_to_pay_canonical_status")
 }
@@ -663,11 +646,11 @@ model dispute_cases {
   created_at               DateTime            @default(now()) @db.Timestamptz(6)
   updated_at               DateTime            @default(now()) @db.Timestamptz(6)
 
-  entities                                            entities          @relation(fields: [entity_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_entity_id_entities")
-  parties_canonical                                   parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_canonical_id_parties_canonical")
-  invoices                                            invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_dispute_cases_invoice_id_invoices")
-  users_dispute_cases_owner_user_idTousers            users?            @relation("dispute_cases_owner_user_idTousers", fields: [owner_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_dispute_cases_owner_user_id_users")
-  users_dispute_cases_created_byTousers               users             @relation("dispute_cases_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_created_by_users")
+  entities                                 entities          @relation(fields: [entity_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_entity_id_entities")
+  parties_canonical                        parties_canonical @relation(fields: [canonical_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_canonical_id_parties_canonical")
+  invoices                                 invoices?         @relation(fields: [invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_dispute_cases_invoice_id_invoices")
+  users_dispute_cases_owner_user_idTousers users?            @relation("dispute_cases_owner_user_idTousers", fields: [owner_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_dispute_cases_owner_user_id_users")
+  users_dispute_cases_created_byTousers    users             @relation("dispute_cases_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_dispute_cases_created_by_users")
 
   @@index([entity_id, status], map: "ix_dispute_cases_entity_status")
   @@index([canonical_id, status], map: "ix_dispute_cases_canonical_status")
@@ -689,61 +672,4 @@ model digest_events {
 
   @@unique([digest_date], map: "uq_digest_events_digest_date")
   @@index([state, digest_date], map: "ix_digest_events_state_date")
-}
-
-/// ADR-0012 — read-only Xero OAuth connection per UAE entity tenant.
-/// Refresh tokens are encrypted at rest with AES-256-GCM; the access
-/// token is not persisted (refreshed per pull). Status transitions:
-/// ACTIVE -> DISCONNECTED on admin disconnect, ACTIVE -> ERROR if the
-/// connector ever rejects the refresh token. See `xero_sync_runs` for
-/// per-pull audit detail.
-model xero_connections {
-  id                      String           @id(map: "pk_xero_connections") @db.Uuid
-  entity_id               String           @db.Uuid
-  tenant_id               String           @db.VarChar(128)
-  tenant_name             String           @db.VarChar(255)
-  scopes                  String[]
-  encrypted_refresh_token String
-  access_token_expires_at DateTime?        @db.Timestamptz(6)
-  status                  String           @default("ACTIVE") @db.VarChar(16)
-  connected_by            String           @db.Uuid
-  disconnected_at         DateTime?        @db.Timestamptz(6)
-  created_at              DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime         @default(now()) @db.Timestamptz(6)
-  entities                entities         @relation(fields: [entity_id], references: [id], onUpdate: NoAction, map: "fk_xero_connections_entity_id_entities")
-  users_connected_by      users            @relation("xero_connections_connected_byTousers", fields: [connected_by], references: [id], onUpdate: NoAction, map: "fk_xero_connections_connected_by_users")
-  xero_sync_runs          xero_sync_runs[]
-
-  @@unique([entity_id, tenant_id], map: "uq_xero_connections_entity_tenant")
-  @@index([status], map: "ix_xero_connections_status")
-}
-
-/// ADR-0012 — one row per Xero pull attempt. RUNNING rows older than a
-/// few minutes indicate an orphaned run (process died mid-fetch); cron
-/// recovery is out of scope for v1.
-model xero_sync_runs {
-  id                     String           @id(map: "pk_xero_sync_runs") @db.Uuid
-  connection_id          String           @db.Uuid
-  snapshot_id            String?          @db.Uuid
-  triggered_by           String           @db.Uuid
-  status                 String           @default("RUNNING") @db.VarChar(16)
-  started_at             DateTime         @default(now()) @db.Timestamptz(6)
-  finished_at            DateTime?        @db.Timestamptz(6)
-  pages_fetched          Int              @default(0)
-  invoices_seen          Int              @default(0)
-  invoices_staged        Int              @default(0)
-  parse_errors           Int              @default(0)
-  source_artifact_uri    String?
-  source_artifact_sha256 String?          @db.VarChar(64)
-  error_code             String?          @db.VarChar(64)
-  error_message          String?
-  rate_limit_json        Json?
-  created_at             DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime         @default(now()) @db.Timestamptz(6)
-  xero_connections       xero_connections @relation(fields: [connection_id], references: [id], onUpdate: NoAction, map: "fk_xero_sync_runs_connection_id_xero_connections")
-  snapshots              snapshots?       @relation(fields: [snapshot_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_xero_sync_runs_snapshot_id_snapshots")
-  users_triggered_by     users            @relation("xero_sync_runs_triggered_byTousers", fields: [triggered_by], references: [id], onUpdate: NoAction, map: "fk_xero_sync_runs_triggered_by_users")
-
-  @@index([connection_id, started_at(sort: Desc)], map: "ix_xero_sync_runs_connection_started")
-  @@index([snapshot_id], map: "ix_xero_sync_runs_snapshot_id")
 }
