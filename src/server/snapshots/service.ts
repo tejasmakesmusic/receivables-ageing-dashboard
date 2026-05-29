@@ -1013,7 +1013,10 @@ function gateFromRows(params: {
   };
 }
 
-async function computeReconciliationParts(snapshot: SnapshotRow): Promise<{
+async function computeReconciliationParts(snapshot: {
+  id: string;
+  as_of_date: Date | null;
+}): Promise<{
   dashboardAr: string;
   exceptionBucketTotal: string;
   exceptionBucketBreakdown: Record<string, string>;
@@ -2742,14 +2745,23 @@ export async function publishSnapshot(
         id: { not: snapshot.id },
       },
       orderBy: { as_of_date: "desc" },
-      select: { id: true, as_of_date: true },
+      select: { id: true, as_of_date: true, total_outstanding: true },
     });
     if (priorPublished) {
       const recon = await getPrisma().reconciliation_entries.findUnique({
         where: { snapshot_id: priorPublished.id },
         select: { delta: true, notes: true },
       });
-      const deltaCents = recon ? parseToCents(formatDecimal(recon.delta)) : null;
+      let deltaCents = recon ? parseToCents(formatDecimal(recon.delta)) : null;
+      // Auto-reconcile fallback: when no manual entry exists, mirror the
+      // read-path logic in getReconciliation — delta = dashboardAr − total_outstanding.
+      // Without this, snapshots that show "Auto-reconciled — dashboard matches
+      // source file" in the UI still block later publishes.
+      if (deltaCents === null && priorPublished.total_outstanding) {
+        const autoClosingAr = formatDecimal(priorPublished.total_outstanding);
+        const { dashboardAr } = await computeReconciliationParts(priorPublished);
+        deltaCents = parseToCents(dashboardAr) - parseToCents(autoClosingAr);
+      }
       const matched =
         deltaCents !== null &&
         (deltaCents <= MATCH_TOLERANCE_CENTS && deltaCents >= -MATCH_TOLERANCE_CENTS);
